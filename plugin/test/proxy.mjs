@@ -103,6 +103,32 @@ const ok = (label) => {
   ok('默认链与 proxy/config.json 同源，且 key 走通用约定')
 }
 
+const _models = 0
+
+// ---- 8. 档位模型：注册与合并（配置说话时以配置为准） ----
+{
+  const { REEVE_TIERS, buildTierModel, mergeTierModels, parseEndpointFromConfig } = await import('../src/models.js')
+  const rec = buildTierModel(REEVE_TIERS[0])
+  assert.equal(rec.id, 'flash'); assert.equal(rec.modelID, 'reeve/flash'); assert.equal(rec.providerID, 'reeve')
+  assert.deepEqual(rec.capabilities.input, ['text'], 'flash 不吃图')
+  assert.deepEqual(buildTierModel(REEVE_TIERS[2]).capabilities.input, ['text', 'image'], 'multimodal 吃图')
+  assert.deepEqual(rec.limit, { context: 200000, output: 32000 })
+  assert.equal(rec.enabled, true)
+
+  const merged = mergeTierModels([{ id: 'pro', modelID: 'user/pro', name: '用户自己写的' }])
+  assert.equal(merged.length, 3, '已有的 pro 不动，补上 flash/multimodal')
+  assert.equal(merged.find((m) => m.id === 'pro').name, '用户自己写的', '配置里的条目优先')
+  assert.equal(mergeTierModels([]).length, 3)
+
+  const ep = parseEndpointFromConfig(JSON.stringify({ providers: { reeve: { settings: { baseURL: 'http://127.0.0.1:18080/v1' } } } }))
+  assert.deepEqual(ep, { baseURL: 'http://127.0.0.1:18080/v1', host: '127.0.0.1', port: 18080 })
+  const withComments = ['// 注释行', JSON.stringify({ providers: { reeve: { settings: { baseURL: 'http://127.0.0.1:8080/v1' } } } })].join('\n')
+  assert.equal(parseEndpointFromConfig(withComments).port, 8080, '整行注释要能跳过')
+  assert.equal(parseEndpointFromConfig('{}'), null, '没有 providers.reeve → null（调用方退回默认）')
+  assert.equal(parseEndpointFromConfig('not json'), null, '坏 JSON 不抛')
+  ok('档位模型：注册形状 / 合并（配置优先）/ 从 baseURL 推端口')
+}
+
 // ---- 7. 端口归属：只复用"自己的"代理（两种形态共用同一端口时会撞） ----
 {
   const mk = (entries) => ({
@@ -135,6 +161,20 @@ const ok = (label) => {
     '非 Linux（读不到 /proc）= unknown',
   )
   ok('ownerOfPort：ours / foreign / unknown 三态')
+}
+
+// ---- 9. 内置 agent 的可见性：谁被藏、默认 agent 只在存在时才设 ----
+{
+  const { BUILTINS_TO_HIDE, pickDefaultAgent } = await import('../src/models.js')
+  assert.deepEqual([...BUILTINS_TO_HIDE].sort(), ['build', 'explore', 'general', 'plan'], '藏这四个（前台只留 foreman）')
+
+  const calls = []
+  const fake = { get: (id) => (id === 'foreman' ? { id } : undefined), default: (id) => calls.push(id) }
+  assert.equal(pickDefaultAgent(fake, 'foreman'), true)
+  assert.deepEqual(calls, ['foreman'], '存在才设默认')
+  const none = { get: () => undefined, default: () => { throw new Error('不该被调用') } }
+  assert.equal(pickDefaultAgent(none, 'foreman'), false, '不存在就不设（不报错）')
+  ok('内置 agent 可见性：藏四个 + 默认 agent 只在存在时设')
 }
 
 console.log(`\n代理层测试：${passed} 项全过`)

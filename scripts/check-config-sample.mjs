@@ -36,26 +36,36 @@ try {
 }
 
 const problems = []
-if (config.default_agent !== 'foreman') problems.push('default_agent 必须是 foreman（前台只出现编排者）')
-for (const name of ['build', 'plan', 'general', 'explore']) {
-  if (config.agents?.[name]?.hidden !== true) problems.push(`内置 agent ${name} 必须 hidden: true`)
+// 前台只出现编排者 / 三个档位模型 / 默认 agent —— **现在是插件的职责**（插件注册，配置优先）。
+// 这里只守住"插件代替不了的那两行"+ 覆盖路径的形状。
+const settings = config.providers?.reeve?.settings
+if (typeof settings?.baseURL !== 'string' || !settings.baseURL.startsWith('http')) {
+  problems.push('providers.reeve.settings.baseURL 必须有（端点插件注册不了）')
 }
-const models = config.providers?.reeve?.models ?? {}
-for (const tier of ['flash', 'pro', 'multimodal']) {
-  if (!models[tier]?.modelID) problems.push(`档位 ${tier} 缺 modelID`)
+// apiKey 可以不写（引擎就不发 Authorization，而插件自持的代理关了回环鉴权）；写的话只允许两种形态
+const apiKey = settings?.apiKey
+if (apiKey !== undefined && apiKey !== 'reeve-local' && !String(apiKey).includes('{env:REEVE_VK}')) {
+  problems.push('apiKey 要么不写、要么写占位值 reeve-local（插件自持）、要么 {env:REEVE_VK}（启动器持有）')
 }
-if (models.multimodal?.capabilities?.input?.includes('image') !== true) {
-  problems.push('只有 multimodal 档必须声明能吃图（capabilities.input 含 image）')
-}
-if (models.flash?.capabilities?.input?.includes('image') === true ||
-    models.pro?.capabilities?.input?.includes('image') === true) {
-  problems.push('flash/pro 不该声明能吃图 —— 带图调用应该在引擎侧就被挡回 multimodal')
+const models = config.providers?.reeve?.models
+if (models !== undefined) {
+  // 只有显式覆盖时才检查；不写 = 由插件注册三个档位
+  for (const tier of ['flash', 'pro', 'multimodal']) {
+    if (!models[tier]?.modelID) problems.push(`覆盖了 models 就要写全：档位 ${tier} 缺 modelID`)
+  }
+  if (models.multimodal?.capabilities?.input?.includes('image') !== true) {
+    problems.push('覆盖后 multimodal 必须声明能吃图（capabilities.input 含 image）')
+  }
 }
 if (!Array.isArray(config.plugins) || config.plugins.length === 0) problems.push('必须挂上记账插件')
 const proxy = config.plugins?.[0]?.options?.proxy
-if (proxy?.enabled !== true) problems.push('纯插件形态要求 plugins[0].options.proxy.enabled = true')
-if (config.providers?.reeve?.settings?.apiKey !== 'reeve-local') problems.push('纯插件形态的 apiKey 写占位值 reeve-local（VK 形态才用 {env:REEVE_VK}）')
-if (Number(proxy?.port) !== Number(new URL(config.providers?.reeve?.settings?.baseURL ?? 'http://x').port)) problems.push('proxy.port 必须与 baseURL 的端口一致')
+// `proxy: true` 是简写
+if (!(proxy === true || proxy?.enabled === true)) problems.push('纯插件形态要求 plugins[0].options.proxy = true（或 { enabled: true }）')
+
+if (proxy?.port !== undefined &&
+    Number(proxy.port) !== Number(new URL(config.providers?.reeve?.settings?.baseURL ?? 'http://x').port)) {
+  problems.push('写了 proxy.port 就必须与 baseURL 的端口一致（不写则由插件从 baseURL 推）')
+}
 
 if (problems.length > 0) {
   for (const p of problems) console.error(`❌ ${p}`)

@@ -872,6 +872,58 @@ key 一直在真 home 那份里；默认值是 `<HOME>/.local/share/opencode/aut
 
 ---
 
+#### 6.6.1 配置瘦身：从「一大块」到「两行端点 + 一行插件」（2026-10-20 实测）
+
+**起点**：使用者看完样例说"这个配置也太复杂了"。核完 v2.0.27 的插件 API，能搬进插件的都搬了：
+
+| 原来要写的 | 现在 | 依据 |
+|---|---|---|
+| `providers.reeve.models`（三个档位各一段：modelID/name/limit/capabilities） | **不写** —— 插件注册（`ctx.provider.transform` → `editor.models.set`） | `packages/plugin/src/promise/provider.ts`；`Model.Info.default()` 给出了最小形状 |
+| `default_agent` + `agents` 块（四个内置 agent 藏起来） | **不写** —— 插件做（`ctx.agent.transform` + `editor.default`） | 同上（`AgentEditor`） |
+| `options.proxy.port` | **不写** —— 从 `providers.reeve.settings.baseURL` 推 | 插件读配置（只读，永不写） |
+| `options.proxy.dir` | **不写** —— 默认 `~/.reeve/proxy` | |
+| `options.snapshotPath` | **不写** —— 默认 `~/.reeve/ledger.json`（**台账与代理同处 `~/.reeve/`**，omo 的 `~/.omo/` 同形） | 扩展的文件桥 glob 同步加了 `~/.reeve/**` |
+| `settings.apiKey` | **可以不写**（实测：引擎就不发 Authorization，而插件自持的代理本来就关了回环鉴权） | EL7 实测 |
+| `"proxy": { "enabled": true }` | `"proxy": true`（简写） | |
+
+**最终形态**（`config/opencode.sample.jsonc`，全部内容）：
+
+```jsonc
+{
+  "$schema": "https://opencode.ai/config.json",
+  "providers": {
+    "reeve": { "package": "@ai-sdk/openai-compatible", "settings": { "baseURL": "http://127.0.0.1:8080/v1" } }
+  },
+  "model": "reeve/pro",
+  "plugins": [
+    { "package": "@bd7pil/reeve", "options": { "limits": { "default": 8 }, "retentionDays": 30, "proxy": true } }
+  ]
+}
+```
+
+**唯一留在配置里的理由**（实测过的 API 边界）：端点**注册不了** —— `Provider.Info` 只有
+`{id,name,activation,package,integrationID}`（没有 URL），`Connection.Info` 只是**凭据引用**，
+`Integration.Method` 只是"怎么拿凭据"。所以"往哪发"必须写在配置里。
+
+**实测（EL7 staging，全新机器模拟：`rm -rf ~/.reeve` 后从零开始）**：
+
+| 检查项 | 实测 |
+|---|---|
+| 一次会话把全链拉起来 | ✅ 配置里没有 models / agents / default_agent / apiKey / 端口 / 快照路径 → 会话返回 `OK` |
+| 后台取件 + 状态同步 | ✅ 快照立刻是 `proxy: {"ready":true,"detail":"代理已拉起（:18080），二进制是本次装好的"}`（新加的 `onState` 回调让"后台取件完成"这一刻也能刷新快照 —— 否则面板会一直显示"未就绪"） |
+| 档位注册生效 | ✅ `agentTable.visible=[foreman]`；`reeve/pro` 能被引擎解析（会话真的跑起来了） |
+| 目录归一 | ✅ 二进制/链/logs/台账都在 `~/.reeve/`（`proxy/` + `ledger.json`） |
+
+**过程中踩到的两个真 bug（都已修 + 有测试）**：
+
+1. **`proxy: true` 让部署脚本的派生步骤抛异常**（在布尔上调 `.update`）→ 派生**静默没跑完**，
+   插件于是用了 staging HOME 下不存在的 `auth.json` → Bifrost 报
+   `no keys found that support model: glm-5.3`。失败是吵的，但根因在派生脚本 ——
+   现在先把简写归一成对象再改。
+2. **后台取件完成不会更新快照** → 面板一直显示"未就绪"。加了 `onState` 回调。
+
+测试：**115** 项（68 + 30 + 8 + 9）。
+
 ### 6.7 面板（步 5 的增补）
 
 - 新增：台账节里一行"前台可见 agent：foreman · 隐藏 N 个 · 名册已注入（7 个 subagent）"（读快照里的 `agentTable`/`roster`）。

@@ -14,6 +14,8 @@
         "entry": "panel/index.html"
       },
       "filesystem": [
+        "~/.reeve-staging/.reeve/**",
+        "~/.reeve/**",
         "~/.local/share/opencode/reeve/**",
         "~/.reeve-staging/.local/share/opencode/reeve/**"
       ],

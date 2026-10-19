@@ -29,7 +29,9 @@ opencode **v2** 插件。补齐 v2 原生缺的那几条：
 | ⑤ | 落盘 + 对账：`ctx.storage` + `ctx.session.hook("prompt")` | `src/ledger.js` + `src/reconcile.js` |
 | ⑥ | **补名册**：`ctx.session.hook("context")` → 把 subagent 名册接进 `subagent` 工具描述 | `src/roster.js` + `src/index.js` |
 
-**另有可选的代理层自持**（不是钩子，是 opt-in 的服务管理）：`options.proxy.enabled` 打开后，
+**另有可选的「代理自持 + 运行时注册」**（不是钩子，是 opt-in 的服务管理与注册）：
+插件还会注册三个档位模型、把内置 agent 藏起来、设默认 agent —— 所以引擎配置里**不用写** `models` / `agents` / `default_agent`。
+`options.proxy.enabled` 打开后，
 插件自己完成 取件 → 派生链 → 拉起/复用 → 等就绪 → 收敛 → 守护，**不需要任何外部脚本**（见 `src/proxy.js` 与 PROGRESS §6.6）。
 
 **⑥ 为什么需要**：REEVE 的 7 个 subagent 都标了 `hidden: true`（人在前台看不到、也不能用 `@` 直接找它们说话），
@@ -156,7 +158,7 @@ opencode **v2** 插件。补齐 v2 原生缺的那几条：
 ## 验证
 
 ```bash
-# 全部测试（不依赖模型、不依赖 opencode）：68 + 30 + 8 + 7 = 113 项
+# 全部测试（不依赖模型、不依赖 opencode）：68 + 30 + 8 + 9 = 115 项
 npm test
 
 # 加载 + 工具是否进入模型工具表

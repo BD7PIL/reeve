@@ -24,6 +24,9 @@ import {
   STATE,
   TOOL_NAMESPACE,
 } from './constants.js'
+import { homedir } from 'node:os'
+import { join } from 'node:path'
+
 import { Ledger } from './ledger.js'
 import { acquireAdmissionRuntime } from './concurrency.js'
 import { Supervisor } from './supervisor.js'
@@ -31,6 +34,7 @@ import { reconcileParent } from './reconcile.js'
 import { SnapshotWriter, buildSnapshot, projectAgentTable } from './snapshot.js'
 import { SUBAGENT_ROSTER, withRoster } from './roster.js'
 import { startOwnedProxy } from './proxy.js'
+import { REEVE_TIERS, BUILTINS_TO_HIDE, mergeTierModels, pickDefaultAgent, readEndpoint } from './models.js'
 
 const SUBAGENT_TOOL = 'subagent'
 
@@ -100,7 +104,8 @@ export default {
     // 只读快照（给 openchamber 面板）：**opt-in** —— 只有部署时给了 snapshotPath 才写。
     // 它是投影，不是第二份真相：面板只读它，永不写回。
     // 失败只记日志：**记账的正确性绝不依赖这个文件**。
-    const snapshotPath = options.snapshotPath ?? null
+    // 快照默认落 `~/.reeve/ledger.json`（REEVE 自己的目录，和代理的 app-dir 一处）
+    const snapshotPath = options.snapshotPath ?? join(homedir(), '.reeve', 'ledger.json')
     let snapshot = null
     if (snapshotPath) {
       snapshot = new SnapshotWriter({ path: snapshotPath, logger })
@@ -116,11 +121,25 @@ export default {
     // 纯插件形态：取件 → 派生链 → 拉起/复用 → 等就绪 → 收敛 → 守护。
     // 不需要任何外部脚本；失败只记日志（代理起不来时引擎照常跑，模型会吵地报错）。
     let proxyHandle = null
-    if (options.proxy?.enabled === true) {
-      proxyHandle = await startOwnedProxy({ opts: options.proxy, logger })
+    // 两种写法都行：`proxy: true`（简写）或 `proxy: { enabled: true, ... }`
+    if (options.proxy === true || options.proxy?.enabled === true) {
+      // 端口不用用户重复写：从配置里的 `providers.reeve.settings.baseURL` 推（读不到就用 options/默认）
+      let opts = options.proxy === true ? {} : options.proxy
+      if (opts.port == null) {
+        const endpoint = await readEndpoint({})
+        if (endpoint) {
+          opts = { ...opts, port: endpoint.port, host: endpoint.host }
+          logger.debug(`[reeve] 代理端口取自配置：${endpoint.host}:${endpoint.port}（来自 ${endpoint.from}）`)
+        }
+      }
+      // 状态一变就刷新快照 —— 尤其"后台取件完成、代理起来了"那一刻（否则面板会一直显示未就绪）
+      const onState = (st) => {
+        proxyState = { ready: st.ready, detail: st.detail, port: st.port, host: st.host }
+        snapshotFlush()
+      }
+      proxyHandle = await startOwnedProxy({ opts, logger, onState })
+      onState(proxyHandle)
       logger.debug(`[reeve] 代理层自持：${proxyHandle.ready ? '就绪' : '未就绪'} —— ${proxyHandle.detail ?? '?'}`)
-      proxyState = { ready: proxyHandle.ready, detail: proxyHandle.detail, port: proxyHandle.port, host: proxyHandle.host }
-      snapshotFlush()
     }
 
     const admission = acquireAdmissionRuntime(ctx.location?.directory, { limits })
@@ -183,6 +202,33 @@ export default {
         },
       })
     })
+
+    // ---- ⓪ 注册（让 opencode.jsonc 尽量短）----
+    // 三件事都在插件里做，配置里就不用写 models / agents / default_agent：
+    //   a) 三个档位模型（配置里已写的不动 —— 配置说话时以配置为准）
+    //   b) 把内置 agent 藏起来（前台只出现编排者）
+    //   c) 默认 agent = foreman（存在才设）
+    // ⚠️ 端点（baseURL / key）**注册不了**：Provider.Info 没有 URL、Connection 只是凭据引用、
+    //    Integration 只是"怎么拿凭据"。那两行必须留在配置里。
+    try {
+      await ctx.provider.transform((editor) => {
+        const existing = editor.get('reeve')?.models
+        const list = existing ? Array.from(existing.values()) : []
+        const merged = mergeTierModels(list, REEVE_TIERS, 'reeve')
+        if (merged.length !== list.length) editor.models.set('reeve', merged)
+      })
+      await ctx.agent.transform((editor) => {
+        for (const id of BUILTINS_TO_HIDE) {
+          if (editor.get(id)?.hidden === true) continue
+          editor.update(id, (agent) => {
+            agent.hidden = true
+          })
+        }
+        pickDefaultAgent(editor, 'foreman')
+      })
+    } catch (err) {
+      logger.debug(`[reeve] 注册（模型/可见性）失败（忽略）：${String(err)}`)
+    }
 
     // ---- ① 并发闸门（子会话创建之前）+ ② 落台账 ----
     await ctx.tool.hook('execute.before', async (event) => {

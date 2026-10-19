@@ -302,6 +302,8 @@ export async function startOwnedProxy({
   authPath = null,
   fetchImpl = fetch,
   spawnImpl = spawn,
+  /** 状态一变就回调（快照/面板要跟上——尤其"后台取件完成"那一刻）。 */
+  onState = null,
 } = {}) {
   const port = Number(opts.port ?? PROXY_DEFAULTS.port)
   const host = opts.host ?? PROXY_DEFAULTS.host
@@ -314,6 +316,7 @@ export async function startOwnedProxy({
 
   const disposeFns = []
   const result = { port, host, paths, ready: false, detail: null, dispose: async () => { for (const f of disposeFns.reverse()) await f().catch(() => {}) } }
+  const publish = () => { try { onState?.({ ready: result.ready, detail: result.detail, port, host, paths }) } catch { /* 视图的问题不是记账的问题 */ } }
   let env = null
   let rules = []
   let bootstrapping = null
@@ -351,6 +354,7 @@ export async function startOwnedProxy({
     while (Date.now() < deadline) {
       if (await healthy({ port, host, fetchImpl })) {
         result.ready = true
+        publish()
         await convergeRules({ port, host, token: env.BIFROST_SETUP_TOKEN, desired: rules, logger })
         logger.debug(`[reeve] ${result.detail}，已就绪`)
         return true
@@ -358,6 +362,7 @@ export async function startOwnedProxy({
       await new Promise((r) => setTimeout(r, 500))
     }
     result.detail = `${result.detail}，但 /api/version 在 ${readyTimeoutMs} ms 内未就绪（看 ${paths.log}）`
+    publish()
     logger.debug(`[reeve] ${result.detail}`)
     return false
   }
@@ -386,15 +391,19 @@ export async function startOwnedProxy({
       })
     } else {
       result.detail = `代理二进制首次取件中（${BIFROST_PIN.size} B）—— 后台下载，不挡引擎启动`
+      publish()
       logger.debug(`[reeve] ${result.detail}`)
-      bootstrapping = bootstrap().catch((err) => {
-        result.detail = `取件失败：${String(err).slice(0, 160)}`
-        logger.debug(`[reeve] ${result.detail}`)
-        return false
-      })
-      bootstrapping.finally(() => {
-        bootstrapping = null
-      })
+      bootstrapping = bootstrap()
+        .catch((err) => {
+          result.detail = `取件失败：${String(err).slice(0, 160)}`
+          publish()
+          logger.debug(`[reeve] ${result.detail}`)
+          return false
+        })
+        .finally(() => {
+          bootstrapping = null
+          publish()
+        })
     }
 
     // 守护：没就绪就把 bootstrap 再走一遍（取件幂等）；已就绪只探活并按需重启

@@ -109,13 +109,22 @@ c['plugins'][0]['package'] = STAGE + '/plugin'
 c['plugins'][0]['options']['snapshotPath'] = STAGE + '/.local/share/opencode/reeve/ledger.json'
 # 代理层自持（纯插件形态）在 staging 的落点：自己的目录 + 18080 + 真 home 的 auth.json
 # （staging HOME 里没有 auth.json —— key 一直在真 home 那份里）
-proxy = c['plugins'][0]['options'].setdefault('proxy', {})
+# 样板里可能写成简写 `"proxy": true` —— 先归一成对象再改（布尔上调 .update 会抛，实测踩到：
+# 派生步骤静默没跑完 → 插件用了 staging HOME 下不存在的 auth.json → Bifrost 报
+# "no keys found that support model"，是吵的失败但根因在派生脚本）
+opts = c['plugins'][0]['options']
+proxy = opts.get('proxy')
+if proxy is True or proxy is None:
+    proxy = {'enabled': True}
+elif not isinstance(proxy, dict):
+    raise SystemExit('plugins[0].options.proxy 只能是 true 或对象')
+# port 不再写：插件从 baseURL 推（上面刚把 baseURL 设成 18080）
 proxy.update({
     'enabled': True,
     'dir': STAGE + '/proxy',
-    'port': 18080,
     'authPath': '/home/demo/.local/share/opencode/auth.json',
 })
+opts['proxy'] = proxy
 
 os.makedirs(os.path.dirname(dst), exist_ok=True)
 json.dump(c, open(dst, 'w', encoding='utf-8'), ensure_ascii=False, indent=2)
