@@ -14,6 +14,7 @@
 
 import {
   PLUGIN_ID,
+  PLUGIN_VERSION,
   REASON,
   STATE,
   TOOL_NAMESPACE,
@@ -22,6 +23,7 @@ import { Ledger } from './ledger.js'
 import { acquireAdmissionRuntime } from './concurrency.js'
 import { Supervisor } from './supervisor.js'
 import { reconcileParent } from './reconcile.js'
+import { SnapshotWriter, buildSnapshot } from './snapshot.js'
 
 const SUBAGENT_TOOL = 'subagent'
 
@@ -50,6 +52,20 @@ export default {
       } catch (err) {
         logger.debug(`[reeve] 修剪失败（忽略）：${String(err)}`)
       }
+    }
+
+    // 只读快照（给 openchamber 面板）：**opt-in** —— 只有部署时给了 snapshotPath 才写。
+    // 它是投影，不是第二份真相：面板只读它，永不写回。
+    // 失败只记日志：**记账的正确性绝不依赖这个文件**。
+    const snapshotPath = options.snapshotPath ?? null
+    let snapshot = null
+    if (snapshotPath) {
+      snapshot = new SnapshotWriter({ path: snapshotPath, logger })
+      const build = () => buildSnapshot(ledger.all(), { version: PLUGIN_VERSION })
+      ledger.onChange = () => snapshot.schedule(build)
+      snapshot.schedule(build)
+      void snapshot.flush().catch(() => {})
+      logger.debug(`[reeve] 台账快照开启：${snapshotPath}`)
     }
 
     const admission = acquireAdmissionRuntime(ctx.location?.directory, { limits })
@@ -253,6 +269,10 @@ export default {
     return () => {
       abort.abort()
       supervisor.stopAll()
+      if (snapshot) {
+        snapshot.cancel()
+        void snapshot.flush().catch(() => {})
+      }
       logger.debug('[reeve] 已卸载')
     }
   },

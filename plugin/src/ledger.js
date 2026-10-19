@@ -20,6 +20,16 @@ export class Ledger {
   constructor({ storage = null, logger = console } = {}) {
     this.storage = storage
     this.logger = logger
+    // 变更通知：给只读快照用。**同步、绝不 await** —— 记账不能被视图拖慢。
+    this.onChange = null
+  }
+
+  #changed() {
+    try {
+      this.onChange?.()
+    } catch {
+      /* 视图的问题不是记账的问题 */
+    }
   }
 
   static storageKey(taskID) {
@@ -31,6 +41,7 @@ export class Ledger {
     this.#records.set(record.taskID, record)
     if (record.childSessionID) this.#byChild.set(record.childSessionID, record.taskID)
     void this.persist(record.taskID)
+    this.#changed()
     return record
   }
 
@@ -45,6 +56,7 @@ export class Ledger {
     record.childSessionID = childSessionID
     this.#byChild.set(childSessionID, taskID)
     void this.persist(taskID)
+    this.#changed()
     return record
   }
 
@@ -59,6 +71,7 @@ export class Ledger {
     Object.assign(record, patch)
     record.lastActivityAt = Date.now()
     void this.persist(taskID)
+    this.#changed()
     return record
   }
 
@@ -85,6 +98,7 @@ export class Ledger {
       statusUncertain: extra.statusUncertain ?? false,
     })
     void this.persist(taskID)
+    this.#changed()
     return true
   }
 
@@ -116,6 +130,7 @@ export class Ledger {
       if (record.childSessionID) this.#byChild.delete(record.childSessionID)
     }
     void this.persist(taskID)
+    this.#changed()
   }
 
   isTombstoned(taskID) {
@@ -196,6 +211,7 @@ export class Ledger {
         record.reason = 'host_restarted'
       }
     }
+    if (loaded > 0) this.#changed()
     return { loaded, truncated, pages }
   }
 
@@ -222,6 +238,7 @@ export class Ledger {
       }
       removed += 1
     }
+    if (removed > 0) this.#changed()
     return removed
   }
 }

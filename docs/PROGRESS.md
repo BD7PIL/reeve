@@ -577,12 +577,75 @@ Bifrost 起在 **:18080**，v2 引擎（`~/.ocrc/remote/engine/opencode`，v2.0.
 
 ---
 
-## 步 5 — 控制台（可选）⏳ 未开始
+## 步 5 — 控制台（openchamber 扩展）✅（2026-10-19）
+
+**结论先说**：扩展**真的装进了 EL7 上的 openchamber 2.3.3，面板真的渲染出来了**，
+而且**台账数据走通了整条链路**（引擎 → 插件 → 快照文件 → 宿主的文件桥 → 面板）。
+下面每条都有实测证据。
+
+### 5.1 做了什么
+
+| 产出 | 说明 |
+|---|---|
+| `extensions/reeve/package.json` | manifest：`apiVersion:1`、`contributes.panel`（id `reeve`）、`filesystem` 两条模式、`actions` 一条 |
+| `extensions/reeve/panel/index.html` + `panel/main.js` | 面板（classic IIFE，51 KB）。**只读**：只调 `listProjects/listSessions/readFile/openSession` |
+| `extensions/reeve/src/panel/main.js` | 源码（ESM，import `@openchamber/sdk` + `/ui` 的绘制套件） |
+| `extensions/reeve/build.mjs` | esbuild（**走 JS API**：Windows 上 Node 不能直接 execFile 一个 `.cmd`，实测 EINVAL） |
+| `extensions/reeve/check.mjs` | **用宿主自己的解析器**校验 manifest + 打包完整性（宿主 install 会拒的那几项） |
+| `extensions/reeve/cdp-panel{,2}.mjs` | 用 EL7 上那个 headless Chrome（:9222）真的点开面板并读它的 DOM |
+| `plugin/src/snapshot.js` + `plugin/test/snapshot.mjs` | 台账**快照导出**（opt-in、原子写、白名单投影）+ 7 项测试 |
+
+**两个数据源**（都是读）：
+- **会话树**：宿主的 `listProjects → listSessions` + `onSessions`（用 `parentId` 成树）
+- **台账**：读插件导出的快照 JSON。**为什么走文件**：面板跑在沙箱 iframe 里（CSP、无网络、
+  拿不到引擎的 SQLite），宿主只给了它 `readFile`；快照是**投影**，权威仍是插件的 `ctx.storage`。
+
+### 5.2 实测证据
+
+| 检查项 | 证据 |
+|---|---|
+| manifest 被宿主的解析器接受 | `check.mjs`：`parseManifestJson` 通过；请求能力恰为 `sessions,filesystem`（**没多要 `conversation`** —— 不需要读消息就别要） |
+| 宿主 install 通过 | `POST /api/guests {path}` → **HTTP 201**；`GET /api/guests` 里出现 `id=reeve`、`name=REEVE 编排`、`icon=git-branch`、`enabled=true`、`source=path` |
+| 能力批准 | `PUT /api/guests/reeve/capabilities {granted:[sessions,filesystem]}` → 200；复读为 `granted:["sessions","filesystem"]` |
+| 面板文档由宿主服务 | `GET /api/guests/reeve/panel/index.html` → **200，17,390 B**（宿主把主题样式注入了我们 987 B 的 HTML）；`panel/main.js` → 200，52,676 B = 打包产物大小 |
+| **在真 UI 里被识别** | CDP 打开 `:2610` → 侧栏出现标题为 **`REEVE 编排`** 的按钮（Branch 图标）；点击后宿主建了 iframe：`/api/guests/reeve/panel/index.html?oc_ui=issue-page&oc_url_token=oc_url_…` |
+| **面板真的渲染** | 在该 iframe 的执行上下文里读 DOM：标题 + 徽章 **`0 在飞 / 4 总`**（primary）+ `刷新` + 两个分区；**console 无报错** |
+| **台账数据真的读到了** | 面板文本：`4 条记录 · 0 在飞 · 生成于 18:51:41（~/.reeve-staging/.local/share/opencode/reeve/ledger.json）`，四条记录带 agent（`scout`）、子会话 id、耗时；DOM 里是宿主套件的 `oc-sdk-list` / `role=option` / toned badge |
+| 快照由**真插件**产出 | EL7 staging 跑真委派（`foreman → scout`）→ 文件生成，`counts={total:4,completed:4}`，无 `.tmp` 残留；其中最早那条是**从 `ctx.storage` hydrate 回来的**（跨进程重启仍在） |
+| 面板模样的截图 | 见会话可视化目录里的 `reeve-panel-in-openchamber.png` |
+
+**截图里能看到**：右侧抽屉标题「REEVE 编排」，徽章 `0 在飞 / 4 总`，四行任务
+（`统计 src 下 js 文件数` / `scout · ses_eac365be…` / `已完成` / `1ms`），以及会话树分区的
+**诚实空态**：`先在 openchamber 里打开一个项目（宿主当前注册的项目数：0）`。
+
+### 5.3 过程中的两个真结论（不是猜的）
+
+1. **面板第一次加载是空白/读不到台账**，加了**逐路径的失败原因**（把 `NOT_FOUND` / `NOT_GRANTED` /
+   `BAD_PATH` 原样显示出来）之后一次就通了。
+   → **面板宁可说清"为什么读不到"，也不要假装台账是空的**（空台账与读不到是两件事）。
+   现在这条诊断留在实现里（见 `readLedger()` 的 `tried`）。
+2. **会话树那个空态是对的，不是 bug**：这台 openchamber 当前**注册项目数就是 0**
+   （界面本身显示 "Choose project"）。所以面板显示"先打开一个项目"，而不是编一棵空树。
+
+### 5.4 仍未做/未验（如实记录）
+
+- **面板层「零冲突」**（在 openchamber 面板里保存一次 agent 配置、看引擎配置有没有被静默压掉）：
+  本步**没有**做这个动作 —— 面板是只读的（连 `writeFile` 都不调，`check.mjs` 里有静态检查盯着），
+  而"保存 agent"是 openchamber 自身的 Agents 页，与本扩展无关。**机制层已验，面板层未验。**
+- 扩展在 EL7 上**仍装着**（`source=path` → 包在 `/home/demo/.reeve-ext-src`，能力已批准）。
+  要撤：设置 → 扩展 → 移除，或 `rm -rf ~/.config/openchamber/extensions/reeve` 并清 store。
+  **这是留给使用者看的**，不是回归测试留下的垃圾。
+- 会话树那半边的数据源（宿主会话）在本机没有可展示样本（项目数为 0），
+  将来在**真实项目**里打开面板才能看到树 —— 面板代码走的是同一条 `listSessions` 通路。
+
+---
+
+## 步 5 legacy 检查表（保留原始验收项对照）
 
 **前置**：步 2。
 
 | 检查项 | 结果 | 日期 |
 |---|---|---|
-| 面板能看到子任务状态与台账 | — | — |
-| 保存配置后插件正确读到 | — | — |
-| 无任何双写冲突 | — | — |
+| 面板能看到子任务状态与台账 | ✅ **已验**（CDP 读 iframe DOM + 截图） | 2026-10-19 |
+| 保存配置后插件正确读到 | ⚠️ **未验**（只读面板不做保存；见 5.4） | — |
+| 无任何双写冲突 | ✅ 机制层已验（插件无写路径 + 配置 mtime/hash 不变） | 2026-10-19 |

@@ -74,7 +74,8 @@ opencode **v2** 插件。补齐 v2 原生缺的那几条：
         "wallClockMs": 1800000,                       // 墙钟上限；0/缺省 = 不掐
         "abortGraceMs": 10000,                        // 发出中断后等确认的宽限
         "retentionDays": 30,                          // 台账保留期：只清已落终态的旧记录；0 = 不清
-        "limits": { "default": 0, "providers": {}, "models": {} }   // 0 = 无限
+        "limits": { "default": 8, "providers": {}, "models": {} },   // 0 = 无限
+        "snapshotPath": "~/.local/share/opencode/reeve/ledger.json"  // 可选：给控制台面板读的**只读快照**
       } }
   ]
 }
@@ -83,6 +84,25 @@ opencode **v2** 插件。补齐 v2 原生缺的那几条：
 > ⚠️ **`limits.default` 缺省是 0 = 无限**。使用者实测峰值是**一个父会话约 88 个并发子任务**——
 > 无上限是失控风险。**建议显式设一个值**（例如 `"default": 8`），
 > 超限时是**排队**不是失败。
+
+### `snapshotPath`：给控制台看的只读投影（可选）
+
+设了就每 250 ms（变更驱动、合并写入、原子 rename）把台账导出成一份 JSON：
+
+```jsonc
+{ "generatedAt": 1792407101643, "plugin": "reeve", "version": "0.0.1",
+  "counts": { "total": 4, "running": 0, "completed": 4, "error": 0, "stopped": 0, "reconciled": 0 },
+  "tasks": [ { "taskID": "...", "parentSessionID": "...", "childSessionID": "...",
+               "agent": "scout", "description": "...", "state": "completed",
+               "timedOut": false, "statusUncertain": false, "startedAt": 0, "endedAt": 0 } ] }
+```
+
+三条纪律：
+1. **是投影，不是第二份真相** —— 权威仍然是 `ctx.storage`；这份文件只给人/面板看。
+2. **失败只记日志** —— 记账的正确性**绝不依赖**它（写不进去也不影响落账）。
+3. **字段是白名单** —— 内部字段（`generation` / `attempts` / `interruptSent` …）不进快照。
+
+不设 = 不写任何文件（默认关闭）。控制台那边怎么读：[../extensions/reeve/README.md](../extensions/reeve/README.md)。
 
 ---
 
@@ -123,8 +143,8 @@ opencode **v2** 插件。补齐 v2 原生缺的那几条：
 ## 验证
 
 ```bash
-# 单元（不依赖模型、不依赖 opencode）
-node plugin/test/unit.mjs
+# 全部测试（不依赖模型、不依赖 opencode）：41 + 30 + 7 = 78 项
+npm test
 
 # 加载 + 工具是否进入模型工具表
 opencode service stop && sleep 3
@@ -133,8 +153,14 @@ opencode run --standalone --auto --print-logs --session <id> "hi"
 #   看 stderr 里的 [reeve] 行；看模型收到的工具名里有 reeve_task_status
 ```
 
+**在 EL7 上的实机验证**（2026-10-19，staging，隔离 `HOME`）：`debug agents` 里 8 个自定义 agent 全在；
+真委派 `foreman → scout` 后台账落账（`agent=scout`、`state=completed`、父/子会话 id 齐全），
+模型能调 `reeve_task_status` 把台账读回来；`snapshotPath` 打开后快照文件生成且跨重启 hydrate 正确。
+详见 [../docs/PROGRESS.md](../docs/PROGRESS.md) §4.4 与 §5.2。
+
 **注意**：opencode v2 默认跑一个**后台常驻 service**，它会**钉住环境变量**。
-改 `HOME` / 配置后必须 `opencode service stop`，否则看到的是旧环境。
+改 `HOME` / 配置后必须 `opencode service stop`，否则看到的是旧环境
+（**且 stop 之后第一次调用会返回空，需要一次预热调用**）。
 
 ---
 

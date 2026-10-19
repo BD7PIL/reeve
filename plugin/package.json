@@ -8,7 +8,7 @@
     ".": "./src/index.js"
   },
   "scripts": {
-    "test": "node test/unit.mjs && node test/reconcile.mjs"
+    "test": "node test/unit.mjs && node test/reconcile.mjs && node test/snapshot.mjs"
   },
   "files": [
     "index.js",

@@ -657,15 +657,19 @@ reeve/
 
 **步 4 — 代理层**
 
-| 检查 | 标准 |
-|---|---|
-| 回退可靠 | 链头用坏 key → 第二个模型必须接上，请求成功 |
-| 别名稳定 | 同一会话多轮，Bifrost 侧始终收到 `reeve/<档位>` |
-| 视觉别名 | 只有视觉调用走 `reeve/multimodal` |
-| **半截流** | opencode **不把截断流当成功**（否则需要在代理侧额外处理） |
-| 归因可查 | 能回答"这 196 次 quota 错误分别是哪个 provider 撞的" |
+| 检查 | 标准 | 结果 |
+|---|---|---|
+| 回退可靠 | 链头用坏 key → 第二个模型必须接上，请求成功 | ✅ `hop=0 xiaomi error(Invalid API Key)` → `hop=1 zhipuai-coding-plan/glm-5.3-flash success` |
+| 别名稳定 | 同一会话多轮，Bifrost 侧始终收到 `reeve/<档位>` | ✅ 引擎请求的 `routing_rule_name` 就是 `reeve/pro` / `reeve/flash` |
+| 视觉别名 | 只有视觉调用走 `reeve/multimodal` | ✅ 带图那次走 `reeve/multimodal`，其余档位不变 |
+| **半截流** | opencode **不把截断流当成功**（否则需要在代理侧额外处理） | ✅ 不当作成功，会重试（未决 #1 已关） |
+| 归因可查 | 能回答"这 196 次 quota 错误分别是哪个 provider 撞的" | ✅ `scripts/served-model.sh` 输出档位→provider/model/key/状态 + 每跳归属 |
+| 档位分流 | 主 agent 走 pro、被委派的子 agent 走 flash | ✅ 同一场对话里 foreman 9 次 `reeve/pro`、scout 8 次 `reeve/flash` |
 
-**步 5 — 控制台**：面板能看到子任务状态与台账；保存配置后插件正确读到；**无任何双写冲突**。
+**步 5 — 控制台**：面板能看到子任务状态与台账 ✅（真装进 EL7 的 openchamber 2.3.3，
+真渲染，台账经宿主的文件桥读到；见 [PROGRESS.md](PROGRESS.md) §5）；
+保存配置后插件正确读到 ⚠️ **未验**（面板是只读的，不做保存）；
+**无任何双写冲突** ✅ 机制层已验（插件无 `agents`/`model` 写路径 + 配置 mtime/hash 不变）。
 
 ---
 
@@ -728,3 +732,4 @@ reeve/
 | 8 | `limits.default` | **8** | 实测峰值 88；无上限是失控风险，8 是保守起点（插件支持按 model/provider 覆盖） |
 | 9 | 台账 `retentionDays` / Bifrost `client.log_retention_days` | **都 30 天** | 台账只清**已落终态**的（在飞的不动）；Bifrost 默认 365 太松 |
 | 10 | 审查 severity 是否卡流程 | **都不卡** | 规则带 Java 企业栈指纹，先跑两周看误报率再定 |
+| 11 | 控制台（步 5）做不做、做完装不装 | **做，且已装到 EL7 的 openchamber 上**（只读、能力已批准） | 只读面板不会与引擎抢配置；不想要就在 设置 → 扩展 里移除 |
