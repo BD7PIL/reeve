@@ -149,6 +149,16 @@ function main() {
       el('div', { class: 'rv-meta', text: `${doc.tasks.length} 条记录 · ${running.length} 在飞 · 生成于 ${fmtClock(doc.generatedAt)}（${result.path}）` }),
     )
 
+    // 编排面：由记账插件从**引擎进程内部**读出来的一行（"前台只出现编排者"这条设计的落盘证据）。
+    // `opencode debug agents` 会连到 CLI 自己那个服务、未必是你以为的引擎 —— 这一行不会。
+    const t = doc.agentTable
+    if (t) {
+      const vis = (t.visible ?? []).map((a) => a.id).join('、') || '（无）'
+      const hid = (t.hidden ?? []).length
+      const roster = doc.roster ? `名册已注入（${doc.roster.count} 个 subagent）` : '名册未注入'
+      ledgerSection.append(el('div', { class: 'rv-meta', text: `前台可见 agent：${vis} · 隐藏 ${hid} 个 · ${roster}` }))
+    }
+
     const items = doc.tasks.map((t) => {
       const flags = []
       if (t.timedOut) flags.push('超时')
