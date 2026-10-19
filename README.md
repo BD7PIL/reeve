@@ -113,3 +113,23 @@ curl -b <会话 cookie> -X PUT -H 'Content-Type: application/json' \
    **空台账与读不到是两件事，面板不许混为一谈。**
 2. 面包屑只读**自己的**数据：SDK 的 `payload: ["messages"]` 会多要一个 `conversation` 能力。
    本面板不需要读消息内容 → 去掉，请求能力收敛到 `sessions,filesystem`。
+
+---
+
+## 验证脚手架（`cdp-*.mjs`）
+
+这些脚本用 **EL7 上那个 headless Chrome（:9222）** 驱动真界面。都需要先登录并把 cookie 写到
+`/tmp/oc.cookies`（`POST /auth/session`，密码取自 openchamber 进程环境里的 `OPENCHAMBER_UI_PASSWORD`）。
+
+| 脚本 | 干什么 |
+|---|---|
+| `cdp-panel.mjs` | 导航到 app → 点侧栏的「REEVE 编排」→ 截屏（验证面板被识别、iframe 被建） |
+| `cdp-panel2.mjs` | 进 guest iframe 的**执行上下文**读它的真实 DOM + console（验证面板渲染成什么样） |
+| `cdp-submit-project.mjs` | Projects 页 `+` → 输路径 → Add project（**面板保存 agent 需要项目上下文**） |
+| `cdp-ui-save-full.mjs --save` | 全 UI 路径：选项目 → Settings → Agents → `+` → 填名/描述/prompt → Create |
+| `cdp-capture-create-error.mjs` | 抓 `POST /api/config/agents/*` 的**请求体与响应**（比如缺项目时的 400） |
+| `cdp-delete-via-panel.mjs` | 用面板自己的 `DELETE` 端点删掉探针 agent（清理） |
+
+**面板层「零冲突」的完整复现顺序**：`cdp-submit-project.mjs` → `cdp-ui-save-full.mjs --save`
+→（外部比对配置文件的 hash/mtime）→ `cdp-delete-via-panel.mjs`。
+测量结果与留下的痕迹见 [../../docs/PROGRESS.md](../../docs/PROGRESS.md) §5.5。
