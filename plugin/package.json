@@ -13,6 +13,8 @@
   "files": [
     "index.js",
     "src",
+    "agents",
+    "skills",
     "default-chain.json",
     "README.md"
   ],

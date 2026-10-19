@@ -35,6 +35,7 @@ import { SnapshotWriter, buildSnapshot, projectAgentTable } from './snapshot.js'
 import { SUBAGENT_ROSTER, withRoster } from './roster.js'
 import { startOwnedProxy } from './proxy.js'
 import { REEVE_TIERS, BUILTINS_TO_HIDE, mergeTierModels, pickDefaultAgent, readEndpoint } from './models.js'
+import { loadAgents, loadSkills } from './register.js'
 
 const SUBAGENT_TOOL = 'subagent'
 
@@ -70,6 +71,9 @@ export default {
     let roster = null
     /** 代理层自持的状态（进快照：面板可显示、上机可核对）。必须在快照块之前声明。 */
     let proxyState = null
+    /** 从插件包注册进去的 agent / skill 名单（进快照，便于上机核对"没往配置目录拷文件"）。 */
+    let registeredAgents = []
+    let registeredSkills = []
     let snapshotFlush = () => {}
 
     const readAgentTable = async () => {
@@ -109,7 +113,14 @@ export default {
     let snapshot = null
     if (snapshotPath) {
       snapshot = new SnapshotWriter({ path: snapshotPath, logger })
-      const build = () => buildSnapshot(ledger.all(), { version: PLUGIN_VERSION, agents: agentTable, roster, proxy: proxyState })
+      const build = () =>
+        buildSnapshot(ledger.all(), {
+          version: PLUGIN_VERSION,
+          agents: agentTable,
+          roster,
+          proxy: proxyState,
+          registered: { agents: registeredAgents, skills: registeredSkills },
+        })
       snapshotFlush = () => snapshot.schedule(build)
       ledger.onChange = () => snapshot.schedule(build)
       snapshot.schedule(build)
@@ -217,6 +228,10 @@ export default {
         const merged = mergeTierModels(list, REEVE_TIERS, 'reeve')
         if (merged.length !== list.length) editor.models.set('reeve', merged)
       })
+      // agent 与 skill 从**插件自己的包**里注册（配置目录里不需要 agent/ 与 skill/ 两个目录）。
+      // 配置优先：引擎里已经有的同名 agent（用户在配置目录里写的）一律不动。
+      const bundledAgents = await loadAgents()
+      const bundledSkills = await loadSkills()
       await ctx.agent.transform((editor) => {
         for (const id of BUILTINS_TO_HIDE) {
           if (editor.get(id)?.hidden === true) continue
@@ -224,8 +239,24 @@ export default {
             agent.hidden = true
           })
         }
+        for (const info of bundledAgents) {
+          if (editor.get(info.id)) continue // 配置优先
+          editor.update(info.id, (agent) => {
+            Object.assign(agent, info)
+          })
+        }
+        // 编排者必须存在才能当默认；不存在（被配置删了/改名了）就保持原样
         pickDefaultAgent(editor, 'foreman')
       })
+      registeredAgents = bundledAgents.map((a) => a.id)
+      await ctx.skill.transform((editor) => {
+        for (const skill of bundledSkills) {
+          if (editor.get(skill.id)) continue
+          editor.add(skill)
+        }
+      })
+      registeredSkills = bundledSkills.map((s) => s.id)
+      logger.debug(`[reeve] 注册：agent ${registeredAgents.length} 个、skill ${registeredSkills.length} 个（配置里已有的不动）`)
     } catch (err) {
       logger.debug(`[reeve] 注册（模型/可见性）失败（忽略）：${String(err)}`)
     }

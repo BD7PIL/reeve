@@ -4,7 +4,7 @@
 #   # 先把仓库里的源真相推进 $STAGE/incoming/：
 #   #   proxy/config.json            → $STAGE/incoming/bifrost.config.json
 #   #   config/opencode.sample.jsonc → $STAGE/incoming/opencode.sample.jsonc
-#   #   agents/*.md                  → $STAGE/.config/opencode/agent/（含 hidden: true）
+#   #   plugin/{agents,skills}/       → 不用单独拷：它们**在插件包里**，由插件启动时注册（PROGRESS §6.7）
 #   bash el7-deploy-staging.sh
 #
 # 做五件事（幂等）：

@@ -924,7 +924,46 @@ key 一直在真 home 那份里；默认值是 `<HOME>/.local/share/opencode/aut
 
 测试：**115** 项（68 + 30 + 8 + 9）。
 
-### 6.7 面板（步 5 的增补）
+### 6.7 全部搬进插件包：配置目录里只剩 `opencode.jsonc` ✅（2026-10-20）
+
+**要求**（使用者）："就不能像 omo 一样吗？skills 也没必要，不会频繁更新的。"
+→ 把 **agent 与 skill 从"要拷进配置目录的文件"变成"插件包的一部分"**，由插件在运行时注册。
+
+| 东西 | 之前 | 现在 |
+|---|---|---|
+| 8 个 agent | `agents/*.md` 拷到 `<配置目录>/agent/` | **`plugin/agents/*.md`**（插件包里），启动时 `ctx.agent.transform` 注册；配置目录里已有的同名 agent 一律不动（**配置优先**） |
+| review skill | `skills/review/` 拷到 `<配置目录>/skill/` | **`plugin/skills/review/`**（插件包里），`ctx.skill.transform` 注册；正文里会填进**真实绝对路径**（配套 rubric 靠它定位） |
+| 提示词形态 | markdown（在配置目录） | **还是 markdown**（在插件包里）—— 改提示词改这些文件；代价是**面板改不了**（刻意如此，见 §6.1） |
+
+**实测（EL7 staging，配置目录里把 `agent/`、`skill/` 两个目录整个挪走）**：
+
+| 检查项 | 实测 |
+|---|---|
+| 配置目录内容 | ✅ 只剩 `opencode.json` + `service.json` |
+| 注册名单 | ✅ 快照 `registered: {"agents":[advisor,critic,executor,foreman,librarian,planner,reviewer,scout],"skills":["review"]}` |
+| 前台可见性 | ✅ `visible=[foreman]`、hidden 14、总数 15 |
+| **真委派** | ✅ `foreman → scout` 成功读到插件包里的 `register.js`（台账 `scout/completed`） |
+| 代理 | ✅ 复用（:18080，端口从 baseURL 推） |
+
+**两个真 bug（都修了 + 都有测试）**：
+
+1. ⚠️ **带引号的 YAML 值让权限规则全部失效**：我的 frontmatter 解析器把 `resource: "*"` 的**引号也留在了值里**，
+   于是 agent 的 6 条权限规则一条都匹配不上 → `subagent` 动作落到"默认 ask" → 非交互运行被判拒绝，
+   表现是 `Tool.Error: Subagent denied: scout`。**这是今天最值得记的一条**：
+   权限规则"看起来写对了"但**匹配不上**，不会报错，只会静默地全部落到默认值。
+   （修完 `foreman` 的条目是 `[{"action":"*","resource":"*","effect":"allow"}, …]`，无引号。）
+
+2. **"端点也免掉"这条路被实测否掉了**（`scripts/probe-endpoint` 不在仓库里，结论记在这里）：
+   - 好消息：`ctx.provider.transform` 能注册 provider 与模型；`model.request` 钩子里**改 `baseURL` 是生效的**
+     （实测：写完引擎真的去连了 `127.0.0.1:18080`，得到 ConnectionRefused 而不是走了默认端点）；
+   - 坏消息：**provider 不在配置里时，agent 的 `model: reeve/pro` 解析不出来** ——
+     那次会话静默换了别的模型跑（标签显示 `foreman · minimax-m3.1-flash-free`，端点是 opencode zen）。
+   - → 结论：`providers.reeve.settings.baseURL` 那两行**保留**。它不是"复杂度"，
+     而是让"档位 ref 一定解析得到"的唯一保证；去掉它换来的是**静默换模型**这种最坏的失败模式。
+
+**最终形态**（`config/opencode.sample.jsonc`）：端点两行 + 插件一行 + 可选的 `model` 一行。
+
+### 6.8 面板（步 5 的增补）
 
 - 新增：台账节里一行"前台可见 agent：foreman · 隐藏 N 个 · 名册已注入（7 个 subagent）"（读快照里的 `agentTable`/`roster`）。
 - 定位结论（④）：**openchamber 本体已经满足"看会话/看子会话/看成本"**；REEVE 面板真正独有的只有**台账**

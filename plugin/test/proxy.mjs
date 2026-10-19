@@ -177,4 +177,37 @@ const _models = 0
   ok('内置 agent 可见性：藏四个 + 默认 agent 只在存在时设')
 }
 
+// ---- 10. 从插件包里注册 agent / skill（"配置目录里不拷文件"的依据） ----
+{
+  const { loadAgents, loadSkills, toAgentInfo, parseFrontmatter } = await import('../src/register.js')
+  const agents = await loadAgents()
+  assert.equal(agents.length, 8, `插件包里应当有 8 个 agent，实际 ${agents.length}`)
+  const foreman = agents.find((a) => a.id === 'foreman')
+  assert.equal(foreman.mode, 'primary')
+  assert.ok(!foreman.hidden, 'foreman 不该 hidden')
+  assert.ok(foreman.system.includes('编排者'), 'system 应当是 md 的正文')
+  assert.equal(foreman.model.providerID, 'reeve')
+  assert.equal(foreman.model.id, 'pro')
+  const scout = agents.find((a) => a.id === 'scout')
+  assert.equal(scout.hidden, true, 'subagent 注册时就该是 hidden')
+  assert.equal(scout.model.id, 'flash')
+  assert.equal(scout.permissions.length, 6, '权限条目解析出来（含 *.env 的 ask）')
+  assert.ok(scout.permissions.some((r) => r.action === 'edit' && r.effect === 'deny'))
+
+  const skills = await loadSkills()
+  assert.deepEqual(skills.map((s) => s.id), ['review'])
+  assert.ok(skills[0].content.includes('本 skill 的目录：'), '正文里要带真实目录（rubric 靠它定位）')
+  assert.ok(skills[0].content.includes('审查层'), 'skill 正文在')
+
+  const fm = parseFrontmatter(
+    ['---', 'a: 1', 'permissions:', '  - action: x', '    resource: "*"', '    effect: deny', '---', 'body'].join('\n'),
+  )
+  assert.equal(fm.data.a, '1')
+  assert.deepEqual(fm.data.permissions, [{ action: 'x', resource: '*', effect: 'deny' }], '值里不该带引号（实测：带引号 → 规则匹配不上 → subagent 落到默认 ask → 拒绝）')
+  assert.equal(fm.body, 'body')
+  ok('插件包内注册：8 个 agent（面对/权限解析）+ 1 个 skill')
+}
+
+
+
 console.log(`\n代理层测试：${passed} 项全过`)

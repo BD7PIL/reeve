@@ -214,10 +214,10 @@ section('名册：subagent 工具描述补名 + 与 agents/*.md 不漂移')
   ok('空描述也能接（不会留一个前导空行）', !withRoster('').startsWith('\n'))
   ok('非字符串描述不炸', typeof withRoster(undefined) === 'string')
 
-  // 名字漂移防护：名册必须与仓库里的 agents/*.md 一一对应。
+  // 名字漂移防护：名册必须与插件包里的 agents/*.md 一一对应（§6.8：agent 已搬进插件）。
   // （插件被单独安装时没有 ../agents，跳过而不是失败。）
   try {
-    const dir = new URL('../../agents/', import.meta.url)
+    const dir = new URL('../agents/', import.meta.url)
     const files = readdirSync(dir).filter((f) => f.endsWith('.md'))
     const expected = ['foreman', ...SUBAGENT_ROSTER.map((a) => a.name)].sort()
     ok(`agents/ 目录里正好这些角色（${files.length} 个）`,

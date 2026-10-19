@@ -605,10 +605,14 @@ reeve/
     research/
       orchestration-stack-verdict.md    立项证据（归档，含已被取代的说法）
       opencode-v2-plugin-api.md         v2 插件 API 实测施工图 ★写代码前必读
-  agents/*.md                     8 个 agent 定义（正文即 system prompt，见 §3.5）
-                                  ⚠️ 7 个 subagent 标 `hidden: true` —— 前台只出现 foreman（见 PROGRESS §6.1）
-  skills/review/                  SKILL.md（契约与用法）+ 7 份 OCR rubric
-  plugin/                         @bd7pil/reeve（记账层；含 roster.js 补名册）
+  plugin/                         @bd7pil/reeve —— **整个系统就在这一个包里**
+    agents/*.md                   8 个 agent（正文即 system prompt；7 个标 hidden，前台只出现 foreman）
+    skills/review/                SKILL.md（契约与用法）+ 7 份 OCR rubric
+    src/                          ledger / concurrency / supervisor / reconcile / roster / snapshot /
+                                  proxy（代理自持）/ models（档位模型）/ register（agent 与 skill 注册）
+    default-chain.json            自带的链（与 proxy/config.json 同源；单测盯着不漂移）
+                                  → 由插件在启动时注册：agent、skill、三个档位模型、内置 agent 的可见性，
+                                    外加代理的取件/拉起/守护/收敛。**配置目录里不需要拷任何 REEVE 文件。**
   proxy/{config.json,README.md}   链的唯一维护处
   config/opencode.sample.jsonc    引擎侧配置样板（只出现编排者 / 三档位 / 插件 options）
   extensions/reeve/               控制台面板（只读；build.mjs / check.mjs / cdp-panel*.mjs）
