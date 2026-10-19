@@ -62,10 +62,13 @@ omo 在 v2 上拿到的全部支持是"加载 + 每次启动弹一个指向 OmO 
 v2 插件 API 的真实形态（钩子真名、**`codemode:false` 才是工具可见性开关**、
 存储键是 `plugin:<hex(id)>:` …）——见 [施工图](docs/research/opencode-v2-plugin-api.md)。
 
-**仍开放的两项**（都如实标着，不冒充通过）：
-1. **面板层「零冲突」**：在 openchamber 里保存一次 agent 配置、看引擎配置有没有被静默压掉。
-   机制层已验（插件无 `agents`/`model` 写路径；配置 mtime/hash 在 6+ 轮会话后不变）。
-2. **审查 subagent 的误报率**：按默认"severity 都不卡流程"跑两周再统计。
+**仍开放的一项**（如实标着，不冒充通过）：
+**审查 subagent 的误报率** —— 按默认"severity 都不卡流程"跑两周再统计。
+
+> 「零冲突」两层都已验：**机制层**（插件无 `agents`/`model` 写路径；引擎配置 mtime/hash
+> 在 6+ 轮会话后不变）+ **面板层**（在 EL7 的 openchamber 的 Agents 页真保存一次：
+> 只新增一个 user 作用域 agent md，`opencode.jsonc` / `opencode.managed.json` / staging 配置
+> **逐字节未变**；缺项目上下文时是 400 + 界面报错，不是静默）。见 [PROGRESS.md](docs/PROGRESS.md) §5.5。
 
 **下一步的活**：把 PLAN §2 的配置目录隔离（杠杆 = **`HOME`**，两端已实测）落进
 ocrc 的实例启动行 —— 那是**另一个仓库**的改动；本仓库只提供现货（脚本 + 配置 + 资产）。

@@ -262,7 +262,7 @@ plugin/
 | **超限时真的排队**（不是失败） | ✅ **通过** | `limits.default=1` + 同时派 2 个后台任务。日志逐条对上：`派发 scout；在飞 1，**排队 1**` → `落账 → running` → 第一个释放后 `在飞 1，**排队 0**`（队列放行） |
 | **墙钟真的掐掉卡死的任务** | ✅ **通过**（修了一个 bug，见下） | `wallClockMs=12000` + 长跑后台任务。台账最终：`state:error` / `reason:"wall_clock_timeout"` / **`timedOut:true`** / `uncertain:true`，`startedAt→endedAt` = **12.02 s**（正好等于上限） |
 | **跨重启对账** | ✅ **通过** | 派长跑后台任务 → **8 秒后杀引擎**（模拟崩溃）→ 重启 → 用**同一父会话 id** 触发 `prompt` 钩子。台账最终：`state:"stopped"` / **`reason:"unreconciled"`** / `uncertain:true` / `timedOut:false` —— 正是 PLAN 判定表里"存在但无输出 → 停止候选 → `stopped, unreconciled`"那条路径 |
-| 零冲突（面板保存 agent 不静默压掉预设） | ⏳ **待面板** | 需要 openchamber 实例在手；**这是唯一还挂着的验收项** |
+| 零冲突（面板保存 agent 不静默压掉预设） | ✅ **通过**（2026-10-19） | 机制层：插件无 `agents`/`model` 写路径 + 引擎配置 mtime/hash 在 6+ 轮会话后不变。**面板层**：在 EL7 的 openchamber 真保存一次，逐文件比对 —— 只新增一个 user 作用域 agent md，`opencode.jsonc`（三端共享 symlink）/ `opencode.managed.json`（plugins 数组）/ staging `opencode.json` / 8 个 agent **逐字节未变**；缺项目上下文时是 **400 + 界面报错**（不是静默）。证据见 §5.5 |
 
 #### ⚠️ 这一轮抓到的真 bug（已修 + 已加回归测试）
 
@@ -568,8 +568,7 @@ Bifrost 起在 **:18080**，v2 引擎（`~/.ocrc/remote/engine/opencode`，v2.0.
 
 #### 4.4.4 未做/未验（如实记录）
 
-- **面板层「零冲突」**（在 openchamber 面板保存一次、看配置有没有被静默压掉）：步 5 若能把扩展装上去再做，
-  否则如实标"机制层已验、面板层未验"。
+- ~~**面板层「零冲突」**~~ → **2026-10-19 当晚补做完成**，见 §5.5。
 - EL7 上 `xxyapi-deepseek` / `deepseek-api` / `alibaba-cn` 的失败**是账号侧问题**，不是本仓库的配置问题；
   链序在别的机器上按同样规则重新核对即可（`scripts/served-model.sh` 就是干这个的）。
 - `pro` 档在 EL7 只有 1 跳可用（`zhipuai`）；`lmuai/glm-5.3` 已加进 fallback 列表，
@@ -629,14 +628,85 @@ Bifrost 起在 **:18080**，v2 引擎（`~/.ocrc/remote/engine/opencode`，v2.0.
 
 ### 5.4 仍未做/未验（如实记录）
 
-- **面板层「零冲突」**（在 openchamber 面板里保存一次 agent 配置、看引擎配置有没有被静默压掉）：
-  本步**没有**做这个动作 —— 面板是只读的（连 `writeFile` 都不调，`check.mjs` 里有静态检查盯着），
-  而"保存 agent"是 openchamber 自身的 Agents 页，与本扩展无关。**机制层已验，面板层未验。**
+- ~~**面板层「零冲突」**~~ → **已补做，见 5.5**（2026-10-19 深夜）
 - 扩展在 EL7 上**仍装着**（`source=path` → 包在 `/home/demo/.reeve-ext-src`，能力已批准）。
   要撤：设置 → 扩展 → 移除，或 `rm -rf ~/.config/openchamber/extensions/reeve` 并清 store。
   **这是留给使用者看的**，不是回归测试留下的垃圾。
 - 会话树那半边的数据源（宿主会话）在本机没有可展示样本（项目数为 0），
   将来在**真实项目**里打开面板才能看到树 —— 面板代码走的是同一条 `listSessions` 通路。
+
+---
+
+### 5.5 面板层「零冲突」验收 ✅（2026-10-19）
+
+**问**：在 openchamber 的 **Agents 页保存一次**，引擎的配置文件会不会被**静默覆盖**？
+
+#### 前置：这台实例没有项目，保存被**明确拒绝**
+
+面板保存打的是 `POST /api/config/agents/<name>`，服务端要求**项目上下文**。实测（CDP 抓响应）：
+
+```
+POST /api/config/agents/zc-zeroconf-probe   → HTTP 400
+  body: {"mode":"subagent","description":"...","system":"...","scope":"user"}
+  响应: {"error":"Directory parameter or active project is required"}
+  UI 提示: "Failed to create agent"          ← **报错，不是静默**
+```
+
+→ 没有项目时**一个字节都没写**，而且是**吵的失败**（400 + 可见提示）。
+为了测"保存成功时会发生什么"，我在面板的 **Projects 页**（`+` → 输路径 → Add project）
+把 `/home/demo/.reeve-staging/work`（我自己的 staging 空目录）注册成了项目。这次保存带上了目录：
+
+```
+POST /api/config/agents/zc-zeroconf-probe?directory=%2Fhome%2Fdemo%2F.reeve-staging%2Fwork   → 200
+  [dir=/home/demo/.reeve-staging/work]
+```
+
+#### 测量：保存前后逐文件比对（hash + mtime）
+
+**新增了且只有一个文件**：
+
+```
+.config/opencode/agents/zc-zeroconf-probe.md    88 B   19:17:34   （新建了 agents/ 目录）
+  ---
+  description: zeroconf probe
+  mode: subagent
+  ---
+
+  throwaway probe: reply with "probe".
+```
+
+**逐字节未变（hash 与 mtime 都是原来的）**：
+
+| 文件 | 为什么盯着它 | 结果 |
+|---|---|---|
+| `~/.config/opencode/opencode.jsonc` | **符号链接**到 `/mnt/hgfs/OpenCodeConfig/...`（三端共享配置） | `517f8ef4…` / 08-07 17:20 未变 ✅ |
+| `~/.config/openchamber/opencode.managed.json` | 被管引擎的配置，里面是 openchamber 的 `plugins` 数组 | `28ba2a8d…` / 10-18 23:33 未变 ✅ |
+| `.reeve-staging/.config/opencode/opencode.json` | REEVE 的插件 + 8 agent + limits | `47dae0dd…` / 18:49 未变 ✅ |
+| 8 个 `agent/*.md` + 7 份 rubric + SKILL.md | REEVE 的编排内容 | 全部未变 ✅ |
+| `~/.config/opencode/` 其余 17 个文件 | 生产 v1 的配置目录整体 | 文件集与 hash **逐字一致** ✅ |
+
+**结论**：
+
+1. **没有任何静默覆盖**：面板保存**只**新建一个 user 作用域的 agent markdown，
+   **不重写任何 JSON、不动 `plugins` 数组、不碰那份三端共享的 symlink 配置**。
+   它写的是"新增一个 agent 文件"——这正是 openchamber#3881 里的**那条机制**
+   （config 目录里的 agent 文件对预设是**覆盖**关系），所以**REEVE 的插件绝不写这里**（机制层已验）。
+2. **失败模式是吵的**：缺项目上下文时 400 + 界面提示，什么都没写。
+3. 保存前 `agents/` 目录**不存在**（新目录由面板创建）；删除后该目录已清空并移除。
+
+#### 清理与留下的痕迹（如实列）
+
+| 项 | 处置 |
+|---|---|
+| 探针 agent 文件 | ✅ **已删**（走面板自己的 `DELETE /api/config/agents/:name`，返回 `{"success":true}`；复查 `md.exists=false`；空的 `agents/` 目录已 rmdir） |
+| `~/.config/opencode/` | ✅ **回到原状**（文件集与 hash 与保存前一致） |
+| **注册的那个项目** | ⚠️ **仍在**：openchamber `settings.json` 的 `projects` + 被管引擎 `project` 表里多了一行 `worktree=/home/demo/.reeve-staging/work`（引擎共 9 行）。**该实例当前的活动项目也是它**。删不掉的原因：面板没有"移除项目"入口；我试过 `PUT /api/config/settings` 去掉 `projects`/`activeProjectId`/`lastDirectory`，**服务端立刻按引擎的项目表同步回来了**；剩下唯一的办法是写被管引擎的 SQLite —— 那是**在跑着的引擎**上做 DB 手术，我没做 |
+| `settings.json` 的 6 个键 | ⚠️ 我那次 PUT 把服务端归一化出的默认键写实了（`collapsibleThinkingBlocks`/`inputHistoryLimit`/`inputHistoryScope`/`pinnedDirectories`/`pwaOrientation`/`showReasoningTraces`）——都是默认值，**没有用户数据被覆盖** |
+| openchamber 自己的文件 | 本来就会变（`logs/`、`preferences.json`、`skills-github-meta.json`） |
+
+**给使用者的清理办法**：设置 → Projects 里若有移除入口就用它；
+否则在 openchamber 里把活动项目切回你常用的那个（本项目条目在引擎的项目表里，
+下次引擎重建库或你删除 staging 目录后它会变成一个悬空条目，**无副作用**）。
 
 ---
 

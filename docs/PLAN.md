@@ -677,8 +677,11 @@ reeve/
 
 **步 5 — 控制台**：面板能看到子任务状态与台账 ✅（真装进 EL7 的 openchamber 2.3.3，
 真渲染，台账经宿主的文件桥读到；见 [PROGRESS.md](PROGRESS.md) §5）；
-保存配置后插件正确读到 ⚠️ **未验**（面板是只读的，不做保存）；
-**无任何双写冲突** ✅ 机制层已验（插件无 `agents`/`model` 写路径 + 配置 mtime/hash 不变）。
+保存配置后插件正确读到 ✅ **面板层已在真界面上验过**：Agents 页保存一次，
+**只新增一个 user 作用域 agent markdown**，`opencode.jsonc`（三端共享 symlink）/
+`opencode.managed.json`（plugins 数组）/ staging `opencode.json` **逐字节未变**；
+缺项目上下文时是 400 + 界面报错（**不是静默**）。详见 [PROGRESS.md](PROGRESS.md) §5.5；
+**无任何双写冲突** ✅ 机制层 + 面板层都已验。
 
 ---
 
