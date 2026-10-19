@@ -607,12 +607,21 @@ reeve/
       opencode-v2-plugin-api.md         v2 插件 API 实测施工图 ★写代码前必读
   agents/*.md                     8 个 agent 定义（正文即 system prompt，见 §3.5）
   skills/review/                  SKILL.md（契约与用法）+ 7 份 OCR rubric
-  plugin/                         @bd7pil/reeve
+  plugin/                         @bd7pil/reeve（记账层）
   proxy/{config.json,README.md}   链的唯一维护处
-  extensions/reeve/               控制台（可选）
-  scripts/served-model.sh
+  extensions/reeve/               控制台面板（只读；build.mjs / check.mjs / cdp-panel*.mjs）
+  scripts/
+    el7-deploy-staging.sh         受控端 staging 部署（env→config→Bifrost→VK），幂等
+    el7-restart-bifrost.sh        改完 config 重启 Bifrost 并等就绪
+    el7-verify-fallback.sh        回退验证（坏链头 key → 第 2 跳接手）
+    el7-verify-multimodal-fallback.sh   视觉档验证 + 回退验证（合体版）
+    served-model.{sh,mjs}         归因查询（node:sqlite 优先，退路 /api/logs）
   licenses/{oh-my-opencode-slim,open-code-review}.LICENSE
 ```
+
+> **台账的落点**（与上面的"命名派生"表有出入，以这里为准）：权威是**引擎的 `ctx.storage`**
+> （`opencode.db` 的 `kv` 表，键 `plugin:<hex(id)>:<你的键>`）。给面板看的那份 JSON 是**投影**，
+> 位置由插件 `options.snapshotPath` 决定（实测用 `~/.local/share/opencode/reeve/ledger.json`）。
 
 ---
 

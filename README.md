@@ -45,16 +45,33 @@ omo 在 v2 上拿到的全部支持是"加载 + 每次启动弹一个指向 OmO 
 | 查一手证据 | [docs/research/orchestration-stack-verdict.md](docs/research/orchestration-stack-verdict.md)（归档，**若干条已被取代**） |
 | 引入外来内容前 | [NOTICE.md](NOTICE.md)（许可边界） |
 
-## 状态（2026-10-19）
+## 状态（2026-10-19 晚）
 
-- 设计已定案，**尚未写任何代码**
-- **步 0 完成**：计划已落成文档（PLAN 重写 / v2 插件 API 施工图新建 / HANDOFF 勘误 6 处）
-- **两处关键未知已实测解决**：
-  1. opencode v2 忽略响应体的模型名 → 代理可用虚拟别名（verdict §2.6 / §8.3）
-  2. **v2 插件 API 的真实形态**（钩子真名、工具注册、namespace 陷阱、`session.idle` 仍存在）
-     ——见 [施工图](docs/research/opencode-v2-plugin-api.md)
-- **Phase 0（修 v1+omo 配置）已整体删除**——那是正在被 reeve 替换的系统的配置，修它是白做
-- **步 1（编排层）可开工**，但前置是 §2 的配置目录隔离（归 ocrc）
+**步 0–5 全部产出完成，并已在 EL7 上跑完整轮实机验收**（隔离 `HOME` 的 staging；生产 v1 引擎全程未动）。
+
+| 步 | 产出 | 实机验收 |
+|---|---|---|
+| 0 | 计划 / 施工图 / HANDOFF 勘误 | — |
+| 1 | `agents/*.md` 8 个 agent | ✅ 8 个加载、权限闸门、验收独立性、多轮评审 |
+| 2 | `plugin/` 记账层（78 项测试） | ✅ 并发排队 / 墙钟中断 / 跨重启对账 / 台账落账与读回 |
+| 3 | `skills/review/` 审查层 | ✅ 真 diff 抓到、带行号、结构化输出 |
+| 4 | `proxy/` Bifrost 链 + 部署脚本 | ✅ 档位分流 / 回退 / 视觉档 / 归因（**12 处配置级问题按实测修正**） |
+| 5 | `extensions/reeve/` 只读控制台 | ✅ 真装进 openchamber 2.3.3、真渲染、台账经宿主文件桥读到 |
+
+**两处关键未知已实测解决**：opencode v2 忽略响应体的模型名（→ 代理可用虚拟别名）；
+v2 插件 API 的真实形态（钩子真名、**`codemode:false` 才是工具可见性开关**、
+存储键是 `plugin:<hex(id)>:` …）——见 [施工图](docs/research/opencode-v2-plugin-api.md)。
+
+**仍开放的两项**（都如实标着，不冒充通过）：
+1. **面板层「零冲突」**：在 openchamber 里保存一次 agent 配置、看引擎配置有没有被静默压掉。
+   机制层已验（插件无 `agents`/`model` 写路径；配置 mtime/hash 在 6+ 轮会话后不变）。
+2. **审查 subagent 的误报率**：按默认"severity 都不卡流程"跑两周再统计。
+
+**下一步的活**：把 PLAN §2 的配置目录隔离（杠杆 = **`HOME`**，两端已实测）落进
+ocrc 的实例启动行 —— 那是**另一个仓库**的改动；本仓库只提供现货（脚本 + 配置 + 资产）。
+
+> 上机踩到的坑（**各自都是静默失败**：配置合法、能加载、只是必然出错）与逐条证据：
+> [docs/PROGRESS.md](docs/PROGRESS.md) §4.4（12 条）+ §5.3。
 
 ## 命名派生
 
