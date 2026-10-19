@@ -28,35 +28,39 @@ STAGE=/home/demo/.reeve-staging
 BIF=$STAGE/bifrost
 NODE=${NODE:-$HOME/.ocrc/remote/runtime/node-v24.22.0/bin/node}
 
-echo "=== 1. env（600）：从 EL7 的 auth.json 取 key ==="
+echo "=== 1. env（600）：从 EL7 的 auth.json 取 key（通用约定，不再手写映射表）==="
 python3 - <<'PY'
-import json, os, secrets
+import json, os, re, secrets
 
 auth = json.load(open('/home/demo/.local/share/opencode/auth.json'))
-need = {
-    'REEVE_ZHIPUAI_KEY':  'zhipuai-coding-plan',
-    'REEVE_XXYAPI_KEY':   'xxyapi-deepseek',
-    'REEVE_LMUAI_KEY':    'lmuai',
-    'REEVE_DEEPSEEK_KEY': 'deepseek',
-    'REEVE_XIAOMI_KEY':   'xiaomi',
-    'REEVE_ALIBABA_KEY':  'alibaba-cn',
-    'REEVE_OPENCODE_KEY': 'opencode',          # EL7 通常没有；缺就跳过
-}
+chain = json.load(open('/home/demo/.reeve-staging/incoming/bifrost.config.json', encoding='utf-8'))
+
+def env_name(provider_id):
+    # 与插件 plugin/src/proxy.js 的 providerEnvName 同一条约定：REEVE_KEY_<大写、非字母数字→下划线>
+    return 'REEVE_KEY_' + re.sub(r'^_+|_+$', '', re.sub(r'[^A-Z0-9]+', '_', provider_id.upper()))
+
 lines, missing = [], []
-for var, prov in sorted(need.items()):
-    key = (auth.get(prov) or {}).get('key')
-    if not key:
-        missing.append(prov); continue
-    if [c for c in key if c in "'\"\\\n$` "]:
-        raise SystemExit('unsafe char in key for %s' % prov)
-    lines.append("export %s='%s'" % (var, key))
+for provider_id, prov in sorted((chain.get('providers') or {}).items()):
+    for k in (prov.get('keys') or []):
+        value = k.get('value') or ''
+        if not value.startswith('env.'):
+            continue
+        auth_id = k.get('fromAuth') or provider_id   # 链里改过名的（deepseek → deepseek-api）走 fromAuth
+        key = (auth.get(auth_id) or {}).get('key')
+        if not key:
+            missing.append(provider_id); continue
+        if [c for c in key if c in "'\"\\\n$` "]:
+            raise SystemExit('unsafe char in key for %s' % provider_id)
+        var = value[len('env.'):]
+        assert var == env_name(provider_id), 'env 名不符约定：%s vs %s' % (var, env_name(provider_id))
+        lines.append("export %s='%s'" % (var, key))
 lines.append("export BIFROST_SETUP_TOKEN='%s'" % secrets.token_hex(24))
 
 path = '/home/demo/.reeve-staging/bifrost/env'
 fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
 os.write(fd, ("\n".join(lines) + "\n").encode()); os.close(fd)
-print("  写入 %d 个变量（含随机 setup_token）；mode=%o" % (len(lines), os.stat(path).st_mode & 0o777))
-if missing: print("  auth.json 里没有的 provider（未注入）:", missing)
+print("  写入 %d 个 provider key 变量（+setup_token）；mode=%o" % (len(lines) - 1, os.stat(path).st_mode & 0o777))
+if missing: print("  auth.json 里没有的 provider（未注入）:", sorted(set(missing)))
 PY
 
 echo "=== 2. 派生运行时配置（源自 incoming/ 里的两份源真相）==="
@@ -103,34 +107,59 @@ c = json.loads('\n'.join(out))
 c['providers']['reeve']['settings']['baseURL'] = 'http://127.0.0.1:18080/v1'
 c['plugins'][0]['package'] = STAGE + '/plugin'
 c['plugins'][0]['options']['snapshotPath'] = STAGE + '/.local/share/opencode/reeve/ledger.json'
+# 代理层自持（纯插件形态）在 staging 的落点：自己的目录 + 18080 + 真 home 的 auth.json
+# （staging HOME 里没有 auth.json —— key 一直在真 home 那份里）
+proxy = c['plugins'][0]['options'].setdefault('proxy', {})
+proxy.update({
+    'enabled': True,
+    'dir': STAGE + '/proxy',
+    'port': 18080,
+    'authPath': '/home/demo/.local/share/opencode/auth.json',
+})
 
 os.makedirs(os.path.dirname(dst), exist_ok=True)
 json.dump(c, open(dst, 'w', encoding='utf-8'), ensure_ascii=False, indent=2)
 print("  写 %s：default_agent=%s | agents=%s | providers=%s | plugins=%d" % (
     dst, c.get('default_agent'), sorted((c.get('agents') or {}).keys()),
     sorted(c['providers'].keys()), len(c.get('plugins') or [])))
+print("  proxy 自持:", json.dumps(c['plugins'][0]['options'].get('proxy'), ensure_ascii=False))
 PY
 
-echo "=== 3. 起 Bifrost :18080 ==="
-bash "$STAGE/restart.sh"
+# 两种模式**不能同时存在**（实测撞过一次：部署起的代理要 VK、引擎却拿占位 key → 401 "virtual key is required"）。
+# 引擎配置里 proxy.enabled=true 表示"代理归插件"，此时部署脚本**不碰代理**。
+PROXY_MODE=$(python3 -c "
+import json
+c=json.load(open('$STAGE/.config/opencode/opencode.json', encoding='utf-8'))
+print('plugin' if (c['plugins'][0].get('options',{}).get('proxy',{}) or {}).get('enabled') else 'launcher')
+")
+echo "  代理归属模式：$PROXY_MODE"
 
-echo "=== 3.5 收敛：把文件（期望态）同步到运行中的 Bifrost ==="
-# 为什么必须有这一步：运行时真相在 Bifrost 的 DB 里（热改会持久化），
-# config.json 只在启动时做 upsert —— 「改文件 + 重启」能加能改、**删不掉** DB 里多出来的行。
-# 详见 scripts/bifrost-sync-config.sh 的头注释（四条都有实验证据）。
-if [ -f "$STAGE/bifrost-sync.sh" ]; then
-  bash "$STAGE/bifrost-sync.sh" --app-dir "$BIF" --port 18080 --apply --prune || true
+if [ "$PROXY_MODE" = plugin ]; then
+  # 纯插件形态：代理归插件（它自己取件/拉起/守护/收敛），引擎侧用占位 key。
+  # 本脚本**什么都不碰** —— 两种形态同时在同一个端口上会撞（实测 401 "virtual key is required"）。
+  echo "=== 3./3.5/4. 跳过（代理归插件自持）==="
+  echo "  插件会在引擎启动时自己把代理拉起来；要改链就改 incoming/opencode.sample.jsonc 或插件的 default-chain.json"
 else
-  echo "  （没有 bifrost-sync.sh，跳过 —— 漂移不会被收敛）"
-fi
+  echo "=== 3. 起 Bifrost :18080 ==="
+  bash "$STAGE/restart.sh"
 
-echo "=== 4. virtual key（引擎 → 代理 的凭据）==="
-cd "$BIF"; set -a; . ./env; set +a
-AUTH_H="-H X-Bifrost-Setup-Token:$BIFROST_SETUP_TOKEN"
-API=http://127.0.0.1:18080/api/governance/virtual-keys
+  echo "=== 3.5 收敛：把文件（期望态）同步到运行中的 Bifrost ==="
+  # 为什么必须有这一步：运行时真相在 Bifrost 的 DB 里（热改会持久化），
+  # config.json 只在启动时做 upsert —— 「改文件 + 重启」能加能改、**删不掉** DB 里多出来的行。
+  # 详见 scripts/bifrost-sync-config.sh 的头注释（四条都有实验证据）。
+  if [ -f "$STAGE/bifrost-sync.sh" ]; then
+    bash "$STAGE/bifrost-sync.sh" --app-dir "$BIF" --port 18080 --apply --prune || true
+  else
+    echo "  （没有 bifrost-sync.sh，跳过 —— 漂移不会被收敛）"
+  fi
 
-# VK 的明文只在创建/轮换时返回一次；这里做成确定性：删掉旧的 reeve-engine，重建一个，写进 env。
-for id in $(curl -s $AUTH_H $API | python3 -c "
+  echo "=== 4. virtual key（引擎 → 代理 的凭据）==="
+  cd "$BIF"; set -a; . ./env; set +a
+  AUTH_H="-H X-Bifrost-Setup-Token:$BIFROST_SETUP_TOKEN"
+  API=http://127.0.0.1:18080/api/governance/virtual-keys
+
+  # VK 的明文只在创建/轮换时返回一次；这里做成确定性：删掉旧的 reeve-engine，重建一个，写进 env。
+  for id in $(curl -s $AUTH_H $API | python3 -c "
 import json,sys
 d=json.load(sys.stdin)
 print('\n'.join(v['id'] for v in (d.get('virtual_keys') or []) if v.get('name')=='reeve-engine'))
@@ -178,10 +207,12 @@ curl -s -o /dev/null -w "  allow_all_providers=true -> HTTP %{http_code}\n" -X P
   "http://127.0.0.1:18080/api/governance/virtual-keys/$VK_ID"
 
 echo "  —— 活着就报一下（不打印任何 key）——"
-"$NODE" -e '
+  "$NODE" -e '
 const {DatabaseSync} = require("node:sqlite");
 const db = new DatabaseSync("/home/demo/.reeve-staging/bifrost/config.db", {readOnly: true});
 const r = db.prepare("select log_retention_days, enforce_auth_on_inference from config_client").all();
 console.log("  config.db/client:", JSON.stringify(r[0]));
 '
+fi
+
 echo "=== 完成 ==="

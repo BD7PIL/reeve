@@ -1,0 +1,140 @@
+// 代理层自持（纯插件形态）的单元验证：只测**纯函数**与派生规则；
+// 起进程/取件那部分是薄 IO（在 EL7 上真跑验过，见 docs/PROGRESS.md §6.7）。
+//   node plugin/test/proxy.mjs
+
+import assert from 'node:assert/strict'
+import { readFile } from 'node:fs/promises'
+import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+import {
+  BIFROST_PIN, PROXY_DEFAULTS, proxyPaths, providerEnvName, deriveProviderEnv,
+  buildProxyConfig, needsDownload, buildSpawnArgs, isReady, ownerOfPort,
+} from '../src/proxy.js'
+
+let passed = 0
+const ok = (label) => {
+  passed += 1
+  console.log(`  ✓ ${label}`)
+}
+
+// ---- 1. pin 与路径 ----
+{
+  assert.match(BIFROST_PIN.sha256, /^[0-9a-f]{64}$/, 'sha256 必须是 64 位 hex')
+  assert.ok(!BIFROST_PIN.url.includes('/latest'), 'URL 必须版本化（/latest 会漂）')
+  const p = proxyPaths({ home: '/home/x' })
+  // 路径用 path.join 拼，比较也用 join —— 测试要能在 Windows 与 Linux 上跑
+  assert.equal(p.root, join('/home/x', '.reeve/proxy'))
+  assert.equal(p.binary, join('/home/x', '.reeve/proxy', 'bifrost-http'))
+  assert.equal(p.config, join('/home/x', '.reeve/proxy', 'config.json'))
+  assert.equal(proxyPaths({ dir: '/opt/b' }).root, '/opt/b', 'dir 显式覆盖')
+  ok('pin 与路径（默认 ~/.reeve/proxy，可 dir 覆盖）')
+}
+
+// ---- 2. env 名约定：与部署脚本同一条 ----
+{
+  assert.equal(providerEnvName('zhipuai-coding-plan'), 'REEVE_KEY_ZHIPUAI_CODING_PLAN')
+  assert.equal(providerEnvName('deepseek-api'), 'REEVE_KEY_DEEPSEEK_API')
+  assert.equal(providerEnvName('alibaba-cn'), 'REEVE_KEY_ALIBABA_CN')
+  assert.equal(providerEnvName('--weird--'), 'REEVE_KEY_WEIRD', '去掉首尾下划线、折叠分隔符')
+  ok('providerEnvName：REEVE_KEY_<大写、非字母数字→下划线>')
+}
+
+// ---- 3. 从 auth.json 派生 provider 环境（只注链里用到的；缺的如实报） ----
+{
+  const auth = { 'zhipuai-coding-plan': { key: 'k1' }, xiaomi: { key: 'k2' }, other: { key: 'k3' } }
+  const chain = [{ id: 'zhipuai-coding-plan' }, { id: 'xiaomi' }, { id: 'lmuai' }]
+  const { env, missing } = deriveProviderEnv(auth, chain)
+  assert.deepEqual(Object.keys(env).sort(), ['REEVE_KEY_XIAOMI', 'REEVE_KEY_ZHIPUAI_CODING_PLAN'])
+  assert.equal(env.REEVE_KEY_ZHIPUAI_CODING_PLAN, 'k1')
+  assert.deepEqual(missing, ['lmuai'], '缺 key 的 provider 要报出来，不静默')
+  assert.ok(!('REEVE_KEY_OTHER' in env), '链里没声明的 provider 不注入')
+  // 链里改过名的（Bifrost 内置名冲突 → deepseek-api），用 fromAuth 指回 auth.json 的那个 id
+  const renamed = deriveProviderEnv({ deepseek: { key: 'kd' } }, [{ id: 'deepseek-api', keys: [{ value: 'env.REEVE_KEY_DEEPSEEK_API', fromAuth: 'deepseek' }] }])
+  assert.equal(renamed.env.REEVE_KEY_DEEPSEEK_API, 'kd', 'fromAuth 指向 auth.json 里的 id')
+  assert.deepEqual(renamed.missing, [], 'fromAuth 命中就不算缺')
+  ok('deriveProviderEnv：只注链里用到的、缺的如实报')
+}
+
+// ---- 4. 派生 Bifrost 配置：去掉注释键 + 关掉回环鉴权 ----
+{
+  const chain = { '//note': 'x', providers: {}, client: { log_retention_days: 30 }, governance: { routing_rules: [] } }
+  const out = buildProxyConfig(chain, { noAuth: true })
+  assert.ok(!('//note' in out), '注释键不带进去')
+  assert.equal(out.client.log_retention_days, 30, '原有的 client 配置保留')
+  assert.equal(out.client.enforce_auth_on_inference, false, '自持形态关掉回环鉴权')
+  const keep = buildProxyConfig(chain, { noAuth: false })
+  assert.ok(!('enforce_auth_on_inference' in keep.client), 'requireVirtualKey 时不改这一项')
+  ok('buildProxyConfig：去注释 + 按形态决定回环鉴权')
+}
+
+// ---- 5. 取件判定 / spawn 参数 / 就绪判定 ----
+{
+  assert.equal(needsDownload(null), true, '没有文件就要下')
+  assert.equal(needsDownload({ isFile: () => true, size: BIFROST_PIN.size }), false, '大小对就不用下（校验和另测）')
+  assert.equal(needsDownload({ isFile: () => true, size: 1 }), true, '大小不对要重下')
+
+  const paths = proxyPaths({ dir: '/opt/b' })
+  const [bin, args] = buildSpawnArgs({ paths, port: 18080 })
+  assert.equal(bin, join('/opt/b', 'bifrost-http'))
+  assert.deepEqual(args, ['-port', '18080', '-host', '127.0.0.1', '-app-dir', '/opt/b'])
+
+  assert.equal(isReady(200, '"v2.3.0"'), true)
+  assert.equal(isReady(200, ''), false, '空响应体不算就绪')
+  assert.equal(isReady(500, 'x'), false)
+  ok('检查取件判定 / spawn 参数 / 就绪判定')
+}
+
+// ---- 6. 自带的默认链：与仓库 proxy/config.json **同源**（防漂移） ----
+{
+  const bundled = JSON.parse(await readFile(new URL('../default-chain.json', import.meta.url), 'utf8'))
+  const repoChainPath = new URL('../../proxy/config.json', import.meta.url)
+  const repo = JSON.parse(await readFile(repoChainPath, 'utf8'))
+  assert.deepEqual(bundled, repo, 'plugin/default-chain.json 必须是 proxy/config.json 的逐字拷贝（cp 一下）')
+  const ids = Object.keys(bundled.providers ?? {})
+  assert.ok(ids.length >= 6, `链里至少 6 个 provider，实际 ${ids.length}`)
+  for (const [id, prov] of Object.entries(bundled.providers)) {
+    for (const k of prov.keys ?? []) {
+      assert.equal(k.value, 'env.' + providerEnvName(id), `${id} 的 key 值必须走通用约定`)
+    }
+  }
+  const rules = bundled.governance?.routing_rules ?? []
+  assert.deepEqual(rules.map((r) => r.name).sort(), ['reeve/flash', 'reeve/multimodal', 'reeve/pro'], '三个档位')
+  ok('默认链与 proxy/config.json 同源，且 key 走通用约定')
+}
+
+// ---- 7. 端口归属：只复用"自己的"代理（两种形态共用同一端口时会撞） ----
+{
+  const mk = (entries) => ({
+    readdirImpl: async () => Object.keys(entries),
+    readFileImpl: async (path) => {
+      const id = path.split('/')[2]
+      if (!(id in entries)) throw new Error('gone')
+      return entries[id]
+    },
+  })
+  const NUL = String.fromCharCode(0)
+  assert.equal(
+    await ownerOfPort({ dir: '/opt/reeve/proxy', ...mk({ 11: ['/opt/reeve/proxy/bifrost-http', '-port', '18080', ''].join(NUL) }) }),
+    'ours',
+    'cmdline 带我们的 app-dir = ours',
+  )
+  assert.equal(
+    await ownerOfPort({ dir: '/opt/reeve/proxy', ...mk({ 22: ['/home/x/.reeve-staging/bifrost/bifrost-http', '-port', '18080', ''].join(NUL) }) }),
+    'foreign',
+    '别的目录起的代理 = foreign（不复用，吵）',
+  )
+  assert.equal(
+    await ownerOfPort({ dir: '/opt/reeve/proxy', ...mk({ 33: ['node', 'serve', ''].join(NUL) }) }),
+    'unknown',
+    '没有 bifrost 进程 = unknown（退回健康即复用）',
+  )
+  assert.equal(
+    await ownerOfPort({ dir: '/opt/reeve/proxy', readdirImpl: async () => { throw new Error('no /proc') }, readFileImpl: async () => '' }),
+    'unknown',
+    '非 Linux（读不到 /proc）= unknown',
+  )
+  ok('ownerOfPort：ours / foreign / unknown 三态')
+}
+
+console.log(`\n代理层测试：${passed} 项全过`)

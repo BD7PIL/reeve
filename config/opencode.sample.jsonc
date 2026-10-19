@@ -35,7 +35,11 @@
       "settings": {
         // Bifrost 的默认端口是 8080；staging 用 18080 是为了不碰生产
         "baseURL": "http://127.0.0.1:8080/v1",
-        "apiKey": "{env:REEVE_VK}"
+        // **纯插件形态**：占位值即可 —— 插件自持的代理会把回环鉴权关掉
+        // （`enforce_auth_on_inference=false`），回环地址上的单用户机器这样最省事。
+        // 要收紧就换回 virtual key：写 `{env:REEVE_VK}`，并由**启动器**把 VK 注进引擎环境
+        // （插件改不了引擎的环境变量），同时给 options.proxy 加 `"requireVirtualKey": true`。
+        "apiKey": "reeve-local"
       },
       "models": {
         "flash": {
@@ -78,7 +82,23 @@
         "retentionDays": 30,
         // 给只读面板看的台账快照（投影，不是第二份真相）。
         // 面板侧要在扩展的 contributes.filesystem 里声明同一路径
-        "snapshotPath": "/opt/reeve/state/ledger.json"
+        "snapshotPath": "/opt/reeve/state/ledger.json",
+
+        // ---- 代理层自持（纯插件形态；可选但推荐）----
+        // 打开后**不需要任何外部脚本**：插件自己取件（pin 的 URL + sha256）→
+        // 派生链（chainPath，默认 ~/.config/opencode/reeve.jsonc；缺省用插件自带的那份）→
+        // 拉起/复用 Bifrost → 等就绪 → 收敛规则 → 每 20 秒探活并按需重拉。
+        // provider 的 key 来自 opencode 自己的 auth.json（单一真相），只进代理的进程环境。
+        "proxy": {
+          "enabled": true,
+          // 代理的 app-dir（二进制、config.json、logs.db、setup-token 都在这里；
+          // 默认 ~/.reeve/proxy）
+          "dir": "/opt/reeve/proxy",
+          // 必须与上面 providers.reeve.settings.baseURL 的端口一致
+          "port": 8080,
+          // 引擎的 auth.json 位置；不写则用 <HOME>/.local/share/opencode/auth.json
+          "authPath": "/home/you/.local/share/opencode/auth.json"
+        }
       }
     }
   ]

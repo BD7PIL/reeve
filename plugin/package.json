@@ -8,11 +8,12 @@
     ".": "./src/index.js"
   },
   "scripts": {
-    "test": "node test/unit.mjs && node test/reconcile.mjs && node test/snapshot.mjs"
+    "test": "node test/unit.mjs && node test/reconcile.mjs && node test/snapshot.mjs && node test/proxy.mjs"
   },
   "files": [
     "index.js",
     "src",
+    "default-chain.json",
     "README.md"
   ],
   "license": "SEE LICENSE IN ../LICENSE",

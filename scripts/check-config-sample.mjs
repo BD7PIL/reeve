@@ -52,6 +52,10 @@ if (models.flash?.capabilities?.input?.includes('image') === true ||
   problems.push('flash/pro 不该声明能吃图 —— 带图调用应该在引擎侧就被挡回 multimodal')
 }
 if (!Array.isArray(config.plugins) || config.plugins.length === 0) problems.push('必须挂上记账插件')
+const proxy = config.plugins?.[0]?.options?.proxy
+if (proxy?.enabled !== true) problems.push('纯插件形态要求 plugins[0].options.proxy.enabled = true')
+if (config.providers?.reeve?.settings?.apiKey !== 'reeve-local') problems.push('纯插件形态的 apiKey 写占位值 reeve-local（VK 形态才用 {env:REEVE_VK}）')
+if (Number(proxy?.port) !== Number(new URL(config.providers?.reeve?.settings?.baseURL ?? 'http://x').port)) problems.push('proxy.port 必须与 baseURL 的端口一致')
 
 if (problems.length > 0) {
   for (const p of problems) console.error(`❌ ${p}`)

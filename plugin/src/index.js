@@ -30,6 +30,7 @@ import { Supervisor } from './supervisor.js'
 import { reconcileParent } from './reconcile.js'
 import { SnapshotWriter, buildSnapshot, projectAgentTable } from './snapshot.js'
 import { SUBAGENT_ROSTER, withRoster } from './roster.js'
+import { startOwnedProxy } from './proxy.js'
 
 const SUBAGENT_TOOL = 'subagent'
 
@@ -63,6 +64,8 @@ export default {
     // 名册注入的证据：注入成功过一次就记下来（进快照）——"藏起来不削弱委派"这条设计
     // 靠它可核对，而不是靠"模型应该看得见"。
     let roster = null
+    /** 代理层自持的状态（进快照：面板可显示、上机可核对）。必须在快照块之前声明。 */
+    let proxyState = null
     let snapshotFlush = () => {}
 
     const readAgentTable = async () => {
@@ -101,12 +104,23 @@ export default {
     let snapshot = null
     if (snapshotPath) {
       snapshot = new SnapshotWriter({ path: snapshotPath, logger })
-      const build = () => buildSnapshot(ledger.all(), { version: PLUGIN_VERSION, agents: agentTable, roster })
+      const build = () => buildSnapshot(ledger.all(), { version: PLUGIN_VERSION, agents: agentTable, roster, proxy: proxyState })
       snapshotFlush = () => snapshot.schedule(build)
       ledger.onChange = () => snapshot.schedule(build)
       snapshot.schedule(build)
       void snapshot.flush().catch(() => {})
       logger.debug(`[reeve] 台账快照开启：${snapshotPath}`)
+    }
+
+    // ---- 代理层自持（opt-in：options.proxy.enabled）----
+    // 纯插件形态：取件 → 派生链 → 拉起/复用 → 等就绪 → 收敛 → 守护。
+    // 不需要任何外部脚本；失败只记日志（代理起不来时引擎照常跑，模型会吵地报错）。
+    let proxyHandle = null
+    if (options.proxy?.enabled === true) {
+      proxyHandle = await startOwnedProxy({ opts: options.proxy, logger })
+      logger.debug(`[reeve] 代理层自持：${proxyHandle.ready ? '就绪' : '未就绪'} —— ${proxyHandle.detail ?? '?'}`)
+      proxyState = { ready: proxyHandle.ready, detail: proxyHandle.detail, port: proxyHandle.port, host: proxyHandle.host }
+      snapshotFlush()
     }
 
     const admission = acquireAdmissionRuntime(ctx.location?.directory, { limits })
@@ -346,6 +360,7 @@ export default {
         snapshot.cancel()
         void snapshot.flush().catch(() => {})
       }
+      if (proxyHandle) void proxyHandle.dispose().catch(() => {})
       logger.debug('[reeve] 已卸载')
     }
   },

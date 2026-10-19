@@ -90,7 +90,7 @@ export class SnapshotWriter {
  * 未必是你以为的那个引擎（实测踩过 —— 它连到另一个 HOME 的服务，报出别人的表）。
  * 这一份是**引擎进程内部**读的，落盘可核对，也是"前台只出现编排者"这条设计的证据。
  */
-export function buildSnapshot(records, { now = Date.now(), version = null, agents = null, roster = null } = {}) {
+export function buildSnapshot(records, { now = Date.now(), version = null, agents = null, roster = null, proxy = null } = {}) {
   const tasks = records
     .map((r) => ({
       taskID: r.taskID,
@@ -120,6 +120,7 @@ export function buildSnapshot(records, { now = Date.now(), version = null, agent
     version,
     agentTable: agents,
     roster,
+    proxy,
     counts,
     tasks,
   }

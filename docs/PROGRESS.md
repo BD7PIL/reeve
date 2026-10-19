@@ -827,7 +827,52 @@ managed service（端口来自 `service.json`，默认 `0xC0DE`=49374），实�
   钩子更适合做"不需要审计轨迹的单点增强"（例如按 agent 给某次调用加头/改指向）。
 - **进程归属与这件事正交**：谁来拉起 Bifrost（插件 / ocrc）不依赖这组钩子。
 
-### 6.6 面板（步 5 的增补）
+### 6.6 纯插件形态：代理归插件自持（不需要任何脚本、不需要 ocrc）✅
+
+**要求**（使用者）："它是纯的 opencode 插件，不需要另外的脚本也能运行；ocrc 只是提供一个配置面板。"
+
+**做法**：插件新增 `src/proxy.js`（opt-in：`options.proxy.enabled`）—— 五件事全在插件里做：
+
+| 步 | 做什么 | 关键点 |
+|---|---|---|
+| ① | 取件 | pin 的 URL + sha256（与 ocrc 的 pin 同一个）；**首次取件放后台**，不挡引擎启动 |
+| ② | 派生 Bifrost 配置 | 链来自 `chainPath`（默认 `~/.config/opencode/reeve.jsonc`），缺省用插件自带的 `default-chain.json`；**关掉回环鉴权**（自持形态用占位 apiKey） |
+| ③ | 拉起 / 复用 | **只在确认是"我们自己的"代理时才复用**（读 `/proc` 比 cmdline 里的 app-dir） |
+| ④ | 等就绪 + 收敛 | 轮询 `/api/version`；把运行时规则收敛到文件（复用 §6.3 的 API 语义） |
+| ⑤ | 守护 | 每 20 s 探活；没就绪就重走 取件/拉起，失联就重拉 |
+
+**provider key 的来源**：opencode 自己的 `auth.json`（单一真相），按通用约定
+`REEVE_KEY_<PROVIDER_ID>` 注入代理的进程环境；链里为避开 Bifrost 内置名改过名的
+（`deepseek` → `deepseek-api`）用 `keys[].fromAuth` 指回去。
+
+**实测**（EL7 staging，引擎 v2.0.27；探针 `scripts/probe-runtime/`）：
+
+| 检查项 | 实测 |
+|---|---|
+| 运行时三前提（spawn / fetch / 环境可读） | ✅ `spawn ok, aliveAfter600ms true, killed true`；`fetch 200 "v2.3.0"`；运行时是 Bun |
+| 插件**自己拉起**并服务调用 | ✅ 部署后无代理在跑 → 一次会话（**不设 REEVE_VK**）返回 `OK`；快照 `proxy: {"ready":true,"detail":"代理已拉起（:18080）"}` |
+| **自取件** | ✅ 二进制挪走后：出现 → `/api/version=200` → sha256 = `e62a6425…`（与 pin 一字不差）→ 随后的调用 `OK` |
+| 复用 | ✅ 第二次启动报 `复用已在跑的代理` |
+| 进程与目录 | ✅ `…/proxy/bifrost-http -port 18080 -app-dir …/proxy`；目录里 `config.json` / `setup-token`(600) / `logs.db` |
+
+**过程中抓到并修掉的两个真问题**（都是"会静默错"的那种）：
+
+1. **两种形态会撞**：部署脚本起的代理（要 VK）与插件自持的代理（关鉴权）共用同一端口时，
+   插件会"复用"那个要 VK 的，然后拿占位 key 打过去 → `401 virtual key is required`（**吵**，但得先踩到）。
+   → 修法两条：`ownerOfPort()` 复用前先确认那是自己的进程（`ours/foreign/unknown` 三态，有单测）；
+   部署脚本按派生出来的引擎配置自动分流（`代理归属模式：plugin` → 真的跳过起代理/建 VK 两步）。
+2. **首启取件不能挡引擎启动**：128 MB 下载若在 setup 里同步等，会超过 openchamber 的健康等待（45 s）。
+   → 取件放后台，`ready=false` 先返回，守护每 20 s 重走一遍（取件幂等）。
+
+**踩坑记录**：`options.proxy.authPath` 必须显式给 —— staging 的 HOME 里没有 `auth.json`，
+key 一直在真 home 那份里；默认值是 `<HOME>/.local/share/opencode/auth.json`。
+
+**这一形态下 ocrc 的角色**：只剩"配置面板"（写 `reeve.jsonc`）+ 可选的安装器/守护；
+§6.4 里落进 ocrc 的那段（未提交）保留为可选路径，不再是必需。
+
+---
+
+### 6.7 面板（步 5 的增补）
 
 - 新增：台账节里一行"前台可见 agent：foreman · 隐藏 N 个 · 名册已注入（7 个 subagent）"（读快照里的 `agentTable`/`roster`）。
 - 定位结论（④）：**openchamber 本体已经满足"看会话/看子会话/看成本"**；REEVE 面板真正独有的只有**台账**

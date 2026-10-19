@@ -53,15 +53,17 @@ omo 在 v2 上拿到的全部支持是"加载 + 每次启动弹一个指向 OmO 
 |---|---|---|
 | 0 | 计划 / 施工图 / HANDOFF 勘误 | — |
 | 1 | `agents/*.md` 8 个 agent（7 个 subagent 标 `hidden`） | ✅ 权限闸门、验收独立性、多轮评审；**前台只可见 `foreman`** |
-| 2 | `plugin/` 记账层（**106** 项测试） | ✅ 并发排队 / 墙钟中断 / 跨重启对账 / 台账落账与读回 / **名册补进 `subagent` 工具描述** |
+| 2 | `plugin/` 记账层（**113** 项测试） | ✅ 并发排队 / 墙钟中断 / 跨重启对账 / 台账落账与读回 / **名册补进 `subagent` 工具描述** / **代理自持（纯插件形态）** |
 | 3 | `skills/review/` 审查层 | ✅ 真 diff 抓到、带行号、结构化输出 |
 | 4 | `proxy/` Bifrost 链 + 部署脚本 + **收敛脚本** | ✅ 档位分流 / 回退 / 视觉档 / 归因（**12 处配置级问题按实测修正**） |
 | 5 | `extensions/reeve/` 只读控制台 | ✅ 真装进 openchamber 2.3.3、真渲染、台账经宿主文件桥读到 |
 | 6 | `config/` 引擎样板 + 前台可见性 + 同步语义 | ✅ 见 [PROGRESS.md](docs/PROGRESS.md) §6（含四组 Bifrost 同步实验） |
+| 6.6 | **纯插件形态**：代理归插件自持 | ✅ 取件/拉起/复用/守护全在插件里；EL7 实测（无脚本、无 VK、无 ocrc） |
 
-**三处关键未知已实测解决**：opencode v2 忽略响应体的模型名（→ 代理可用虚拟别名，但**引擎侧永远看不到真服务模型**）；
+**四处关键未知已实测解决**：opencode v2 忽略响应体的模型名（→ 代理可用虚拟别名，但**引擎侧永远看不到真服务模型**）；
 v2 插件 API 的真实形态（钩子真名、**`codemode:false` 才是工具可见性开关**、存储键是 `plugin:<hex(id)>:` …）；
-**agent 可见性的三个开关**（`mode` / `hidden` / `disabled`）与 openchamber 的两条直达路径（composer 选 primary、`@` 提及列非 primary 且非 hidden）。
+**agent 可见性的三个开关**（`mode` / `hidden` / `disabled`）与 openchamber 的两条直达路径（composer 选 primary、`@` 提及列非 primary 且非 hidden）；
+**v2 的 provider 传输层钩子能替换请求**（`http.request`/`retry`，见 PROGRESS §6.5）。
 
 **仍开放的一项**（如实标着，不冒充通过）：
 **审查 subagent 的误报率** —— 按默认"severity 都不卡流程"跑两周再统计。
