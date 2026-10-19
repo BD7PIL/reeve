@@ -91,12 +91,38 @@ check('打出来的是 classic IIFE（不是 ESM）', () => {
   return `${(src.length / 1024).toFixed(0)} KB`
 })
 
-check('只有只读调用（没有 writeFile / startSession / prompt）', () => {
-  const src = readFileSync(join(here, 'src/panel/main.js'), 'utf8')
-  const banned = ['writeFile(', 'startSession(', 'prompt(', 'compose(', 'attach(']
-  const hits = banned.filter((b) => src.includes(b))
-  if (hits.length) throw new Error(`源码里出现写/控制调用：${hits.join(', ')}`)
-  return '只读'
+check('守门：只允许写链文件（writeFile 必须走 chainPathFor），控制调用继续禁', () => {
+  const srcDir = join(here, 'src/panel')
+  const files = readdirSync(srcDir).filter((f) => f.endsWith('.js'))
+  if (!files.includes('chain-tab.js') || !files.includes('util.js')) {
+    throw new Error(`面板源文件变了（${files.join(',')}）—— 这条守门要跟着改`)
+  }
+  // 粗剥注释：先去掉 `/* … */` 块，再逐行去掉 `//` 之后的部分
+  // （约定：面板源码里不放含 `//` 或 `/*` 的字符串字面量，比如 URL）。
+  // 为什么必须剥：注释里讨论 `writeFile(` 这种形态是正常的，不该把守门自己绊倒。
+  const stripComments = (src) =>
+    src
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .split('\n')
+      .map((l) => (l.includes('//') ? l.slice(0, l.indexOf('//')) : l))
+      .join('\n')
+  const banned = ['startSession(', 'prompt(', 'compose(', 'attach(']
+  let writes = 0
+  for (const f of files) {
+    const src = stripComments(readFileSync(join(srcDir, f), 'utf8'))
+    const hits = banned.filter((b) => src.includes(b))
+    if (hits.length) throw new Error(`${f} 里出现控制调用：${hits.join(', ')}`)
+    for (const m of src.matchAll(/writeFile\(/g)) {
+      const call = src.slice(m.index, m.index + 40)
+      // 唯一的合法形态：host.writeFile(chainPathFor(snapshot), …) —— 路径取自快照（插件正在读的那份）
+      if (!call.startsWith('writeFile(chainPathFor(')) throw new Error(`${f} 里的 writeFile 不是写链文件：${call.split('\n')[0]}`)
+      writes += 1
+    }
+  }
+  if (writes === 0) throw new Error('找不到链文件的写调用 —— 面板不能保存了？')
+  const util = readFileSync(join(srcDir, 'util.js'), 'utf8')
+  if (!util.includes("return '~/.reeve/chain.json'")) throw new Error('chainPathFor 的兜底路径不是 ~/.reeve/chain.json')
+  return `${files.length} 个源文件，写调用 ${writes} 处（都写链文件）`
 })
 
 check('包内没有 node_modules / TS 源码', () => {

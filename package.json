@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "REEVE 编排视图 —— 只读面板：会话树 + 记账层的台账快照",
+  "description": "REEVE 编排视图 —— 链编辑（只写 ~/.reeve/chain.json）+ 性能统计 + 台账",
   "openchamber": {
     "apiVersion": 1,
     "contributes": {
@@ -36,6 +36,6 @@
     "build": "node build.mjs",
     "check": "node --check panel/main.js"
   },
-  "//filesystem": "第二条是 EL7 staging 验证用的（引擎 HOME 与 openchamber 的 HOME 不同）。生产部署只留第一条即可 —— 与部署时给插件的 options.snapshotPath 保持一致。",
-  "//readonly": "本扩展只读：只调 listProjects/listSessions/onSessions/readFile/openSession，绝不 writeFile、绝不 startSession/prompt。控制面在模型侧，不在这里。"
+  "//filesystem": "第二条是 EL7 staging 验证用的（引擎 HOME 与 openchamber 的 HOME 不同）。生产部署只留第一条即可 —— 与部署时给插件的 options.snapshotPath/chainFilePath 保持一致。",
+  "//write": "面板**只写一个文件**：~/.reeve/chain.json（REEVE 自己的链配置；路径取自快照里插件正在读的那份）。绝不写引擎配置（providers.reeve 那两行由插件的端点自举写），绝不 startSession/prompt/compose/attach —— check.mjs 里有一条静态守门盯着这两件事。"
 }
