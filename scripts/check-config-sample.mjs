@@ -38,9 +38,11 @@ try {
 const problems = []
 // 前台只出现编排者 / 三个档位模型 / 默认 agent —— **现在是插件的职责**（插件注册，配置优先）。
 // 这里只守住"插件代替不了的那两行"+ 覆盖路径的形状。
+// 端点现在**可以不写** —— 插件首次启动会自己把 providers.reeve 写进配置（PROGRESS §6.9）。
+// 写了就按下面的规则校验；不写就是"交给插件自举"。
 const settings = config.providers?.reeve?.settings
-if (typeof settings?.baseURL !== 'string' || !settings.baseURL.startsWith('http')) {
-  problems.push('providers.reeve.settings.baseURL 必须有（端点插件注册不了）')
+if (settings !== undefined && (typeof settings?.baseURL !== 'string' || !settings.baseURL.startsWith('http'))) {
+  problems.push('写了 providers.reeve 就必须有 settings.baseURL（不写则由插件自举）')
 }
 // apiKey 可以不写（引擎就不发 Authorization，而插件自持的代理关了回环鉴权）；写的话只允许两种形态
 const apiKey = settings?.apiKey
@@ -59,8 +61,10 @@ if (models !== undefined) {
 }
 if (!Array.isArray(config.plugins) || config.plugins.length === 0) problems.push('必须挂上记账插件')
 const proxy = config.plugins?.[0]?.options?.proxy
-// `proxy: true` 是简写
-if (!(proxy === true || proxy?.enabled === true)) problems.push('纯插件形态要求 plugins[0].options.proxy = true（或 { enabled: true }）')
+// 代理默认开：只有显式关掉才算"启动器形态"
+if (proxy === false || proxy?.enabled === false) {
+  problems.push('若用启动器形态（自己管 Bifrost）就该同时写 "proxy": false 并手写 providers.reeve')
+}
 
 if (proxy?.port !== undefined &&
     Number(proxy.port) !== Number(new URL(config.providers?.reeve?.settings?.baseURL ?? 'http://x').port)) {

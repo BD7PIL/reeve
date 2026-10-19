@@ -1,34 +1,23 @@
-// REEVE —— 引擎侧配置样板：把它放进 <实例 HOME>/.config/opencode/opencode.jsonc
+// REEVE —— 引擎侧配置：**就这一行**。
 //
-// 全部内容就这些。三个档位模型、内置 agent 的可见性、默认 agent、代理的取件/拉起/守护/收敛、
-// 台账与名册 —— **都由插件注册和持有**（见 plugin/src/models.js 与 plugin/src/proxy.js）。
+// 插件首次启动时会自己补齐其余全部内容：
+//   · 把 providers.reeve 那三行端点写进本文件（只加自己那一块；动之前备份到 opencode.json.reeve-bak，
+//     写完自校验，校验不过就还原；你的注释与其它键一个都不动）
+//   · 注册三个档位模型；把内置 build/plan/general/explore 藏起来；默认 agent = foreman
+//   · 注册 8 个 agent 与 review skill（都在插件包里，配置目录不用放文件）
+//   · 起代理（取件 128MB → 拉起/复用 → 守护/收敛），链来自 ~/.config/opencode/reeve.jsonc 或插件自带的
+//   · 台账与快照落在 ~/.reeve/
 //
-// 唯一代替不了的是**端点**那两行：v2 的插件 API 里 Provider.Info 没有 URL 字段、
-// Connection 只是凭据引用、Integration 只是"怎么拿凭据"——所以"往哪发"必须写在配置里。
+// 想关掉其中任何一项，就在 options 里写：
+//   proxy: false            —— 不要插件自持代理（自己用启动器形态管 Bifrost）
+//   ownEndpoint: false      —— 不要插件写 providers.reeve（自己手写那三行）
+//   engineConfigDir/decrease —— 引擎配置目录不是 <HOME>/.config/opencode 时指路
 //
-// ⚠️ 三种写法都实测过（2026-10-19/20，EL7 staging）：
-//   · 不写 apiKey 也能跑（引擎就不发 Authorization，而插件自持的代理把回环鉴权关掉了）；
-//   · 想把回环收紧回 virtual key：写 `"apiKey": "{env:REEVE_VK}"`，并由**启动器**把 VK 注进
-//     引擎环境（插件改不了引擎的环境变量），同时给 proxy 加 `"requireVirtualKey": true`；
-//   · `"proxy": true` 是 `{ "enabled": true }` 的简写；端口不用写 —— 从 baseURL 推。
+// 手写那三行长这样（想自己掌控端点时就写）：
+//   "providers": { "reeve": { "package": "@ai-sdk/openai-compatible",
+//                             "settings": { "baseURL": "http://127.0.0.1:8080/v1" } } }
 
 {
   "$schema": "https://opencode.ai/config.json",
-
-  "providers": {
-    "reeve": { "package": "@ai-sdk/openai-compatible", "settings": { "baseURL": "http://127.0.0.1:8080/v1" } }
-  },
-
-  "model": "reeve/pro",
-
-  "plugins": [
-    {
-      "package": "@bd7pil/reeve",
-      "options": {
-        "limits": { "default": 8 },
-        "retentionDays": 30,
-        "proxy": true
-      }
-    }
-  ]
+  "plugins": ["@bd7pil/reeve"]
 }

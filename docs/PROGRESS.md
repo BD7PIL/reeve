@@ -963,7 +963,42 @@ key 一直在真 home 那份里；默认值是 `<HOME>/.local/share/opencode/aut
 
 **最终形态**（`config/opencode.sample.jsonc`）：端点两行 + 插件一行 + 可选的 `model` 一行。
 
-### 6.8 面板（步 5 的增补）
+### 6.8 端点自举：配置里真的只剩插件一行 ✅（2026-10-20，使用者裁决）
+
+**裁决**（原话）："要让插件首次启动时，自己把 providers.reeve 那两行写进 opencode.jsonc。"
+→ 规则从"插件绝不写引擎配置"改成"**只写自己那一块，且只在不写就没法工作时写**"。
+
+**四条纪律**（`plugin/src/config-write.js` 的头注释里写着）：
+
+1. **只加不改**：`providers.reeve` 已存在（哪怕值是错的）→ 一个字节都不动；
+2. **备份**：动之前写 `<文件>.reeve-bak`（只备份一次，不覆盖更早的）；
+3. **写完自校验**：剥离整行注释后必须能 `JSON.parse` 且 `providers.reeve.settings.baseURL` 在，否则还原备份；
+4. **保留注释与格式**：只做文本插入，不重新序列化（用户的 jsonc 里有注释）。
+
+另：代理**默认开启**（`proxy: false` 才关），端点自举也可关（`ownEndpoint: false`，自己手写那三行）。
+
+**实测（EL7 staging，配置 = `{"plugins":[".../plugin"]}`，没有任何 options）**：
+
+| 检查项 | 实测 |
+|---|---|
+| 会话 | ✅ `OK`（其余全由插件自举：端点 → 代理取件/拉起 → 模型/agent/skill 注册） |
+| 写进去的内容 | ✅ `providers.reeve.settings.baseURL = http://127.0.0.1:8080/v1`（默认端口），**`plugins` 键一字未动**，备份 `opencode.json.reeve-bak` 在 |
+| 快照 | ✅ `endpoint: {"status":"added","detail":"在 新建 providers 键新增 providers.reeve"}`；第二次运行 `present`（幂等） |
+| 注册名单 | ✅ 8 个 agent + `review` skill（都在插件包里） |
+| 前台可见性 | ✅ `visible=[foreman]`（内置四个由插件藏起来） |
+
+**测试**：117 项（68 + 30 + 8 + 11）。其中"端点自举"那组盯的就是四条纪律：
+只加不改 / 幂等 / 注释保留 / 坏 JSON 不碰 / 有备份。
+
+### 6.9 可视化面板的可行性核查（回答"能做到吗"）
+
+| 要的东西 | 抓手（已核实） | 状态 |
+|---|---|---|
+| 可视化配置 **fallback 策略** | 面板写 `~/.reeve/chain.json`（REEVE 自己的目录，使用者已认可）；插件启动时把它派生成 Bifrost 的 config.json 并收敛 | 可做；扩展需要文件**写**权限（SDK 侧待核） |
+| **性能统计**（谁扛量/谁撞配额/回退了几跳/延迟） | 插件持有 Bifrost 的 setup token（`~/.reeve/proxy/setup-token` 是它自己写的）→ 轮询 `/api/logs` 折进快照；`scripts/served-model.*` 已是同源查询 | 可做（与台账同一条路：插件产出 → 面板只读） |
+| **只从不隐藏的模型里选**（追加：使用者要求） | openchamber 的 `hiddenModels: Array<{providerID, modelID}>` 在它的 UI store 里（`useUIStore`）；面板要从"宿主可见集合"里挑 | 需核 SDK 是否暴露模型列表（见下） |
+
+### 6.10 面板（步 5 的增补）
 
 - 新增：台账节里一行"前台可见 agent：foreman · 隐藏 N 个 · 名册已注入（7 个 subagent）"（读快照里的 `agentTable`/`roster`）。
 - 定位结论（④）：**openchamber 本体已经满足"看会话/看子会话/看成本"**；REEVE 面板真正独有的只有**台账**

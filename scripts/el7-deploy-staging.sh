@@ -104,7 +104,8 @@ for i, line in enumerate(open(src, encoding='utf-8').read().splitlines(), 1):
     out.append(line)
 
 c = json.loads('\n'.join(out))
-c['providers']['reeve']['settings']['baseURL'] = 'http://127.0.0.1:18080/v1'
+c.setdefault('providers', {}).setdefault('reeve', {'package': '@ai-sdk/openai-compatible', 'settings': {}})
+c['providers']['reeve'].setdefault('settings', {})['baseURL'] = 'http://127.0.0.1:18080/v1'
 c['plugins'][0]['package'] = STAGE + '/plugin'
 c['plugins'][0]['options']['snapshotPath'] = STAGE + '/.local/share/opencode/reeve/ledger.json'
 # 代理层自持（纯插件形态）在 staging 的落点：自己的目录 + 18080 + 真 home 的 auth.json

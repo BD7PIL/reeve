@@ -4,6 +4,7 @@
 
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
+import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -206,6 +207,69 @@ const _models = 0
   assert.deepEqual(fm.data.permissions, [{ action: 'x', resource: '*', effect: 'deny' }], '值里不该带引号（实测：带引号 → 规则匹配不上 → subagent 落到默认 ask → 拒绝）')
   assert.equal(fm.body, 'body')
   ok('插件包内注册：8 个 agent（面对/权限解析）+ 1 个 skill')
+}
+
+
+
+// ---- 11. 端点自举：只加不改 / 保留注释 / 写完自校验 ----
+{
+  const { planProviderInsertion, parseJsonc, reeveProviderBlock, ensureProviderBlock } = await import('../src/config-write.js')
+  const blk = reeveProviderBlock({ port: 8080 })
+
+  // 最小配置（只有 plugins）：插到顶层
+  const min = '{ "plugins": ["@bd7pil/reeve"] }'
+  const a = planProviderInsertion(min, 'reeve', blk)
+  assert.equal(a.changed, true)
+  const aDoc = parseJsonc(a.text)
+  assert.equal(aDoc.providers.reeve.settings.baseURL, 'http://127.0.0.1:8080/v1')
+  assert.deepEqual(aDoc.plugins, ['@bd7pil/reeve'], '别的键一个不动')
+
+  // 已有 providers（非空）：插进去并带逗号
+  const withProv = '{ "providers": { "deepseek": {} }, "model": "x/y" }'
+  const b = planProviderInsertion(withProv, 'reeve', blk)
+  const bDoc = parseJsonc(b.text)
+  assert.ok(bDoc.providers.deepseek, '原有的 provider 保留')
+  assert.equal(bDoc.providers.reeve.settings.baseURL, 'http://127.0.0.1:8080/v1')
+  assert.equal(bDoc.model, 'x/y')
+
+  // 空 providers：不要留尾随逗号
+  const emptyProv = '{ "providers": {} }'
+  const c = planProviderInsertion(emptyProv, 'reeve', blk)
+  assert.equal(parseJsonc(c.text).providers.reeve.settings.baseURL, 'http://127.0.0.1:8080/v1')
+
+  // 带注释的 jsonc：注释必须还在
+  const jsonc = ['// 顶部注释', '{', '  // providers 在哪', '  "model": "reeve/pro"', '}'].join('\n')
+  const d = planProviderInsertion(jsonc, 'reeve', blk)
+  assert.ok(d.text.includes('// 顶部注释') && d.text.includes('// providers 在哪'), '注释保留')
+  assert.equal(parseJsonc(d.text).model, 'reeve/pro')
+
+  // 幂等：已经有了就一个字节都不动
+  const e = planProviderInsertion(a.text, 'reeve', blk)
+  assert.equal(e.changed, false)
+  assert.equal(e.text, a.text)
+
+  // 坏 JSON：不碰
+  const f = planProviderInsertion('{ 这不是 json', 'reeve', blk)
+  assert.equal(f.changed, false)
+  assert.equal(f.text, '{ 这不是 json')
+
+  // 文件级：写到临时目录，再跑一次应当是 present
+  const { mkdtemp } = await import('node:fs/promises')
+  const { tmpdir } = await import('node:os')
+  const { join } = await import('node:path')
+  const dir = await mkdtemp(join(tmpdir(), 'reeve-cfg-'))
+  const target = join(dir, 'opencode.jsonc')
+  const { writeFile: wf } = await import('node:fs/promises')
+  await wf(target, jsonc, 'utf8')
+  const silent = { debug: () => {} }
+  const first = await ensureProviderBlock({ configDir: dir, block: blk, logger: silent })
+  assert.equal(first.status, 'added')
+  const second = await ensureProviderBlock({ configDir: dir, block: blk, logger: silent })
+  assert.equal(second.status, 'present')
+  const after = readFileSync(target, 'utf8')
+  assert.ok(after.includes('// 顶部注释'), '写完之后注释还在')
+  assert.ok(parseJsonc(after).providers.reeve.settings.baseURL.startsWith('http://'), '写进去的内容合法')
+  ok('端点自举：只加不改 / 保留注释 / 幂等 / 坏 JSON 不碰 / 有备份')
 }
 
 

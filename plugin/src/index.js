@@ -36,8 +36,11 @@ import { SUBAGENT_ROSTER, withRoster } from './roster.js'
 import { startOwnedProxy } from './proxy.js'
 import { REEVE_TIERS, BUILTINS_TO_HIDE, mergeTierModels, pickDefaultAgent, readEndpoint } from './models.js'
 import { loadAgents, loadSkills } from './register.js'
+import { ensureProviderBlock, reeveProviderBlock } from './config-write.js'
 
 const SUBAGENT_TOOL = 'subagent'
+/** 自持代理的默认端口（与写进配置的端点一致）。 */
+const PROXY_DEFAULT_PORT = 8080
 
 export default {
   id: PLUGIN_ID,
@@ -74,6 +77,8 @@ export default {
     /** 从插件包注册进去的 agent / skill 名单（进快照，便于上机核对"没往配置目录拷文件"）。 */
     let registeredAgents = []
     let registeredSkills = []
+    /** 端点自举的结果（进快照）。 */
+    let endpointState = null
     let snapshotFlush = () => {}
 
     const readAgentTable = async () => {
@@ -120,6 +125,7 @@ export default {
           roster,
           proxy: proxyState,
           registered: { agents: registeredAgents, skills: registeredSkills },
+          endpoint: endpointState,
         })
       snapshotFlush = () => snapshot.schedule(build)
       ledger.onChange = () => snapshot.schedule(build)
@@ -128,14 +134,30 @@ export default {
       logger.debug(`[reeve] 台账快照开启：${snapshotPath}`)
     }
 
+    // ---- 端点自举：首次启动时把 providers.reeve 写进引擎配置（opt-out：options.ownEndpoint === false）----
+    // 使用者裁决 2026-10-20：允许插件写自己的这一块。规则见 src/config-write.js 的头注释
+    // （只加不改 / 备份 / 写完自校验 / 保留注释）。
+    let endpointWrite = null
+    if (options.ownEndpoint !== false) {
+      const wantPort = Number(options.proxy?.port ?? PROXY_DEFAULT_PORT)
+      endpointWrite = await ensureProviderBlock({
+        configDir: options.engineConfigDir ?? null,
+        block: reeveProviderBlock({ port: wantPort }),
+        logger,
+      })
+      logger.debug(`[reeve] 端点自举：${endpointWrite.status}（${endpointWrite.detail ?? ''}）`)
+      endpointState = { status: endpointWrite.status, path: endpointWrite.path, detail: endpointWrite.detail }
+    }
+
     // ---- 代理层自持（opt-in：options.proxy.enabled）----
     // 纯插件形态：取件 → 派生链 → 拉起/复用 → 等就绪 → 收敛 → 守护。
     // 不需要任何外部脚本；失败只记日志（代理起不来时引擎照常跑，模型会吵地报错）。
     let proxyHandle = null
     // 两种写法都行：`proxy: true`（简写）或 `proxy: { enabled: true, ... }`
-    if (options.proxy === true || options.proxy?.enabled === true) {
+    // 默认开：这样配置里可以真的只写一行插件（`proxy: false` 关闭；`proxy: true` 或对象都行）
+    if (options.proxy !== false && options.proxy?.enabled !== false) {
       // 端口不用用户重复写：从配置里的 `providers.reeve.settings.baseURL` 推（读不到就用 options/默认）
-      let opts = options.proxy === true ? {} : options.proxy
+      let opts = options.proxy === true || options.proxy === undefined ? {} : options.proxy
       if (opts.port == null) {
         const endpoint = await readEndpoint({})
         if (endpoint) {
