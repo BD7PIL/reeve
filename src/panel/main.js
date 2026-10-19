@@ -15,7 +15,9 @@ import { applyHostReady, mountBadge, mountButton, mountList } from '@openchamber
 
 /** 台账快照的候选位置（与 package.json 的 contributes.filesystem 一一对应）。 */
 const SNAPSHOT_PATHS = [
+  '~/.reeve/ledger.json',
   '~/.local/share/opencode/reeve/ledger.json',
+  '~/.reeve-staging/.reeve/ledger.json',
   '~/.reeve-staging/.local/share/opencode/reeve/ledger.json',
 ]
 
