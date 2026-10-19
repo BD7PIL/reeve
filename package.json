@@ -1,0 +1,39 @@
+{
+  "name": "reeve",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "REEVE 编排视图 —— 只读面板：会话树 + 记账层的台账快照",
+  "openchamber": {
+    "apiVersion": 1,
+    "contributes": {
+      "panel": {
+        "id": "reeve",
+        "name": "REEVE 编排",
+        "icon": "git-branch",
+        "entry": "panel/index.html"
+      },
+      "filesystem": [
+        "~/.local/share/opencode/reeve/**",
+        "~/.reeve-staging/.local/share/opencode/reeve/**"
+      ],
+      "capabilities": [
+        "sessions"
+      ],
+      "actions": [
+        {
+          "id": "reeve-inspect",
+          "label": "查看编排",
+          "where": "session",
+          "mode": "open"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "build": "node build.mjs",
+    "check": "node --check panel/main.js"
+  },
+  "//filesystem": "第二条是 EL7 staging 验证用的（引擎 HOME 与 openchamber 的 HOME 不同）。生产部署只留第一条即可 —— 与部署时给插件的 options.snapshotPath 保持一致。",
+  "//readonly": "本扩展只读：只调 listProjects/listSessions/onSessions/readFile/openSession，绝不 writeFile、绝不 startSession/prompt。控制面在模型侧，不在这里。"
+}

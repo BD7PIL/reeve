@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>REEVE 编排</title>
+<style>
+  /* 只放**结构**样式：配色、字体、控件外观都由宿主注入（applyHostReady + 宿主的 UI 样式）。 */
+  html, body { margin: 0; padding: 0; height: 100%; }
+  body { font: inherit; color: inherit; background: transparent; }
+  #root { display: flex; flex-direction: column; gap: 10px; padding: 10px; box-sizing: border-box; }
+  .rv-head { display: flex; align-items: center; gap: 8px; }
+  .rv-push { flex: 1; }
+  .rv-section { display: flex; flex-direction: column; gap: 6px; }
+  .rv-sub { font-size: 11px; opacity: .65; letter-spacing: .02em; }
+  .rv-meta { font-size: 11px; opacity: .6; word-break: break-all; }
+  .rv-empty { font-size: 12px; opacity: .7; line-height: 1.5; padding: 6px 0; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script src="./main.js"></script>
+</body>
+</html>
