@@ -710,6 +710,101 @@ POST /api/config/agents/zc-zeroconf-probe?directory=%2Fhome%2Fdemo%2F.reeve-stag
 
 ---
 
+## 步 6 — 使用者四项要求（2026-10-19 晚，第二批）
+
+四件事：**① 前台只出现编排者**、**② 归因与代理层的落地**、**③ 热改与配置文件的同步**、**④ 面板定位**。
+每一项都带实测；写错的旧说法在下面对应处更正。
+
+### 6.1 前台只出现编排者、subagent 不可直接对话 ✅
+
+**语义（v2.0.27/2.0.32 源码 + EL7 实测）**：
+
+| 事实 | 出处 |
+|---|---|
+| agent 的配置字段有 `mode`（subagent/primary/all）、`hidden`、`disabled` | `packages/schema/src/config/agent.ts` |
+| 前台可选 = `mode !== 'subagent' && !hidden`；`disabled` 是**整个移出注册表** | `packages/core/src/agent.ts` `selectable()`；`config/plugin/agent.ts` `editor.remove` |
+| subagent 工具**只拒绝 `mode === 'primary'`**；`hidden` 的**仍能被点名委派**，只是不进"可用 subagent"宣传段 | `packages/core/src/tool/plugin/subagent.ts` |
+| openchamber：composer 只列 primary；**`@` 提及列表列的是"非 primary 且非 hidden"** | `ModelControls.tsx` / `FileMentionAutocomplete.tsx` / `useAgentsStore.ts` `filterVisibleAgents` |
+
+**做法**：7 个 subagent 标 `hidden: true`；内置 `build`/`plan`/`general`/`explore` 在引擎配置里 `hidden: true`
+（见 `config/opencode.sample.jsonc`），`default_agent: "foreman"`。
+
+**hidden 的代价与补法**：引擎自己的 `Available subagents:` 宣传段会把 hidden 的滤掉。
+→ 记账插件在 `ctx.session.hook("context")` 把名册**接回 `subagent` 工具描述**
+（`plugin/src/roster.js`；幂等、按标记去重，注入事实写进给面板的快照）。
+
+**EL7 实测（staging，`~/.reeve-staging`）**：
+
+| 检查项 | 实测 |
+|---|---|
+| 引擎内部读到的 agent 表 | `total=16`；**`visible=[foreman[primary]]`**；hidden 14 个（7 个 REEVE subagent + 3 个内置内部 agent + 4 个内置可见 agent） |
+| 名册注入 | 快照里 `roster={count:7, additions:6}` —— 注入真的发生了 |
+| 委派仍然可用（hidden 不挡委派） | foreman 真委派 `scout` 读文件并答对；台账两条 `scout/completed` 带子会话 id |
+| tier 分流未受影响 | Bifrost：`reeve/pro → zhipuai/glm-5.3`（29 次）与 `reeve/flash → xiaomi/mimo-v2.6-flash`（17 次） |
+
+**踩坑（值得记）**：`opencode debug agents` **不能用来验这件事** —— 它连的是 CLI 自己的
+managed service（端口来自 `service.json`，默认 `0xC0DE`=49374），实测**连到了另一个 HOME 的引擎**，
+报出的是别人的 agent 表；`debug config` 则是客户端侧解析。→ 结论：验 agent 表要用**引擎进程内部**的读法
+（插件的启动诊断 + 快照里的 `agentTable`）。
+
+### 6.2 归因：引擎侧永远只能看到档位名；真归因在代理侧 ✅
+
+**旧说法更正**："代理层会让成本统计失真"—— 更准确的表述是：
+**引擎侧从设计上就不可能记录"谁真的服务了"**（v2 实测：桩返回 `SERVED-MODEL-X`，数据目录里从未出现该名字；
+响应头也被丢弃 #26091）。用户链上全是订阅/免费档，`models.dev` 里的价格本就是 0 —— 所以"成本"不是重点，
+**"哪家真的扛了量、配额撞在谁身上"才是**。
+
+**做法**：
+- `scripts/served-model.mjs --json` 加 `generatedAt`/`source`/`tier` 字段 → 可被定时快照/告警消费（**唯一能知道真服务模型的地方**）；
+- 引擎侧的三个档位补上人能读的名字与上下文上限、并且**只有 multimodal 档声明能吃图**
+  （`config/opencode.sample.jsonc`；`limits.context=200000` 取链上最小值）；
+- 面板新增一行"前台可见 agent / 名册注入"（编排面的落盘证据）。
+
+### 6.3 热改与 `config.json` 的同步 ✅（语义按实验更正 + 补工具）
+
+**旧说法更正**："改 `config.json` 要重启"只是半个真相。EL7 上四组实验（都是真跑）：
+
+| # | 实验 | 结果 |
+|---|---|---|
+| 1 | `POST /api/routing/rules` 传一条**已有**规则的完整对象 | ⚠️ **不是更新，是新建**：多出一条**同名**规则（服务端给 UUID id），两条都 enabled |
+| 2 | 热改后重启 | 热改**活下来了**（真相在 Bifrost 的 DB 里，不在文件里） |
+| 3 | 文件里改同一 `id` 的字段后重启 | 该字段被**覆盖**（文件是启动时的 upsert） |
+| 4 | 文件里**删掉**整条规则后重启 | **运行时那条还在** —— 删文件删不掉 DB 里的行 |
+| 5 | 改要按 id | `PUT /api/routing/rules/<id>` → 200；`DELETE /api/routing/rules/<id>` → 200（`GET` 的返回是 `{count,rules:[…]}`） |
+
+**→ 新工具 `scripts/bifrost-sync-config.sh`**：把 `config.json` 当声明式期望态**收敛**到运行中的 Bifrost
+（缺失→建、有差异→改、`--prune` 删多余、`--check` 只报漂移且退出码 2）。
+已接进 `scripts/el7-deploy-staging.sh` 的 3.5 步；实测：`3 条规则已收敛`，并**当场抓出**
+实验期我留下的重复规则与上一轮的 `pathprobe-*` provider 漂移。
+
+### 6.4 代理层的进程归属 → **落进 ocrc** ✅（REEVE 仓库外）
+
+`D:\develop\ocrc` 工作区里新增（**未提交**，等你过目）：
+
+| 文件 | 内容 |
+|---|---|
+| `src/core/bifrost.ts` | 版本 pin（**版本化 URL**，不用 `/latest` —— 实测同一天两者是不同构建，134,264,480 vs 140,207,936 B）、sha256 pin、取件/启动/探活脚本构造器 |
+| `src/core/remote-instance-bridge.ts` | `startInstance` 里**代理层先行**（ensure→start→探活；失败吵，不静默降级）；外部监视器每 tick 单独盯代理层（实例健康、代理死了照样拉起来）；新增 `bifrost?: {enabled,port}` 选项（默认开） |
+| `tests/unit/bifrost.test.ts` | 11 条（pin/幂等/半步落盘/失败吵/`/proc` 判活） |
+
+**ocrc 本地**：191 项测试全过、`tsc --noEmit`（src 与 tests）干净。
+**EL7 实测**（只碰 pin 目录，不碰 staging 18080 与生产）：首次取件真下载 128 MB → `bifrost-binary-installed`；
+再来一次 **0.066 s** 返回 `bifrost-binary-ok`；启动后第二次启动报 `bifrost-already-running`（不重复起）；
+**6 秒**后 `/api/version` 200；进程数 1；清理后 000。
+
+**还没做的一小块**：引擎侧的 **virtual key**（`REEVE_VK`）注入 —— 代理起来了，但"引擎拿哪个凭据连它"
+仍由 REEVE 的部署脚本管。ocrc 若要把这条也接上，需要 setup token 生成 + VK 建/轮换 + 注入 serve 行；
+这是下一片，不在本次范围内。
+
+### 6.5 面板（步 5 的增补）
+
+- 新增：台账节里一行"前台可见 agent：foreman · 隐藏 N 个 · 名册已注入（7 个 subagent）"（读快照里的 `agentTable`/`roster`）。
+- 定位结论（④）：**openchamber 本体已经满足"看会话/看子会话/看成本"**；REEVE 面板真正独有的只有**台账**
+  （谁在飞、谁死了、谁超时、状态不确定——那是插件独有的数据）。所以面板保留、但只有台账那一节是不可替代的；
+  详见 README 与本节表格。若继续投入，优先级是"台账分组/过滤 > 自动刷新 > 砍掉会话树"。
+
+---
+
 ## 步 5 legacy 检查表（保留原始验收项对照）
 
 **前置**：步 2。

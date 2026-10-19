@@ -84,8 +84,13 @@ export class SnapshotWriter {
 /**
  * 把台账投影成面板要的形状。
  * **注意**：这里刻意只放面板显示需要的字段 —— 不多不少，免得这份文件变成事实上的第二套接口。
+ *
+ * `agents`：启动时从引擎读到的 agent 表（谁在前台可见 / 谁被藏）。
+ * 为什么放进快照：`opencode debug agents` 走的是 CLI 自己连的那个服务，
+ * 未必是你以为的那个引擎（实测踩过 —— 它连到另一个 HOME 的服务，报出别人的表）。
+ * 这一份是**引擎进程内部**读的，落盘可核对，也是"前台只出现编排者"这条设计的证据。
  */
-export function buildSnapshot(records, { now = Date.now(), version = null } = {}) {
+export function buildSnapshot(records, { now = Date.now(), version = null, agents = null, roster = null } = {}) {
   const tasks = records
     .map((r) => ({
       taskID: r.taskID,
@@ -113,7 +118,24 @@ export function buildSnapshot(records, { now = Date.now(), version = null } = {}
     generatedAt: now,
     plugin: 'reeve',
     version,
+    agentTable: agents,
+    roster,
     counts,
     tasks,
+  }
+}
+
+/**
+ * 从 `ctx.agent.list()` 的返回里抽出"谁可见"的最小形状。
+ * 读不到就返回 null —— 快照里没有这一节，不假装知道。
+ */
+export function projectAgentTable(list) {
+  if (!Array.isArray(list)) return null
+  const one = (a) => ({ id: a?.id ?? null, mode: a?.mode ?? null, hidden: a?.hidden === true })
+  return {
+    total: list.length,
+    visible: list.filter((a) => a?.mode !== 'subagent' && a?.hidden !== true).map(one),
+    hidden: list.filter((a) => a?.hidden === true).map(one),
+    subagent: list.filter((a) => a?.mode === 'subagent' && a?.hidden !== true).map(one),
   }
 }

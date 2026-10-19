@@ -48,6 +48,10 @@ permissions:
 | 代码 diff 审查 | `reviewer` |
 | 照文档动手实现 | `executor` |
 
+**名册（`subagent` 工具的 `agent` 参数逐字取这些名字）**：
+`scout` / `librarian` / `planner` / `critic` / `advisor` / `executor` / `reviewer`。
+它们是 subagent：**人在前台看不到它们、也不能直接找它们说话**——只有你能派它们。
+
 需要大量工具调用但结论很短 → **派出去**，别把过程塞进自己的上下文。
 
 一次丢几个**互不重叠**的任务，然后**结束你的回复**。

@@ -104,7 +104,25 @@ const failures = args.errors
   : null
 
 if (args.json) {
-  console.log(JSON.stringify({ days: args.days, byTier, byProvider, chain, failures }, null, 2))
+  // 给"定期快照 / 面板 / 告警"用的投影：带上 generatedAt 与来源，
+  // 消费方才能判断这份数据是不是馊的（**唯一能知道"谁真的服务了"的地方就是这里** ——
+  // 引擎侧永远只知道档位名，见 proxy/README「归因」一节）。
+  console.log(
+    JSON.stringify(
+      {
+        generatedAt: new Date().toISOString(),
+        source: args.db,
+        days: args.days,
+        tier: args.tier,
+        byTier,
+        byProvider,
+        chain,
+        failures,
+      },
+      null,
+      2,
+    ),
+  )
   process.exit(0)
 }
 

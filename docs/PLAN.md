@@ -606,16 +606,20 @@ reeve/
       orchestration-stack-verdict.md    立项证据（归档，含已被取代的说法）
       opencode-v2-plugin-api.md         v2 插件 API 实测施工图 ★写代码前必读
   agents/*.md                     8 个 agent 定义（正文即 system prompt，见 §3.5）
+                                  ⚠️ 7 个 subagent 标 `hidden: true` —— 前台只出现 foreman（见 PROGRESS §6.1）
   skills/review/                  SKILL.md（契约与用法）+ 7 份 OCR rubric
-  plugin/                         @bd7pil/reeve（记账层）
+  plugin/                         @bd7pil/reeve（记账层；含 roster.js 补名册）
   proxy/{config.json,README.md}   链的唯一维护处
+  config/opencode.sample.jsonc    引擎侧配置样板（只出现编排者 / 三档位 / 插件 options）
   extensions/reeve/               控制台面板（只读；build.mjs / check.mjs / cdp-panel*.mjs）
   scripts/
-    el7-deploy-staging.sh         受控端 staging 部署（env→config→Bifrost→VK），幂等
+    el7-deploy-staging.sh         受控端 staging 部署（env→config→起 Bifrost→**收敛**→VK），幂等
     el7-restart-bifrost.sh        改完 config 重启 Bifrost 并等就绪
+    bifrost-sync-config.sh        把 config.json 收敛到运行中的 Bifrost（--check/--apply/--prune）
+    check-config-sample.mjs       本地守门：样板必须是"整行注释 + 合法 JSON + 关键键都在"
     el7-verify-fallback.sh        回退验证（坏链头 key → 第 2 跳接手）
     el7-verify-multimodal-fallback.sh   视觉档验证 + 回退验证（合体版）
-    served-model.{sh,mjs}         归因查询（node:sqlite 优先，退路 /api/logs）
+    served-model.{sh,mjs}         归因查询（node:sqlite 优先，退路 /api/logs；--json 可被定时消费）
   licenses/{oh-my-opencode-slim,open-code-review}.LICENSE
 ```
 

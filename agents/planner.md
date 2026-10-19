@@ -1,6 +1,7 @@
 ---
 description: 计划编写者。把需求写成"不携带上下文的执行者也能照着干完"的实施文档。不改文件、不跑命令。
 mode: subagent
+hidden: true
 model: reeve/pro
 permissions:
   - action: "*"

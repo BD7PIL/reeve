@@ -1,6 +1,7 @@
 ---
 description: 对抗性顾问。当方案看起来已经想清楚了，负责找出它错在哪里。不改文件、不跑命令。
 mode: subagent
+hidden: true
 model: reeve/pro
 permissions:
   - action: "*"

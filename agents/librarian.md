@@ -1,6 +1,7 @@
 ---
 description: 外部资料检索者。回答"外部库/规范/上游怎么规定的"，每条结论带 URL 出处。只读。
 mode: subagent
+hidden: true
 model: reeve/flash
 permissions:
   - action: "*"

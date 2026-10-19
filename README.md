@@ -47,20 +47,21 @@ omo 在 v2 上拿到的全部支持是"加载 + 每次启动弹一个指向 OmO 
 
 ## 状态（2026-10-19 晚）
 
-**步 0–5 全部产出完成，并已在 EL7 上跑完整轮实机验收**（隔离 `HOME` 的 staging；生产 v1 引擎全程未动）。
+**步 0–6 全部产出完成，并已在 EL7 上跑完整轮实机验收**（隔离 `HOME` 的 staging；生产 v1 引擎全程未动）。
 
 | 步 | 产出 | 实机验收 |
 |---|---|---|
 | 0 | 计划 / 施工图 / HANDOFF 勘误 | — |
-| 1 | `agents/*.md` 8 个 agent | ✅ 8 个加载、权限闸门、验收独立性、多轮评审 |
-| 2 | `plugin/` 记账层（78 项测试） | ✅ 并发排队 / 墙钟中断 / 跨重启对账 / 台账落账与读回 |
+| 1 | `agents/*.md` 8 个 agent（7 个 subagent 标 `hidden`） | ✅ 权限闸门、验收独立性、多轮评审；**前台只可见 `foreman`** |
+| 2 | `plugin/` 记账层（**106** 项测试） | ✅ 并发排队 / 墙钟中断 / 跨重启对账 / 台账落账与读回 / **名册补进 `subagent` 工具描述** |
 | 3 | `skills/review/` 审查层 | ✅ 真 diff 抓到、带行号、结构化输出 |
-| 4 | `proxy/` Bifrost 链 + 部署脚本 | ✅ 档位分流 / 回退 / 视觉档 / 归因（**12 处配置级问题按实测修正**） |
+| 4 | `proxy/` Bifrost 链 + 部署脚本 + **收敛脚本** | ✅ 档位分流 / 回退 / 视觉档 / 归因（**12 处配置级问题按实测修正**） |
 | 5 | `extensions/reeve/` 只读控制台 | ✅ 真装进 openchamber 2.3.3、真渲染、台账经宿主文件桥读到 |
+| 6 | `config/` 引擎样板 + 前台可见性 + 同步语义 | ✅ 见 [PROGRESS.md](docs/PROGRESS.md) §6（含四组 Bifrost 同步实验） |
 
-**两处关键未知已实测解决**：opencode v2 忽略响应体的模型名（→ 代理可用虚拟别名）；
-v2 插件 API 的真实形态（钩子真名、**`codemode:false` 才是工具可见性开关**、
-存储键是 `plugin:<hex(id)>:` …）——见 [施工图](docs/research/opencode-v2-plugin-api.md)。
+**三处关键未知已实测解决**：opencode v2 忽略响应体的模型名（→ 代理可用虚拟别名，但**引擎侧永远看不到真服务模型**）；
+v2 插件 API 的真实形态（钩子真名、**`codemode:false` 才是工具可见性开关**、存储键是 `plugin:<hex(id)>:` …）；
+**agent 可见性的三个开关**（`mode` / `hidden` / `disabled`）与 openchamber 的两条直达路径（composer 选 primary、`@` 提及列非 primary 且非 hidden）。
 
 **仍开放的一项**（如实标着，不冒充通过）：
 **审查 subagent 的误报率** —— 按默认"severity 都不卡流程"跑两周再统计。
@@ -70,8 +71,10 @@ v2 插件 API 的真实形态（钩子真名、**`codemode:false` 才是工具�
 > 只新增一个 user 作用域 agent md，`opencode.jsonc` / `opencode.managed.json` / staging 配置
 > **逐字节未变**；缺项目上下文时是 400 + 界面报错，不是静默）。见 [PROGRESS.md](docs/PROGRESS.md) §5.5。
 
-**下一步的活**：把 PLAN §2 的配置目录隔离（杠杆 = **`HOME`**，两端已实测）落进
-ocrc 的实例启动行 —— 那是**另一个仓库**的改动；本仓库只提供现货（脚本 + 配置 + 资产）。
+**下一步的活（都在别的仓库）**：
+1. 配置目录隔离（杠杆 = **`HOME`**，两端已实测）落进 ocrc 的实例启动行；
+2. **Bifrost 的取件/启动/守护**已在 ocrc 工作区写好并实测（[PROGRESS.md](docs/PROGRESS.md) §6.4），**待你提交**；
+3. 引擎侧的 `REEVE_VK` 注入（setup token → VK 建/轮换 → 注入 serve 行）是 §6.4 记的下一片。
 
 > 上机踩到的坑（**各自都是静默失败**：配置合法、能加载、只是必然出错）与逐条证据：
 > [docs/PROGRESS.md](docs/PROGRESS.md) §4.4（12 条）+ §5.3。

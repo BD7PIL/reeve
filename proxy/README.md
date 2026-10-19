@@ -34,8 +34,9 @@
 | 角色 | 对 `proxy/config.json` 的权限 |
 |---|---|
 | **reeve 仓库（本文件）** | **持有源真相**——链只在这里改一次 |
-| ocrc | **只推送**（把本文件推到被控端并让 Bifrost 指向它），不生成内容 |
+| ocrc | **只推送**（把本文件推到被控端），不生成内容；**生命周期归它**（取件/启动/守护，见下「安装」） |
 | 控制台（步 5，可选） | **唯一运行时写者**（编辑 UI，写回同一份源真相） |
+| `scripts/bifrost-sync-config.sh` | **收敛器**：把本文件当期望态同步进运行中的 Bifrost（它不生成内容） |
 | 记账插件 | **只读**，绝不碰代理配置 |
 
 **API key 不进仓库**：`keys[].value` 写 `env.<VAR>`，由 ocrc 的启动行注入
@@ -70,12 +71,30 @@ curl -s -H "x-bf-vk: $REEVE_VK" 127.0.0.1:8080/v1/models
 
 **静态链接已确认**（不依赖宿主 glibc → EL7 可跑）。
 ⚠️ 但**二进制不在 GitHub Releases**（以 CI artifact 形式产出）→ **air-gap 分发要单独设计**。
+被控端上的取件/启动/守护已由 **ocrc** 接管（`src/core/bifrost.ts`：版本化 URL + sha256 pin、
+`/proc` 判活、跟着实例一起被监视）——本仓库只维护 `config.json` 这一份内容。
 
-**改 `config.json` 要重启**；热改走 `POST /api/routing/rules`（要 setup token）。
+### ⚠️ 「改文件 vs 热改」的真实语义（2026-10-19 五组实验，别再按旧说法理解）
+
+旧说法"改 `config.json` 要重启"只是半个真相。实测：
+
+| # | 实验 | 结果 |
+|---|---|---|
+| 1 | `POST /api/routing/rules` 传一条**已有**规则的完整对象 | ⚠️ **它是"新建"不是"更新"**：多出一条**同名**规则（服务端给 UUID id），两条都 enabled |
+| 2 | 热改后重启 | **热改活下来** —— 运行时真相在 Bifrost 的 DB 里，不在文件里 |
+| 3 | 文件里改同一 `id` 的字段后重启 | 该字段被**覆盖**（文件是启动时的一次 upsert） |
+| 4 | 文件里**删掉**整条规则后重启 | **运行时那条还在** —— 改文件删不掉 DB 里的行 |
+| 5 | 按 id 的操作 | `PUT /api/routing/rules/<id>` → 200；`DELETE /api/routing/rules/<id>` → 200；`GET` 返回 `{count,rules:[…]}` |
+
+→ **所以"文件是唯一真相"要靠收敛来维持**：`scripts/bifrost-sync-config.sh`
+（缺失→建、有差异→改、`--prune` 删多余、`--check` 只报漂移并退出 2）。
+`scripts/el7-deploy-staging.sh` 的 3.5 步已经会在起完 Bifrost 后调它。
+**provider 的增删仍要走"改文件 + 重启"**（含密钥与连接参数，收敛脚本只报告它们的漂移）。
 
 **一键脚本**（EL7 staging 实测用过的，幂等）：`scripts/el7-deploy-staging.sh`
-（env → 派生 config → 起 Bifrost → 建/换 VK → 写进 600 权限的 env 文件）。
-配套 `scripts/el7-restart-bifrost.sh`（改完 config 重启并等它就绪）。
+（env → 派生 config → 起 Bifrost → **收敛** → 建/换 VK → 写进 600 权限的 env 文件）。
+配套 `scripts/el7-restart-bifrost.sh`（改完 config 重启并等它就绪）、
+`scripts/bifrost-sync-config.sh`（把文件收敛到运行中的 Bifrost）。
 
 ### ⚠️ 上机实测踩到的五处（都已写进 `config.json`）
 
@@ -195,6 +214,14 @@ Bifrost 把每次请求落进 `logs` 表（默认 SQLite `logs.db`，在 app-dir
 
 现成的查询脚本：[`../scripts/served-model.sh`](../scripts/served-model.sh)
 （核心是 `../scripts/served-model.mjs`，走 `node:sqlite`；退路是 `/api/logs` + setup token）。
+加 `--json` 会输出带 `generatedAt`/`source` 的投影 —— 给定时快照、面板或告警消费。
+
+> ⚠️ **引擎侧永远不知道谁真的服务了，这不是缺陷是边界。**
+> v2 实测：桩对每个请求都返回别的模型名，**数据目录里从未出现过那个名字**（响应头也被丢弃 #26091）；
+> 引擎记的永远是"调用者请求的档位名"。所以：
+> - 引擎/面板里的"模型与成本"统计，单位是**档位**，不是真实模型；你链上又全是订阅/免费档，
+>   价目表里价格本就是 0 —— 想让那一栏好看，就给档位补 `name`/`limit`/`capabilities`（见 `config/opencode.sample.jsonc`）；
+> - **"哪家真的扛了量、配额撞在谁身上"只能从这里查**（Bifrost 的 `logs` 表）。
 
 **输出长这样**（EL7 staging 的真实数据）：
 

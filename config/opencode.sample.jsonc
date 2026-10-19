@@ -1,0 +1,90 @@
+// REEVE —— 引擎侧配置样板（放进实例的配置目录，例如 <实例 HOME>/.config/opencode/opencode.jsonc）
+//
+// 它只做四件事，其余键留给使用者自己的配置：
+//   ① 让引擎只认三个档位名（providers.reeve → 本地 Bifrost）
+//   ② 前台只出现编排者（default_agent + 把内置 agent 藏起来）
+//   ③ 挂上记账插件，并把三项部署期默认值写实
+//   ④ 给档位补上人能读的名字 / 上下文上限 / 模态能力
+//
+// ⚠️ 两处语法不可混（实测踩过，都是静默失败）：
+//   - 引擎侧密钥写 `{env:VAR}`；写成 `env.VAR` 不报错，但会把字面串当密钥发出去
+//   - apiKey 放的是 **Bifrost 的 virtual key**（REEVE_VK），不是任何 provider 的真 key
+//   判据：`opencode debug config` 里 apiKey 应显示成 `***`
+
+{
+  "$schema": "https://opencode.ai/config.json",
+
+  // ---- ② 前台只出现编排者 ----
+  // v2 的 agent 注册表里内置 build / plan / general / explore（还有 compaction/title/summary，
+  // 后三个本来就是 hidden）。全部藏起来之后，可选的就只剩 foreman。
+  // hidden（不是 disabled）：内部若有人点名要 build，仍然解析得到 —— 藏而不删。
+  // 想更彻底：把 "hidden" 换成 "disabled"，引擎会把它整个移出注册表。
+  "default_agent": "foreman",
+  "agents": {
+    "build": { "hidden": true },
+    "plan": { "hidden": true },
+    "general": { "hidden": true },
+    "explore": { "hidden": true }
+  },
+
+  // ---- ① 三个档位 ----
+  "providers": {
+    "reeve": {
+      "name": "REEVE Router",
+      "package": "@ai-sdk/openai-compatible",
+      "settings": {
+        // Bifrost 的默认端口是 8080；staging 用 18080 是为了不碰生产
+        "baseURL": "http://127.0.0.1:8080/v1",
+        "apiKey": "{env:REEVE_VK}"
+      },
+      "models": {
+        "flash": {
+          "modelID": "reeve/flash",
+          "name": "REEVE flash（廉价链）",
+          // ④ 上限取**链上最小值**（链尾含 200k 上下文的那家），宁可报小不报大
+          "limit": { "context": 200000, "output": 32000 },
+          "capabilities": { "input": ["text"], "output": ["text"], "tools": true }
+        },
+        "pro": {
+          "modelID": "reeve/pro",
+          "name": "REEVE pro（强推理链）",
+          "limit": { "context": 200000, "output": 32000 },
+          "capabilities": { "input": ["text"], "output": ["text"], "tools": true }
+        },
+        "multimodal": {
+          "modelID": "reeve/multimodal",
+          "name": "REEVE multimodal（视觉链）",
+          "limit": { "context": 200000, "output": 32000 },
+          // 只有这一档声明能吃图 —— 别的档位带图会在引擎侧就被挡住，
+          // 而不是发出去等上游报错
+          "capabilities": { "input": ["text", "image"], "output": ["text"], "tools": true }
+        }
+      }
+    }
+  },
+
+  // 顶层默认模型：`opencode run --agent <subagent>` 这类顶层调用用的是它，不是 agent 自己的档位
+  "model": "reeve/pro",
+
+  // ---- ③ 记账插件 ----
+  // package 用**绝对路径**（目录形态的本地插件；Windows 上必须正斜杠）
+  "plugins": [
+    {
+      "package": "/opt/reeve/plugin",
+      "options": {
+        // 使用者实测峰值约 88 个并发子任务；8 是保守起点。超限是**排队**，不是失败
+        "limits": { "default": 8 },
+        // 台账保留期：只清已落终态的旧记录，在飞的不动
+        "retentionDays": 30,
+        // 给只读面板看的台账快照（投影，不是第二份真相）。
+        // 面板侧要在扩展的 contributes.filesystem 里声明同一路径
+        "snapshotPath": "/opt/reeve/state/ledger.json"
+      }
+    }
+  ]
+
+  // agent 定义与 skill 放在配置目录里（markdown 目录形态）：
+  //   <配置目录>/agent/*.md   —— v2 同时扫 agent(单数) 与 agents(复数)
+  //   <配置目录>/skill/review/SKILL.md
+  // 8 个 agent 的 frontmatter 已经把 7 个 subagent 标了 hidden（只有 foreman 可见）。
+}

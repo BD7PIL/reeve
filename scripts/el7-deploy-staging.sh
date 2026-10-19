@@ -1,18 +1,26 @@
 #!/usr/bin/env bash
 # REEVE —— EL7 staging 部署（隔离 HOME，全链验证；生产 :4096 全程不碰）
 #
+#   # 先把仓库里的源真相推进 $STAGE/incoming/：
+#   #   proxy/config.json            → $STAGE/incoming/bifrost.config.json
+#   #   config/opencode.sample.jsonc → $STAGE/incoming/opencode.sample.jsonc
+#   #   agents/*.md                  → $STAGE/.config/opencode/agent/（含 hidden: true）
 #   bash el7-deploy-staging.sh
 #
-# 做四件事（幂等）：
+# 做五件事（幂等）：
 #   1. 从 EL7 已有的 ~/.local/share/opencode/auth.json 生成 Bifrost 的 env（600）——密钥不打印、不落仓库
-#   2. 由 仓库的 proxy/config.json 派生 staging config（只做 EL7 必须的改动，见下）
+#   2. 由 incoming/ 的两份源真相**派生**运行时配置：
+#      a. $STAGE/bifrost/config.json（改动见下）
+#      b. $STAGE/.config/opencode/opencode.json（样板里的占位路径/端口换成 staging 的）
 #   3. 起 Bifrost（:18080，app-dir = staging）
 #   4. 建 / 更新引擎用的 virtual key（VK 只写进 env，600）
+#   5. 打印 config.db 的关键行（不打印任何 key）
 #
-# 派生的 EL7 改动（其余与仓库 config.json 逐字一致）：
+# 派生的 EL7 改动（其余与仓库逐字一致）：
 #   a. 摘掉 provider `opencode`（EL7 的 auth.json 里没有 opencode zen 的 key）
 #   b. reeve/flash 链头 opencode/mimo-v2.6-flash-free → xiaomi/mimo-v2.6-flash
 #   c. 链上清掉 opencode/*（provider 已摘，留着只会污染回退测试）
+#   d. 引擎配置：/opt/reeve/... → $STAGE/...；baseURL 8080 → 18080
 set -euo pipefail
 export PYTHONIOENCODING=utf-8   # EL7 的 python3.6 stdout 默认 ascii
 
@@ -51,11 +59,12 @@ print("  写入 %d 个变量（含随机 setup_token）；mode=%o" % (len(lines)
 if missing: print("  auth.json 里没有的 provider（未注入）:", missing)
 PY
 
-echo "=== 2. 派生 staging config（源自 仓库 proxy/config.json）==="
+echo "=== 2. 派生运行时配置（源自 incoming/ 里的两份源真相）==="
 python3 - <<'PY'
 import json
-p = '/home/demo/.reeve-staging/bifrost/config.json'
-c = json.load(open(p, encoding='utf-8'))
+src = '/home/demo/.reeve-staging/incoming/bifrost.config.json'
+dst = '/home/demo/.reeve-staging/bifrost/config.json'
+c = json.load(open(src, encoding='utf-8'))
 
 c['providers'].pop('opencode', None)
 for r in c['governance']['routing_rules']:
@@ -63,7 +72,7 @@ for r in c['governance']['routing_rules']:
     if r['id'] == 'reeve-flash':
         r['targets'] = [{'provider': 'xiaomi', 'model': 'mimo-v2.6-flash',
                          'weight': 1, 'ttft_timeout_ms': 30000}]
-json.dump(c, open(p, 'w', encoding='utf-8'), ensure_ascii=False, indent=2)
+json.dump(c, open(dst, 'w', encoding='utf-8'), ensure_ascii=False, indent=2)
 
 print("  providers:", sorted(c['providers']))
 for r in c['governance']['routing_rules']:
@@ -72,8 +81,48 @@ for r in c['governance']['routing_rules']:
 print("  client:", c.get('client'), "| setup_token:", c.get('governance', {}).get('setup_token'))
 PY
 
+echo "=== 2b. 派生引擎配置（源自 incoming/opencode.sample.jsonc）==="
+python3 - <<'PY'
+import json, os, re
+
+STAGE = '/home/demo/.reeve-staging'
+src = STAGE + '/incoming/opencode.sample.jsonc'
+dst = STAGE + '/.config/opencode/opencode.json'
+
+out = []
+for i, line in enumerate(open(src, encoding='utf-8').read().splitlines(), 1):
+    s = line.strip()
+    if s.startswith('//'):
+        continue  # 整行注释（样板里只有这一种）
+    # 行内出现 // 只允许在字符串里（$schema 的 https:// 就是）；否则本派生器无法安全解析
+    if '//' in re.sub(r'"(?:\\.|[^"\\])*"', '""', line):
+        raise SystemExit('样板第 %d 行有行尾注释 —— 派生器只支持整行注释，请改掉：%s' % (i, s[:60]))
+    out.append(line)
+
+c = json.loads('\n'.join(out))
+c['providers']['reeve']['settings']['baseURL'] = 'http://127.0.0.1:18080/v1'
+c['plugins'][0]['package'] = STAGE + '/plugin'
+c['plugins'][0]['options']['snapshotPath'] = STAGE + '/.local/share/opencode/reeve/ledger.json'
+
+os.makedirs(os.path.dirname(dst), exist_ok=True)
+json.dump(c, open(dst, 'w', encoding='utf-8'), ensure_ascii=False, indent=2)
+print("  写 %s：default_agent=%s | agents=%s | providers=%s | plugins=%d" % (
+    dst, c.get('default_agent'), sorted((c.get('agents') or {}).keys()),
+    sorted(c['providers'].keys()), len(c.get('plugins') or [])))
+PY
+
 echo "=== 3. 起 Bifrost :18080 ==="
 bash "$STAGE/restart.sh"
+
+echo "=== 3.5 收敛：把文件（期望态）同步到运行中的 Bifrost ==="
+# 为什么必须有这一步：运行时真相在 Bifrost 的 DB 里（热改会持久化），
+# config.json 只在启动时做 upsert —— 「改文件 + 重启」能加能改、**删不掉** DB 里多出来的行。
+# 详见 scripts/bifrost-sync-config.sh 的头注释（四条都有实验证据）。
+if [ -f "$STAGE/bifrost-sync.sh" ]; then
+  bash "$STAGE/bifrost-sync.sh" --app-dir "$BIF" --port 18080 --apply --prune || true
+else
+  echo "  （没有 bifrost-sync.sh，跳过 —— 漂移不会被收敛）"
+fi
 
 echo "=== 4. virtual key（引擎 → 代理 的凭据）==="
 cd "$BIF"; set -a; . ./env; set +a

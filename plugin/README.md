@@ -18,7 +18,7 @@ opencode **v2** 插件。补齐 v2 原生缺的那几条：
 
 ---
 
-## 五处挂载点
+## 六处挂载点
 
 | # | 挂载点 | 文件 |
 |---|---|---|
@@ -27,6 +27,16 @@ opencode **v2** 插件。补齐 v2 原生缺的那几条：
 | ③ | 认终态：`ctx.event.subscribe()` → `session.execution.*` | `src/index.js` |
 | ④ | 墙钟：每任务一次性定时器 → 宽限 → **恰好一次** `ctx.session.interrupt({resume:false})` | `src/supervisor.js` |
 | ⑤ | 落盘 + 对账：`ctx.storage` + `ctx.session.hook("prompt")` | `src/ledger.js` + `src/reconcile.js` |
+| ⑥ | **补名册**：`ctx.session.hook("context")` → 把 subagent 名册接进 `subagent` 工具描述 | `src/roster.js` + `src/index.js` |
+
+**⑥ 为什么需要**：REEVE 的 7 个 subagent 都标了 `hidden: true`（人在前台看不到、也不能用 `@` 直接找它们说话），
+而 v2 会把 hidden 的 agent **从 `subagent` 工具的"可用 subagent"宣传段里滤掉**（它只列 `!agent.hidden`；
+`packages/core/src/tool/plugin/subagent.ts`）。于是由本插件把名册**补回工具描述**：人看不见、模型看得见。
+幂等（按标记去重）；注入事实与"引擎内部读到的 agent 表"一起进快照（`agentTable` / `roster`）。
+
+> ⚠️ **验 agent 可见性别用 `opencode debug agents`**：它连的是 CLI 自己的 managed service
+> （端口来自 `service.json`，默认 `0xC0DE`），实测会**连到另一个 HOME 的引擎**、报出别人的表。
+> 本插件在第一次 `context` 钩子时（所有 `agent.transform` 都已应用）从引擎内部读一次，落进快照。
 
 ---
 
@@ -143,20 +153,21 @@ opencode **v2** 插件。补齐 v2 原生缺的那几条：
 ## 验证
 
 ```bash
-# 全部测试（不依赖模型、不依赖 opencode）：41 + 30 + 7 = 78 项
+# 全部测试（不依赖模型、不依赖 opencode）：68 + 30 + 8 = 106 项
 npm test
 
 # 加载 + 工具是否进入模型工具表
 opencode service stop && sleep 3
-opencode debug agents        # 预热（service stop 后首次调用会返回空）
-opencode run --standalone --auto --print-logs --session <id> "hi"
-#   看 stderr 里的 [reeve] 行；看模型收到的工具名里有 reeve_task_status
+opencode run --standalone --auto --print-logs "hi"
+#   看 stderr 里的 [reeve] 行（含"引擎 agent 表"与"名册已注入"两条）
+#   看模型收到的工具名里有 reeve_task_status
+#   看快照文件（snapshotPath）里的 agentTable / roster 两节
 ```
 
-**在 EL7 上的实机验证**（2026-10-19，staging，隔离 `HOME`）：`debug agents` 里 8 个自定义 agent 全在；
-真委派 `foreman → scout` 后台账落账（`agent=scout`、`state=completed`、父/子会话 id 齐全），
-模型能调 `reeve_task_status` 把台账读回来；`snapshotPath` 打开后快照文件生成且跨重启 hydrate 正确。
-详见 [../docs/PROGRESS.md](../docs/PROGRESS.md) §4.4 与 §5.2。
+**在 EL7 上的实机验证**（2026-10-19，staging，隔离 `HOME`）：真委派 `foreman → scout` 后台账落账
+（`agent=scout`、`state=completed`、父/子会话 id 齐全），子会话 17 次调用全在 `reeve/flash`；
+快照里 `agentTable.visible=[foreman]`（其余 14 个 hidden）、`roster.count=7`；
+模型能调 `reeve_task_status` 把台账读回来。详见 [../docs/PROGRESS.md](../docs/PROGRESS.md) §4.4 / §5.2 / **§6.1**。
 
 **注意**：opencode v2 默认跑一个**后台常驻 service**，它会**钉住环境变量**。
 改 `HOME` / 配置后必须 `opencode service stop`，否则看到的是旧环境

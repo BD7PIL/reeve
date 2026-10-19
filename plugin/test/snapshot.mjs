@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { Ledger } from '../src/ledger.js'
-import { SnapshotWriter, buildSnapshot } from '../src/snapshot.js'
+import { SnapshotWriter, buildSnapshot, projectAgentTable } from '../src/snapshot.js'
 
 let passed = 0
 const ok = (label) => {
@@ -118,6 +118,24 @@ const dir = await mkdtemp(join(tmpdir(), 'reeve-snap-'))
   assert.ok(!keys.includes('interruptSent'), 'interruptSent 不该进快照')
   assert.ok(keys.includes('statusUncertain'), 'statusUncertain 要在（面板要显示"不确定"）')
   ok('快照字段是白名单投影')
+}
+
+// ---- 8. agent 表投影：前台可见 / 隐藏 / subagent 三分类 ----
+{
+  const table = projectAgentTable([
+    { id: 'foreman', mode: 'primary', hidden: false },
+    { id: 'scout', mode: 'subagent', hidden: true },
+    { id: 'build', mode: 'primary', hidden: true },
+    { id: 'explore', mode: 'subagent', hidden: false },
+  ])
+  assert.deepEqual(table.visible.map((a) => a.id), ['foreman'], '前台可见只有 foreman')
+  assert.deepEqual(table.hidden.map((a) => a.id).sort(), ['build', 'scout'], '隐藏的两人')
+  assert.deepEqual(table.subagent.map((a) => a.id), ['explore'], '未被藏起来的 subagent')
+  assert.equal(projectAgentTable(null), null, '读不到就 null，不假装知道')
+
+  const snap = buildSnapshot([], { agents: table })
+  assert.ok(snap.agentTable && snap.agentTable.visible[0].id === 'foreman', 'agent 表进快照')
+  ok('agent 表投影进快照（前台可见 / 隐藏 / subagent）')
 }
 
 console.log(`\n快照测试：${passed} 项全过`)

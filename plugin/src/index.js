@@ -9,6 +9,11 @@
 //   ④ 墙钟                                     Supervisor（每任务一次性定时器）
 //   ⑤ 落盘 + 对账                              ctx.storage + ctx.session.hook("prompt")
 //
+// 外加一处"补名册"：ctx.session.hook("context") 把 subagent 名册接进
+// `subagent` 工具的描述 —— 7 个 subagent 都标了 hidden（前台不可见），
+// 引擎自己的"可用 subagent"宣传段会把它们滤掉，这一钩子把名册补回去
+// （人看不见，模型看得见）。见 src/roster.js。
+//
 // 铁律：**本插件绝不写 `agents.*.model`** —— 那是与 openchamber 面板抢配置
 // （openchamber#3881：面板保存 agent 会静默压掉预设）。插件只注册工具 + 挂 hook。
 
@@ -23,7 +28,8 @@ import { Ledger } from './ledger.js'
 import { acquireAdmissionRuntime } from './concurrency.js'
 import { Supervisor } from './supervisor.js'
 import { reconcileParent } from './reconcile.js'
-import { SnapshotWriter, buildSnapshot } from './snapshot.js'
+import { SnapshotWriter, buildSnapshot, projectAgentTable } from './snapshot.js'
+import { SUBAGENT_ROSTER, withRoster } from './roster.js'
 
 const SUBAGENT_TOOL = 'subagent'
 
@@ -43,6 +49,40 @@ export default {
       `[reeve] 已启动；从盘上恢复 ${restored.loaded} 条台账记录` +
         (restored.truncated ? '（⚠️ 可能不完整，见上一条告警）' : ''),
     )
+
+    // agent 表诊断（桌面面板可核对"前台只出现编排者"）。
+    // 为什么值得常驻：`opencode debug agents` 走的是 CLI 自己连的那个服务，未必是你以为的
+    // 那个引擎（实测踩过：它连到另一个 HOME 的服务，报出别人的 agent 表）。这一份是从
+    // 引擎进程内部读的，没有歧义。
+    //
+    // ⚠️ **不能在 setup 里读**：那时其他插件的 `agent.transform`（配置里的 agents 块、
+    // 内置 agent 的注册）还没应用，读到的是"transform 之前的表"——实测只看到 7 个内置。
+    // 改成第一次 `context` 钩子时惰性读一次，那时表才是最终的。
+    let agentTable = null
+    let agentTableRead = false
+    // 名册注入的证据：注入成功过一次就记下来（进快照）——"藏起来不削弱委派"这条设计
+    // 靠它可核对，而不是靠"模型应该看得见"。
+    let roster = null
+    let snapshotFlush = () => {}
+
+    const readAgentTable = async () => {
+      try {
+        const res = await ctx.agent.list()
+        // 生成的客户端返回 `{ data: [...] }`（CLI 里也是这么取的）；也容错裸数组
+        const list = Array.isArray(res) ? res : Array.isArray(res?.data) ? res.data : null
+        agentTable = projectAgentTable(list)
+        if (agentTable) {
+          const ids = (rows) => rows.map((a) => `${a.id}[${a.mode}]`).join(', ') || '（无）'
+          logger.debug(
+            `[reeve] 引擎 agent 表：${agentTable.total} 个；前台可见 [${ids(agentTable.visible)}]；` +
+              `隐藏 [${ids(agentTable.hidden)}]；subagent [${ids(agentTable.subagent)}]`,
+          )
+          snapshotFlush()
+        }
+      } catch (err) {
+        logger.debug(`[reeve] 读 agent 表失败（忽略）：${String(err)}`)
+      }
+    }
     // 保留期修剪：只动已落终态的旧记录，在飞的一律不动。
     const retentionDays = Number(options.retentionDays ?? 30)
     if (retentionDays > 0) {
@@ -61,7 +101,8 @@ export default {
     let snapshot = null
     if (snapshotPath) {
       snapshot = new SnapshotWriter({ path: snapshotPath, logger })
-      const build = () => buildSnapshot(ledger.all(), { version: PLUGIN_VERSION })
+      const build = () => buildSnapshot(ledger.all(), { version: PLUGIN_VERSION, agents: agentTable, roster })
+      snapshotFlush = () => snapshot.schedule(build)
       ledger.onChange = () => snapshot.schedule(build)
       snapshot.schedule(build)
       void snapshot.flush().catch(() => {})
@@ -263,6 +304,38 @@ export default {
         }
       } catch (err) {
         logger.debug(`[reeve] 对账失败（忽略）：${String(err)}`)
+      }
+    })
+
+    // ---- ⑥ 补名册（构造模型调用时）----
+    // 7 个 subagent 在前台不可见（hidden），引擎的"可用 subagent"宣传段因此为空；
+    // 这里把名册接回 `subagent` 工具的描述。幂等（withRoster 认标记），
+    // 失败只记日志 —— 描述补不上不该影响任何一次真实调用。
+    let rosterLogged = false
+    await ctx.session.hook('context', (event) => {
+      // 到这里所有 agent.transform 都已应用 —— 顺手读一次最终的表（只读一次）
+      if (!agentTableRead) {
+        agentTableRead = true
+        void readAgentTable()
+      }
+      try {
+        const tool = event?.tools?.[SUBAGENT_TOOL]
+        if (!tool) return
+        const before = tool.description
+        tool.description = withRoster(before)
+        if (tool.description !== before) {
+          const first = roster === null
+          roster = { count: SUBAGENT_ROSTER.length, at: Date.now(), additions: (roster?.additions ?? 0) + 1 }
+          snapshotFlush()
+          if (!rosterLogged) {
+            rosterLogged = true
+            logger.debug(`[reeve] 名册已注入 ${SUBAGENT_TOOL} 工具描述（${SUBAGENT_ROSTER.length} 个 subagent）`)
+          } else if (first) {
+            logger.debug('[reeve] 名册注入过一次后又被清掉（工具描述被重建）——已重新注入')
+          }
+        }
+      } catch (err) {
+        logger.debug(`[reeve] 名册注入失败（忽略）：${String(err)}`)
       }
     })
 
