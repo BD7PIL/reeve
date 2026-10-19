@@ -676,6 +676,15 @@ reeve/
 | 1 | ~~代理"半截流"（首 token 之后才失败）的行为~~ | ✅ **已解决（2026-10-19 实测）** | 见下 |
 | 2 | ~~`ttft_timeout_ms` 放在 target 级还是 rule 级~~ | ✅ **已解决 = target 级** | EL7 上实测：运行时执行的迁移叫 `add_ttft_timeout_ms_column_to_routing_targets`，列在 **targets** 表 |
 | 3 | ~~惰性对账挂 `ctx.session.hook("context")` 还是 `"prompt"`~~ | ✅ **已解决 = `prompt`** | 实测触发顺序：`prompt` → `execution.started` → `context` → `step.started`。`prompt` 最早，语义最贴"父会话下一次活动" |
+| 4 | ~~Bifrost 静态二进制在 EL7 上真能起~~ | ✅ **已解决（2026-10-19）** | v2.3.0 静态链接，EL7 起得来；**并已跑完一整轮 staging 全链部署**（[PROGRESS.md](PROGRESS.md) §4.4） |
+| 5 | **审查 subagent 的误报率** | 决定 severity 何时升级为门禁、要不要装 OCR | ⏳ **按默认取"都不卡流程"，跑两周再统计**（见 §12 #10） |
+| 6 | ~~是否需要 `free-only` / `long` 档~~ | 决定 3 档还是 4–5 档 | ✅ **按默认取 3 档**；`free` 是链序不是档位，`long` 真遇到再加（§12 #1/#2） |
+
+> **上机后新增的坑（已解决，记在这里免得重查）**：Bifrost 的两处静默失败
+> （`base_url` 带 `/v1` 会双拼；**流式走单独的 `chat_completion_stream` override 键** ——
+> 只设 `chat_completion` 时 curl 正常、引擎一跑就 405）、provider id 撞内置名、
+> 保留期的键是 `client` 不是 `client_config`、推理默认要 virtual key、`served_model` 列恒 NULL。
+> 逐条与证据在 **[PROGRESS.md §4.4](PROGRESS.md)**，`proxy/config.json` 已按实测修正。
 
 ### ✅ 未决 #1 的实测结论（2026-10-19）
 
@@ -695,9 +704,6 @@ reeve/
   比"等客户端重试"快，也避免客户端侧的重试抖动。**是优化项，不是正确性必需项。**
 
 **复现材料**：`D:\develop\ocrc-exp\cuttest\cutstub.mjs`（`CUT_MODE=after-2-chunks | before-any`）。
-| 4 | Bifrost 静态二进制在 EL7 上真能起 | 决定部署路径 | 一次 smoke test（`./bifrost-http -port 8080` 后 `/v1/models` 有响应） |
-| 5 | 审查 subagent 的误报率 | 决定 severity 何时升级为门禁、要不要装 OCR | 跑两周统计 |
-| 6 | 是否需要 `free-only` / `long` 档 | 决定 3 档还是 4–5 档 | 使用者确认（§12） |
 
 **已解决**（别重复调查）：opencode 忽略响应模型名（HANDOFF §4.4）；omo-slim 台账跨重启不存活
 （HANDOFF §6.4）；omo 上游拒绝移植（HANDOFF §1.2）；**v2 插件 API 的真实形态**
@@ -705,16 +711,20 @@ reeve/
 
 ---
 
-## 12. 待使用者确认
+## 12. 已取的默认值（**不是待确认，是已定；一句话就能改**）
 
-| # | 问题 | 阻塞 |
-|---|---|---|
-| 1 | 有没有"**永远不许溢出到付费配额**"的活？→ 决定 3 档还是 4 档（多一个 `free-only`） | 步 4 |
-| 2 | 有没有**超长上下文**场景？→ 决定要不要第 4 个能力档 `long` | 步 4 |
-| 3 | **4 个原生 provider 的 OpenAI 兼容 endpoint**（`xiaomi`/`deepseek`/`zhipuai-coding-plan`/`alibaba-cn`） | 步 4 |
-| 4 | **部署是否归 ocrc**（它刚被裁到只剩一条路，要不要它再吃下 REEVE 的部署） | 步 4 |
-| 5 | 插件包名与扩展目录最终确认（当前按 `@bd7pil/reeve` / `extensions/reeve`） | 步 2 |
-| 6 | `oh-my-openagent` 实际生效版本（4.19.4 还是 5.0.0）——影响"回退不靠谱"的归因 | 非阻塞 |
+原先这里挂着 6 个"待使用者确认"、外加 4 个实施期决定。执行时**全部按下表落定**并写进实现与文档。
+依据在右列；**不同意任何一条，说一声就改**（都只是一处配置或一句文案）。
 
-**建议答案**：问题 1/2 先按 **3 档**（`flash` / `pro` / `multimodal`）做，
-`free` 当"链的顺序"而不是档位，`long` 等真遇到超长上下文再加。**但这只是建议——必须由使用者确认。**
+| # | 问题 | **已取的默认** | 依据 |
+|---|---|---|---|
+| 1 | 有没有"永远不许溢出到付费配额"的活？→ 3 档还是 4 档 | **3 档**（`flash`/`pro`/`multimodal`）；"先试免费"用**链序**表达（免费模型当头，配额耗尽自动落付费） | 链序本来就能做这件事；多一个档位只是多一处要维护的映射 |
+| 2 | 有没有超长上下文场景？→ 要不要 `long` 档 | **先不加** | 3 档已覆盖日常；`long` 真遇到时加一行 rule 即可 |
+| 3 | 那 4 个原生 provider 的 endpoint | ✅ **已解决**：models.dev 目录里就有（`npm=@ai-sdk/openai-compatible`），**且上机核对了路径拼接规则** | `proxy/README.md` 的 endpoint 表 + `config.json` 的双 override |
+| 4 | 部署是否归 ocrc | **是**。本仓库只出**资产与脚本**（`scripts/el7-deploy-staging.sh` 等），ocrc 负责推与起 | 与"配置目录隔离杠杆 = `HOME`"是同一处改动；本仓库不越界改 ocrc |
+| 5 | 插件包名 / 扩展目录 | **`@bd7pil/reeve`** / **`extensions/reeve`** | 已按此实现 |
+| 6 | omo 实际生效版本（4.19.4 / 5.0.0） | **不追** | 与 REEVE 无关：v1+omo 这条线整体不救了 |
+| 7 | 部署路径 | **先 EL7 staging（隔离 `HOME`）** —— ✅ 已做完；ocrc 集成留后续 | 隔离杠杆实测是 `HOME`；改 ocrc 是另一个仓库的活 |
+| 8 | `limits.default` | **8** | 实测峰值 88；无上限是失控风险，8 是保守起点（插件支持按 model/provider 覆盖） |
+| 9 | 台账 `retentionDays` / Bifrost `client.log_retention_days` | **都 30 天** | 台账只清**已落终态**的（在飞的不动）；Bifrost 默认 365 太松 |
+| 10 | 审查 severity 是否卡流程 | **都不卡** | 规则带 Java 企业栈指纹，先跑两周看误报率再定 |

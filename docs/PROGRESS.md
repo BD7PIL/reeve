@@ -497,10 +497,83 @@ for(const id of ["opencode","zhipuai-coding-plan","deepseek","xiaomi","alibaba-c
 **两个仍存在的设计风险（如实记录，未改）**：槽位泄漏（`execute.after` 不触发则闸门卡死，无兜底超时）；
 排队无上限（若上一条发生就是永久挂起）。**建议上生产前给 `limits.default` 设值。**
 
-**Bifrost 侧**：`logs.db` 只增不减 → 用 `client_config.log_retention_days`（最小 1 天）；
+**Bifrost 侧**：`logs.db` 只增不减 → 保留期**用 `client` 块**（见 4.4：`client_config` 是错的键）；
 `served-model.sh` 的全表聚合未建索引。
 
 **新增测试**：39 + 30 = **69 项全过**（新增 4 项覆盖修剪语义与截断检测）。
+
+---
+
+### 4.4 子任务：EL7 staging 全链部署 ✅（2026-10-19）
+
+**做法**：`~/.reeve-staging/` 作为独立 `HOME`（隔离杠杆已实测确认），
+Bifrost 起在 **:18080**，v2 引擎（`~/.ocrc/remote/engine/opencode`，v2.0.27）跑在同一个 staging HOME 下。
+**生产 v1 引擎（:4096，pid 11133）全程未动** —— 收工时 `ps -o etime` 显示它已连续运行 17:45:32，从未重启。
+
+**脚本**：`scripts/el7-deploy-staging.sh`（幂等：env → 派生 config → 起 Bifrost → 建 VK）、
+`scripts/el7-restart-bifrost.sh`、`scripts/served-model.{sh,mjs}`。
+
+#### 4.4.1 实测结论（这一批是**上机才发现**的，配置已按此修正）
+
+| # | 事实 | 证据 | 对配置的改动 |
+|---|---|---|---|
+| 1 | **Bifrost 默认 `enforce_auth_on_inference=true`**：推理请求必须带 `x-bf-vk`，否则 `401 virtual_key_required` | 无 VK 的 `/v1/chat/completions` 回 401 | 引擎侧 apiKey = Bifrost **virtual key**（provider 真 key 只留在 Bifrost 的 env 里） |
+| 2 | **新建的 VK 默认一个 provider 都不允许** | `403 Provider 'zhipuai-coding-plan' is not allowed for virtual key 'reeve-engine'` | 建完要 `PUT /api/governance/virtual-keys/<id>` `{"allow_all_providers":true}` |
+| 3 | **setup token 的读法**：配置写在 `governance.setup_token`，**值写 `env.BIFROST_SETUP_TOKEN`**；请求头是 **`X-Bifrost-Setup-Token`**（不是 `Authorization`、不是 `x-bf-setup-token`） | 设之前 `/api/governance/*` 回 401 `dashboard auth is not configured`；设之后 200 | `governance.setup_token` 进入 config.json |
+| 4 | **保留期的键是 `client`，不是 `client_config`** | 写 `client_config.log_retention_days=30` → 重启后 DB 里仍是默认 **365**；换 `client` → DB 立刻变 **30**（`node:sqlite` 直读 `config_client` 表核对） | config.json 改用 `client` |
+| 5 | **`base_url` 不能带 `/v1`**：Bifrost 会在 base_url 之后追加路径 | 探针（base_url 指回自己）：`/PA/v1` → `/PA/v1/v1/chat/completions` | 所有 provider 的 base_url 只写到主机（+必要前缀），路径交给 override |
+| 6 | ⚠️ **流式走的是另一个 override 键 `chat_completion_stream`** | 只设 `chat_completion` 时：curl（非流式）200，**引擎一跑就 405**；补上 `chat_completion_stream` 后引擎正常 | **每个 provider 两个键都写**（opencode 永远走流式，这是最容易静默踩到的坑） |
+| 7 | **provider id 撞 Bifrost 内置名会失效**：叫 `deepseek` → `failed to get config for provider deepseek: not found`；同名配置复制成 `deepseek-api` → 正常到达上游 | 同一份配置换个名字就好 | 改名 `deepseek-api` |
+| 8 | **`served_model` 列在本构建里恒为 NULL** | 全部行 `served_model=null` | 归因改用 `provider` / `model` / `selected_key_name` / `fallback_index` / `routing_rule_name`（见 4.4.3） |
+| 9 | **EL7 自带的 sqlite3 3.7.17 打不开 Bifrost 的库**（部分是索引需要 >= 3.8） | `sqlite3 logs.db "select 1"` → `malformed database schema (idx_mcp_logs_session_id)` | `served-model.sh` 改为优先找支持 `node:sqlite` 的 node（ocrc 运行时自带 Node 24），退路 `/api/logs`（要 setup token） |
+| 10 | **Bifrost 会把「key 连续失败」的 provider 从链头挪走** | 坏 key 期间先出现 `hop=0 xiaomi error / hop=1 zhipuai success`，随后同一档位直接 `hop=0 zhipuai success` | 读归因时**不能假设 hop 0 = 配置里的链头**，要看 `provider` 列 |
+| 11 | **插件的存储命名空间是 `plugin:<hex(id)>:`，不是文档写的 `plugin.<id>.`** | kv 表里的键：`plugin:00720065006500760065:ledger/call_...`（hex 解码 = `reeve`） | 写进研究文档（步 5 控制台要用） |
+| 12 | **`run --agent <subagent>` 的顶层会话用的是 config 的默认 model**，不是该 agent 的档位；**agent 的档位只在被委派时生效** | `--agent scout` 跑出来是 `> scout · pro`（打到 reeve/pro）；而 foreman 真委派 scout 时那 8 次全在 `reeve/flash` | 记档：验档位要验**委派**，不能用 `--agent` 顶层跑 |
+
+#### 4.4.2 EL7 上各 provider 的实际可用性（**与配置里的链序无关，是账号/线路状态**）
+
+| provider | 流式 | 结论 |
+|---|---|---|
+| `zhipuai-coding-plan` | ✅（补了 stream override 之后） | 可用；面对面 `glm-5.3` / `glm-5.3-flash` 都通 |
+| `lmuai` | ✅ | 可用（`glm-5.3` / `glm-5.3-flash`） |
+| `xiaomi` | ✅ | 可用（`mimo-v2.6-flash`） |
+| `xxyapi-deepseek` | — | ❌ `503 Service temporarily unavailable`（上游） |
+| `deepseek`（→`deepseek-api`） | — | ❌ `402 Insufficient Balance`（**该账号余额为 0**） |
+| `alibaba-cn` | — | ❌ `Incorrect API key` / `404 resource not found`（key 无效） |
+| `opencode`（zen） | — | EL7 的 `auth.json` 里**没有**这个 provider（staging 按规则摘掉） |
+
+→ **EL7 staging 上真正能扛事的只有 `zhipuai-coding-plan` / `lmuai` / `xiaomi`**，
+而这三个恰好覆盖了三个档位，所以全链验证可以做完。
+
+#### 4.4.3 验收结果
+
+| 检查项 | 标准 | 实测 |
+|---|---|---|
+| 引擎能起来、配置被读 | `debug config` 里有 `document` 源 | ✅ 且 `apiKey` 显示为 `***`（说明 `{env:REEVE_VK}` 已解析） |
+| 8 个 agent 加载 | 8 自定义 + 7 内置 | ✅ 15 个；`foreman/planner=reeve/pro`、`scout/executor=reeve/flash`；`critic/advisor/planner/reviewer` 的 `deny` 含 `edit+shell` |
+| 插件加载 | 工具可见、hook 挂上 | ✅ 模型能调 `reeve_task_status` 并拿到台账 |
+| **Bifrost 收到 `reeve/<档位>`** | 引擎请求的 model 名 = `reeve/<档位>` | ✅ `routing_rule_name` = `reeve/pro`／`reeve/flash`／`reeve/multimodal` |
+| **档位分流** | 主 agent pro、子 agent flash | ✅ foreman 9 次 `reeve/pro`；**同一场对话里**委派给 scout 的 8 次全在 `reeve/flash` |
+| 台账落账 | 子任务被记录 | ✅ `{agent:"scout", state:"completed", childSessionID, parentSessionID}` 落进引擎存储 |
+| **回退可靠** | 坏 key 链头 → 第二个接上且请求成功 | ✅ `hop=0 xiaomi error(Invalid API Key)` → `hop=1 zhipuai-coding-plan/glm-5.3-flash success`（显式点名 + 真委派两种都验了） |
+| **视觉档** | 只有视觉调用走 `reeve/multimodal` | ✅ 带图那次 `reeve/multimodal → zhipuai-coding-plan/glm-5.3-flash`，hop 0 success（模型回答了 8×8 图的像素数） |
+| **归因可查** | 答得出"谁真的服务了" | ✅ `served-model.sh --days 1` 输出档位→provider/model/key/状态计数 + 每跳归属 |
+| 无 omo 字面 | 0 命中 | ✅ |
+| **生产未动** | :4096 与 `~/.config/opencode` 一行不动 | ✅ pid 11133 连续运行 17:45:32；staging 收工后 18080 已释放、无残留进程 |
+
+**「零冲突」机制层（EL7 侧）**：
+- 插件代码里**没有任何写 `agents`/`model` 的路径** —— 全部写操作只有 `this.storage.set(<自己的命名空间>)` 与内存 Map；
+- `~/.reeve-staging/.config/opencode/opencode.json` 的 **mtime 停在 18:19:17**（我写入那一刻），
+  hash `9b7c8768…`；此后跑了 6+ 轮引擎会话（含委派、含台账写入）——**文件一个字节都没变**。
+
+#### 4.4.4 未做/未验（如实记录）
+
+- **面板层「零冲突」**（在 openchamber 面板保存一次、看配置有没有被静默压掉）：步 5 若能把扩展装上去再做，
+  否则如实标"机制层已验、面板层未验"。
+- EL7 上 `xxyapi-deepseek` / `deepseek-api` / `alibaba-cn` 的失败**是账号侧问题**，不是本仓库的配置问题；
+  链序在别的机器上按同样规则重新核对即可（`scripts/served-model.sh` 就是干这个的）。
+- `pro` 档在 EL7 只有 1 跳可用（`zhipuai`）；`lmuai/glm-5.3` 已加进 fallback 列表，
+  实测它在 `pro` 的 hop=2 上成功接过一次（见归因表）。
 
 ---
 

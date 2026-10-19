@@ -1,64 +1,108 @@
 {
   "$schema": "https://www.getbifrost.ai/schema",
 
-  "//": "REEVE 代理层配置 —— 链的唯一维护处。改这个文件要重启 Bifrost；热改走 POST /api/routing/rules。",
+  "//": "REEVE 代理层配置 —— 链的唯一维护处。改这个文件要重启 Bifrost；热改走 POST /api/routing/rules（需 setup token）。",
   "//providers": "provider 全部写成 OpenAI 兼容自定义 provider（纯透传，不做任何格式翻译）。",
-  "//baseurls": "baseURL 取自本机 models.dev 目录（~/.cache/opencode/models.json），全部标着 npm=@ai-sdk/openai-compatible。复现方法见 proxy/README.md。",
+  "//baseurls": "⚠️ 只写到「主机（+路径前缀）」，绝不要带 /v1 —— Bifrost 会自动在 base_url 之后追加 request_path_overrides.chat_completion（默认 /v1/chat/completions）。实测：base_url 带 /v1 会拼出 /v1/v1/chat/completions。",
+  "//path_overrides": "⚠️ 每个 provider 都要写 **两个** 键：chat_completion 与 chat_completion_stream。流式请求走后者，不设就用默认 /v1/chat/completions —— 而 opencode 永远走流式。实测踩到：只设 chat_completion 时，curl 非流式正常、引擎一跑就 405。值是「追加到 base_url 的路径」。",
   "//keys": "API key 一律写 env.<VAR>（Bifrost 自己的语法，与 opencode 侧的 {env:VAR} 不同），由 ocrc 的实例启动行注入 —— 密钥不进仓库。",
   "//modelids": "链上每个 model 都在 models.dev 目录里核对过存在（见 proxy/README.md 的核对清单）。",
+  "//name_collision": "⚠️ provider id 不能与 Bifrost 内置名撞车。实测：叫 deepseek 会回 'failed to get config for provider deepseek: not found'，改名 deepseek-api 后正常。这里一律加 -api 之类的后缀避开。",
 
   "providers": {
     "opencode": {
-      "custom_provider_config": { "base_provider_type": "openai" },
-      "network_config": { "base_url": "https://opencode.ai/zen/v1" },
+      "custom_provider_config": {
+        "base_provider_type": "openai",
+        "request_path_overrides": {
+          "chat_completion": "/v1/chat/completions",
+          "chat_completion_stream": "/v1/chat/completions"
+        }
+      },
+      "network_config": { "base_url": "https://opencode.ai/zen" },
       "keys": [
         { "name": "opencode-primary", "value": "env.REEVE_OPENCODE_KEY", "models": ["*"], "weight": 1.0 }
       ]
     },
 
     "zhipuai-coding-plan": {
-      "custom_provider_config": { "base_provider_type": "openai" },
-      "network_config": { "base_url": "https://open.bigmodel.cn/api/coding/paas/v4" },
+      "custom_provider_config": {
+        "base_provider_type": "openai",
+        "request_path_overrides": {
+          "chat_completion": "/api/coding/paas/v4/chat/completions",
+          "chat_completion_stream": "/api/coding/paas/v4/chat/completions"
+        }
+      },
+      "network_config": { "base_url": "https://open.bigmodel.cn" },
       "keys": [
         { "name": "zhipuai-primary", "value": "env.REEVE_ZHIPUAI_KEY", "models": ["*"], "weight": 1.0 }
       ]
     },
 
     "xxyapi-deepseek": {
-      "custom_provider_config": { "base_provider_type": "openai" },
-      "network_config": { "base_url": "https://www.xxyapi.com/v1" },
+      "custom_provider_config": {
+        "base_provider_type": "openai",
+        "request_path_overrides": {
+          "chat_completion": "/v1/chat/completions",
+          "chat_completion_stream": "/v1/chat/completions"
+        }
+      },
+      "network_config": { "base_url": "https://www.xxyapi.com" },
       "keys": [
         { "name": "xxyapi-primary", "value": "env.REEVE_XXYAPI_KEY", "models": ["*"], "weight": 1.0 }
       ]
     },
 
     "lmuai": {
-      "custom_provider_config": { "base_provider_type": "openai" },
-      "network_config": { "base_url": "https://api.lmuai.com/v1" },
+      "custom_provider_config": {
+        "base_provider_type": "openai",
+        "request_path_overrides": {
+          "chat_completion": "/v1/chat/completions",
+          "chat_completion_stream": "/v1/chat/completions"
+        }
+      },
+      "network_config": { "base_url": "https://api.lmuai.com" },
       "keys": [
         { "name": "lmuai-primary", "value": "env.REEVE_LMUAI_KEY", "models": ["*"], "weight": 1.0 }
       ]
     },
 
-    "deepseek": {
-      "custom_provider_config": { "base_provider_type": "openai" },
-      "network_config": { "base_url": "https://api.deepseek.com/v1" },
+    "deepseek-api": {
+      "custom_provider_config": {
+        "base_provider_type": "openai",
+        "request_path_overrides": {
+          "chat_completion": "/v1/chat/completions",
+          "chat_completion_stream": "/v1/chat/completions"
+        }
+      },
+      "network_config": { "base_url": "https://api.deepseek.com" },
       "keys": [
         { "name": "deepseek-primary", "value": "env.REEVE_DEEPSEEK_KEY", "models": ["*"], "weight": 1.0 }
       ]
     },
 
     "xiaomi": {
-      "custom_provider_config": { "base_provider_type": "openai" },
-      "network_config": { "base_url": "https://api.xiaomimimo.com/v1" },
+      "custom_provider_config": {
+        "base_provider_type": "openai",
+        "request_path_overrides": {
+          "chat_completion": "/v1/chat/completions",
+          "chat_completion_stream": "/v1/chat/completions"
+        }
+      },
+      "network_config": { "base_url": "https://api.xiaomimimo.com" },
       "keys": [
         { "name": "xiaomi-primary", "value": "env.REEVE_XIAOMI_KEY", "models": ["*"], "weight": 1.0 }
       ]
     },
 
     "alibaba-cn": {
-      "custom_provider_config": { "base_provider_type": "openai" },
-      "network_config": { "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1" },
+      "custom_provider_config": {
+        "base_provider_type": "openai",
+        "request_path_overrides": {
+          "chat_completion": "/compatible-mode/v1/chat/completions",
+          "chat_completion_stream": "/compatible-mode/v1/chat/completions"
+        }
+      },
+      "network_config": { "base_url": "https://dashscope.aliyuncs.com" },
       "keys": [
         { "name": "alibaba-primary", "value": "env.REEVE_ALIBABA_KEY", "models": ["*"], "weight": 1.0 }
       ]
@@ -67,13 +111,14 @@
 
   "//governance": "三条 routing rule = 三个档位。CEL 变量是 model（字符串），不是 request.model —— 官方文档示例是错的。",
   "//weight": "targets 的 weight 必须合计为 1（单 target 就是 1）。",
-  "//fallbacks": "fallbacks 用 \"provider/model\"；写 \"provider/\" 表示同模型换 provider。",
+  "//fallbacks": "fallbacks 用 \"provider/model\"；写 \"provider/\" 表示同模型换 provider。链尾要放「任何机器上都可服务」的那家，否则等于链是空的。",
   "//ttft": "ttft_timeout_ms 放 target 上（changelog + Helm schema + DB migration 三处一致）。⚠️ 官方两份 MDX 把它写成 rule 级 —— 上机时两种都试，见 docs/PLAN.md §11 #2。",
   "//ttft_verified": "✅ 2026-10-19 在 EL7 上实测：运行时执行的迁移叫 add_ttft_timeout_ms_column_to_routing_targets —— 列在 targets 表上，所以是 target 级。rule 级不报错只是因为未知字段被宽容忽略。",
-  "//retention": "⚠️ logs.db 只增不减。设 client_config.log_retention_days（最小 1 天）限制保留期。",
-  "//setup_token": "⚠️ /api/routing/rules 需要 setup token，否则回 403。用 BIFROST_SETUP_TOKEN 环境变量注入，不要写进本文件。",
+  "//setup_token": "⚠️ /api/routing/rules 与 /api/governance/* 需要 setup token，否则 401/403。写在 governance.setup_token，值用 env.BIFROST_SETUP_TOKEN —— 密钥不进仓库。请求头是 X-Bifrost-Setup-Token。",
+  "//virtual_key": "⚠️ Bifrost 默认 enforce_auth_on_inference=true：推理请求必须带 x-bf-vk（virtual key），否则 401 virtual_key_required。新建的 VK 默认不允许任何 provider，还要 PUT allow_all_providers=true。VK 是「引擎 → 代理」的凭据，provider 真 key 只留在本文件的 env.* 里。",
 
   "governance": {
+    "setup_token": "env.BIFROST_SETUP_TOKEN",
     "routing_rules": [
       {
         "id": "reeve-flash",
@@ -88,7 +133,7 @@
           "zhipuai-coding-plan/glm-5.3-flash",
           "xxyapi-deepseek/deepseek-v4.1-flash",
           "lmuai/glm-5.3-flash",
-          "deepseek/deepseek-flash"
+          "deepseek-api/deepseek-flash"
         ],
         "scope": "global",
         "priority": 10
@@ -103,7 +148,8 @@
           { "provider": "zhipuai-coding-plan", "model": "glm-5.3", "weight": 1, "ttft_timeout_ms": 30000 }
         ],
         "fallbacks": [
-          "deepseek/deepseek-flash",
+          "deepseek-api/deepseek-flash",
+          "lmuai/glm-5.3",
           "opencode/mimo-v2.6-flash-free"
         ],
         "scope": "global",
@@ -121,12 +167,17 @@
         "fallbacks": [
           "xxyapi-deepseek/deepseek-v4.1-flash",
           "lmuai/glm-5.3-flash",
-          "deepseek/deepseek-flash",
+          "deepseek-api/deepseek-flash",
           "opencode/mimo-v2.6-flash-free"
         ],
         "scope": "global",
         "priority": 30
       }
     ]
+  },
+
+  "//client": "⚠️ 这个块的名字是 client，不是 client_config —— 实测 client_config 被静默忽略（DB 里仍是默认 365）。log_retention_days 默认 365 天，logs.db 只增不减。",
+  "client": {
+    "log_retention_days": 30
   }
 }

@@ -407,9 +407,20 @@ export interface StorageEntry       { readonly key: string; readonly value: Sche
 ```
 
 - **任意字符串键 + JSON 值 + 前缀 `scan`**，够 REEVE 用。
-- **命名空间由宿主加**：每个键自动前缀 `plugin.<pluginID>.`（二进制里
-  `storage.store(\`plugin.${t.id}.${h}\`, m)`）→ **你的 `id` 就是隔离边界**，不必自己加前缀。
-- 持久化在宿主存储服务里（本机 `~/.local/share/opencode/opencode.db`）。
+- **命名空间由宿主加**：每个键自动前缀 —— 二进制里是
+  `storage.store(\`plugin.${t.id}.${h}\`, m)`；**但落到磁盘上的形式不一样**：
+
+  > ⚠️ **实测更正（2026-10-19，EL7 v2.0.27，读 `opencode.db` 的 `kv` 表）**：
+  > 实际键是 **`plugin:<插件 id 的 hex>:<你的键>`** —— 分隔符是 **`:`** 而不是 `.`，
+  > 且 id 被 **hex 编码**。REEVE 的真实样本：
+  > `plugin:00720065006500760065:ledger/call_8dbc86b68d8048fa923b3376`
+  > （`0072 0065 0065 0076 0065` = `reeve`）。
+  > → **步 5 的控制台若要直读台账，必须按这个格式拼键**（或改用插件的 `reeve_task_status` 工具）。
+  > 本文早先按二进制字符串写成 `plugin.<id>.`，按那个格式在文件里查是**查不到**的。
+
+  → **你的 `id` 就是隔离边界**，不必自己加前缀。
+- 持久化在宿主存储服务里（本机 `~/.local/share/opencode/opencode.db` 的 **`kv` 表**，
+  列为 `key, value, time_created, time_updated`）。
 - **注意区分**：二进制里另有一个 `context.storage.store(name, {initial})` / `.memory(name, {initial})`
   返回 `[value, setter]` —— 那是 **TUI 的响应式 store**，与插件的 `StorageDomain` **不是一回事**。
 
