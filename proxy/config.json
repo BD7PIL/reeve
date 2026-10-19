@@ -1,0 +1,132 @@
+{
+  "$schema": "https://www.getbifrost.ai/schema",
+
+  "//": "REEVE 代理层配置 —— 链的唯一维护处。改这个文件要重启 Bifrost；热改走 POST /api/routing/rules。",
+  "//providers": "provider 全部写成 OpenAI 兼容自定义 provider（纯透传，不做任何格式翻译）。",
+  "//baseurls": "baseURL 取自本机 models.dev 目录（~/.cache/opencode/models.json），全部标着 npm=@ai-sdk/openai-compatible。复现方法见 proxy/README.md。",
+  "//keys": "API key 一律写 env.<VAR>（Bifrost 自己的语法，与 opencode 侧的 {env:VAR} 不同），由 ocrc 的实例启动行注入 —— 密钥不进仓库。",
+  "//modelids": "链上每个 model 都在 models.dev 目录里核对过存在（见 proxy/README.md 的核对清单）。",
+
+  "providers": {
+    "opencode": {
+      "custom_provider_config": { "base_provider_type": "openai" },
+      "network_config": { "base_url": "https://opencode.ai/zen/v1" },
+      "keys": [
+        { "name": "opencode-primary", "value": "env.REEVE_OPENCODE_KEY", "models": ["*"], "weight": 1.0 }
+      ]
+    },
+
+    "zhipuai-coding-plan": {
+      "custom_provider_config": { "base_provider_type": "openai" },
+      "network_config": { "base_url": "https://open.bigmodel.cn/api/coding/paas/v4" },
+      "keys": [
+        { "name": "zhipuai-primary", "value": "env.REEVE_ZHIPUAI_KEY", "models": ["*"], "weight": 1.0 }
+      ]
+    },
+
+    "xxyapi-deepseek": {
+      "custom_provider_config": { "base_provider_type": "openai" },
+      "network_config": { "base_url": "https://www.xxyapi.com/v1" },
+      "keys": [
+        { "name": "xxyapi-primary", "value": "env.REEVE_XXYAPI_KEY", "models": ["*"], "weight": 1.0 }
+      ]
+    },
+
+    "lmuai": {
+      "custom_provider_config": { "base_provider_type": "openai" },
+      "network_config": { "base_url": "https://api.lmuai.com/v1" },
+      "keys": [
+        { "name": "lmuai-primary", "value": "env.REEVE_LMUAI_KEY", "models": ["*"], "weight": 1.0 }
+      ]
+    },
+
+    "deepseek": {
+      "custom_provider_config": { "base_provider_type": "openai" },
+      "network_config": { "base_url": "https://api.deepseek.com/v1" },
+      "keys": [
+        { "name": "deepseek-primary", "value": "env.REEVE_DEEPSEEK_KEY", "models": ["*"], "weight": 1.0 }
+      ]
+    },
+
+    "xiaomi": {
+      "custom_provider_config": { "base_provider_type": "openai" },
+      "network_config": { "base_url": "https://api.xiaomimimo.com/v1" },
+      "keys": [
+        { "name": "xiaomi-primary", "value": "env.REEVE_XIAOMI_KEY", "models": ["*"], "weight": 1.0 }
+      ]
+    },
+
+    "alibaba-cn": {
+      "custom_provider_config": { "base_provider_type": "openai" },
+      "network_config": { "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1" },
+      "keys": [
+        { "name": "alibaba-primary", "value": "env.REEVE_ALIBABA_KEY", "models": ["*"], "weight": 1.0 }
+      ]
+    }
+  },
+
+  "//governance": "三条 routing rule = 三个档位。CEL 变量是 model（字符串），不是 request.model —— 官方文档示例是错的。",
+  "//weight": "targets 的 weight 必须合计为 1（单 target 就是 1）。",
+  "//fallbacks": "fallbacks 用 \"provider/model\"；写 \"provider/\" 表示同模型换 provider。",
+  "//ttft": "ttft_timeout_ms 放 target 上（changelog + Helm schema + DB migration 三处一致）。⚠️ 官方两份 MDX 把它写成 rule 级 —— 上机时两种都试，见 docs/PLAN.md §11 #2。",
+  "//ttft_verified": "✅ 2026-10-19 在 EL7 上实测：运行时执行的迁移叫 add_ttft_timeout_ms_column_to_routing_targets —— 列在 targets 表上，所以是 target 级。rule 级不报错只是因为未知字段被宽容忽略。",
+  "//retention": "⚠️ logs.db 只增不减。设 client_config.log_retention_days（最小 1 天）限制保留期。",
+  "//setup_token": "⚠️ /api/routing/rules 需要 setup token，否则回 403。用 BIFROST_SETUP_TOKEN 环境变量注入，不要写进本文件。",
+
+  "governance": {
+    "routing_rules": [
+      {
+        "id": "reeve-flash",
+        "name": "reeve/flash",
+        "description": "便宜、量大：探索 / 检索 / 照文档干活。链序承担'先试免费再付费'。",
+        "enabled": true,
+        "cel_expression": "model == \"reeve/flash\"",
+        "targets": [
+          { "provider": "opencode", "model": "mimo-v2.6-flash-free", "weight": 1, "ttft_timeout_ms": 30000 }
+        ],
+        "fallbacks": [
+          "zhipuai-coding-plan/glm-5.3-flash",
+          "xxyapi-deepseek/deepseek-v4.1-flash",
+          "lmuai/glm-5.3-flash",
+          "deepseek/deepseek-flash"
+        ],
+        "scope": "global",
+        "priority": 10
+      },
+      {
+        "id": "reeve-pro",
+        "name": "reeve/pro",
+        "description": "强推理：编排 / 规划 / 评审 / 审查。",
+        "enabled": true,
+        "cel_expression": "model == \"reeve/pro\"",
+        "targets": [
+          { "provider": "zhipuai-coding-plan", "model": "glm-5.3", "weight": 1, "ttft_timeout_ms": 30000 }
+        ],
+        "fallbacks": [
+          "deepseek/deepseek-flash",
+          "opencode/mimo-v2.6-flash-free"
+        ],
+        "scope": "global",
+        "priority": 20
+      },
+      {
+        "id": "reeve-multimodal",
+        "name": "reeve/multimodal",
+        "description": "多模态能力档：需要读图/读 PDF 的调用。",
+        "enabled": true,
+        "cel_expression": "model == \"reeve/multimodal\"",
+        "targets": [
+          { "provider": "zhipuai-coding-plan", "model": "glm-5.3-flash", "weight": 1, "ttft_timeout_ms": 30000 }
+        ],
+        "fallbacks": [
+          "xxyapi-deepseek/deepseek-v4.1-flash",
+          "lmuai/glm-5.3-flash",
+          "deepseek/deepseek-flash",
+          "opencode/mimo-v2.6-flash-free"
+        ],
+        "scope": "global",
+        "priority": 30
+      }
+    ]
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "name": "@bd7pil/reeve",
+  "version": "0.0.1",
+  "description": "REEVE 记账层：opencode v2 的子任务台账 / 静默死亡 / 在飞查询 / 墙钟 / 并发 / 跨重启对账",
+  "type": "module",
+  "main": "index.js",
+  "exports": {
+    ".": "./src/index.js"
+  },
+  "scripts": {
+    "test": "node test/unit.mjs && node test/reconcile.mjs"
+  },
+  "files": [
+    "index.js",
+    "src",
+    "README.md"
+  ],
+  "license": "SEE LICENSE IN ../LICENSE",
+  "private": true,
+  "keywords": [
+    "opencode",
+    "opencode-plugin",
+    "orchestration"
+  ]
+}
