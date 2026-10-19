@@ -33,8 +33,9 @@ import { Supervisor } from './supervisor.js'
 import { reconcileParent } from './reconcile.js'
 import { SnapshotWriter, buildSnapshot, projectAgentTable } from './snapshot.js'
 import { SUBAGENT_ROSTER, withRoster } from './roster.js'
-import { startOwnedProxy } from './proxy.js'
+import { readSetupToken, startOwnedProxy } from './proxy.js'
 import { REEVE_TIERS, BUILTINS_TO_HIDE, mergeTierModels, pickDefaultAgent, readEndpoint } from './models.js'
+import { STATS_DEFAULTS, aggregateBifrostRows, aggregateLedger, buildStats, fetchBifrostLogs, fetchBifrostModels, mergeModelCandidates } from './stats.js'
 import { loadAgents, loadSkills } from './register.js'
 import { ensureProviderBlock, reeveProviderBlock } from './config-write.js'
 
@@ -74,6 +75,12 @@ export default {
     let roster = null
     /** 代理层自持的状态（进快照：面板可显示、上机可核对）。必须在快照块之前声明。 */
     let proxyState = null
+    /** 链文件的状态（代理那边在维护，这里只留引用给快照）。必须在快照块之前声明。 */
+    let chainRef = null
+    /** 性能统计（进快照）。必须在快照块之前声明。 */
+    let statsState = null
+    /** 模型候选（面板的链编辑选择器用）。必须在快照块之前声明。 */
+    let modelsState = null
     /** 从插件包注册进去的 agent / skill 名单（进快照，便于上机核对"没往配置目录拷文件"）。 */
     let registeredAgents = []
     let registeredSkills = []
@@ -124,8 +131,11 @@ export default {
           agents: agentTable,
           roster,
           proxy: proxyState,
+          chain: chainRef,
+          models: modelsState,
           registered: { agents: registeredAgents, skills: registeredSkills },
           endpoint: endpointState,
+          stats: statsState,
         })
       snapshotFlush = () => snapshot.schedule(build)
       ledger.onChange = () => snapshot.schedule(build)
@@ -168,6 +178,8 @@ export default {
       // 状态一变就刷新快照 —— 尤其"后台取件完成、代理起来了"那一刻（否则面板会一直显示未就绪）
       const onState = (st) => {
         proxyState = { ready: st.ready, detail: st.detail, port: st.port, host: st.host }
+        // 链的状态对象由代理那边持续更新（热更、收敛复核都会写它）—— 这里只留引用，快照时再取
+        if (st.chain) chainRef = st.chain
         snapshotFlush()
       }
       proxyHandle = await startOwnedProxy({ opts, logger, onState })
@@ -176,6 +188,105 @@ export default {
     }
 
     const admission = acquireAdmissionRuntime(ctx.location?.directory, { limits })
+
+    // ---- ⑦ 性能统计（Bifrost 归因 + 台账聚合 → 快照）----
+    // 为什么在插件里做而不是面板里做：面板跑在 openchamber 的 iframe 里，**没有网络能力**，
+    // 只有宿主给的 readFile 与 writeFile。而 `/api/logs`、`/v1/models` 是本机回环的 HTTP ——
+    // 只有引擎进程里的插件够得着。所以插件取数 + 聚合，面板只读快照。
+    const statsOpts = typeof options.stats === 'object' && options.stats !== null ? options.stats : {}
+    const statsIntervalMs = Number(statsOpts.intervalMs ?? STATS_DEFAULTS.intervalMs)
+    const statsLimit = Number(statsOpts.limit ?? STATS_DEFAULTS.limit)
+    const statsWindowMs = Number(statsOpts.windowMs ?? STATS_DEFAULTS.windowMs)
+    // 模型目录多久刷一次。**别跟统计同频**：`/v1/models` 是一次真去上游的探测，
+    // Bifrost 会为每个 provider 记一行日志（实测一次探测 = 7 行）—— 一分钟一次会把
+    // 用户自己的归因日志灌满探测噪声。模型目录本身变化很慢，半小时足够。
+    const modelsIntervalMs = Number(statsOpts.modelsIntervalMs ?? STATS_DEFAULTS.modelsIntervalMs)
+    let statsTimer = null
+    let statsSignature = null
+    let statsInFlight = false
+    let lastModelsAt = 0
+
+    /** 链上已经在用的模型（面板选择器的候选之一：发现不全时至少这些能选）。 */
+    const chainedRefs = () => {
+      const out = []
+      for (const spec of Object.values(chainRef?.tiers ?? {})) {
+        for (const t of spec?.targets ?? []) if (t?.model) out.push(`${t.provider}/${t.model}`)
+        for (const f of spec?.fallbacks ?? []) {
+          const s = String(f ?? '')
+          if (s && !s.endsWith('/') && s.includes('/')) out.push(s)
+        }
+      }
+      return out
+    }
+    const engineModels = () => REEVE_TIERS.map((t) => `reeve/${t.id}`)
+
+    const refreshStats = async () => {
+      if (!proxyHandle || statsInFlight) return
+      statsInFlight = true
+      const now = Date.now()
+      const { port, host, paths } = proxyHandle
+      try {
+        const token = await readSetupToken(paths.token)
+        if (!token) {
+          statsState = buildStats({ now, windowMs: statsWindowMs, source: 'unavailable', error: '读不到代理的 setup token（统计接口要它）', checkedAt: now })
+          snapshotFlush()
+          return
+        }
+        // 先探一行：`total_count` + 最新 id 没变就说明没有新调用 —— 省掉一次上百行的抓取
+        const probe = await fetchBifrostLogs({ port, host, token, limit: 1 })
+        if (probe.error) {
+          statsState = buildStats({ now, windowMs: statsWindowMs, source: 'unavailable', error: `读 /api/logs 失败：${probe.error}`, checkedAt: now })
+          snapshotFlush()
+          return
+        }
+        if (probe.signature && probe.signature === statsSignature && statsState?.bifrost) {
+          statsState = { ...statsState, checkedAt: now }
+          snapshotFlush()
+          return
+        }
+        const full = await fetchBifrostLogs({ port, host, token, limit: statsLimit })
+        statsSignature = full.signature
+        const bifrost = full.error ? null : aggregateBifrostRows(full.rows, { now, windowMs: statsWindowMs })
+        const ledgerAgg = aggregateLedger(ledger.all(), { now })
+        statsState = buildStats({
+          now,
+          checkedAt: now,
+          windowMs: statsWindowMs,
+          source: bifrost ? 'bifrost.api' : 'unavailable',
+          error: full.error ? `读 /api/logs 失败：${full.error}` : null,
+          bifrost,
+          orchestrate: {
+            ...ledgerAgg,
+            queue: { active: admission.activeCount, waiting: admission.waitingCount },
+          },
+        })
+        // 顺手把模型候选也刷一遍（半小时一次；链编辑器的选择器用它）
+        if (now - lastModelsAt >= modelsIntervalMs) {
+          const discovered = await fetchBifrostModels({ port, host })
+          lastModelsAt = now
+          const candidates = mergeModelCandidates({ discovered: discovered.models, chained: chainedRefs(), engine: engineModels() })
+          modelsState = {
+            generatedAt: now,
+            source: discovered.error ? 'chain+engine' : 'bifrost',
+            error: discovered.error,
+            discovered: discovered.models.length,
+            candidates,
+          }
+        }
+        snapshotFlush()
+      } catch (err) {
+        logger.debug(`[reeve] 统计刷新失败（忽略）：${String(err).slice(0, 140)}`)
+      } finally {
+        statsInFlight = false
+      }
+    }
+
+    if (statsIntervalMs > 0 && proxyHandle) {
+      void refreshStats()
+      statsTimer = setInterval(() => void refreshStats(), statsIntervalMs)
+      statsTimer.unref?.()
+      logger.debug(`[reeve] 性能统计：每 ${Math.round(statsIntervalMs / 1000)}s 刷一次（近 ${statsLimit} 行 / ${Math.round(statsWindowMs / 3600000)}h 窗口）`)
+    }
     const supervisor = new Supervisor({
       ledger,
       logger,
@@ -455,6 +566,7 @@ export default {
     return () => {
       abort.abort()
       supervisor.stopAll()
+      if (statsTimer) clearInterval(statsTimer)
       if (snapshot) {
         snapshot.cancel()
         void snapshot.flush().catch(() => {})

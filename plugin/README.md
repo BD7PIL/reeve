@@ -29,10 +29,22 @@ opencode **v2** 插件。补齐 v2 原生缺的那几条：
 | ⑤ | 落盘 + 对账：`ctx.storage` + `ctx.session.hook("prompt")` | `src/ledger.js` + `src/reconcile.js` |
 | ⑥ | **补名册**：`ctx.session.hook("context")` → 把 subagent 名册接进 `subagent` 工具描述 | `src/roster.js` + `src/index.js` |
 
-**另有可选的「代理自持 + 运行时注册」**（不是钩子，是 opt-in 的服务管理与注册）：
+**另有可选的「代理自持 + 运行时注册 + 链热更 + 性能统计」**（不是钩子，是 opt-in 的服务管理、注册与取数）：
 插件还会注册三个档位模型、把内置 agent 藏起来、设默认 agent —— 所以引擎配置里**不用写** `models` / `agents` / `default_agent`。
 `options.proxy.enabled` 打开后，
 插件自己完成 取件 → 派生链 → 拉起/复用 → 等就绪 → 收敛 → 守护，**不需要任何外部脚本**（见 `src/proxy.js` 与 PROGRESS §6.6）。
+
+其中两件事在这里展开（都由面板里的可视化编辑/统计触发，见 PROGRESS §6.11）：
+
+- **链热更**（`src/chain.js` + `src/proxy.js`）：链的唯一可编辑输入是 `~/.reeve/chain.json`（面板写、插件读）。
+  守护里有一个 **5 秒只 stat 一次**的 tick（`chainWatchMs`）——文件变了就重新派生 `governance.routing_rules`、
+  写回自持的 config.json、用 `/api/routing/rules` 热更并**复核**（复核过了才更新 `appliedAt`）。
+  缺文件回落链基座；**坏文件当作"未变更"**（保留上一份好的，不把线上路由翻回基座）。
+- **性能统计**（`src/stats.js`）：`GET /api/logs`（带插件自己写的 setup token）→ 按档位 / provider / 回退 / 延迟聚合；
+  编排侧从台账聚合（每 agent 的 p50/p95、超时、对账、在飞、排队）。60 秒一轮，用"总数 + 最新 id"当指纹省掉没必要的抓取；
+  模型目录（`/v1/models`）**30 分钟**才探一次（它是真去上游的探测，会被代理记进日志）。
+  两条实测口径写在 `stats.js` 头注释里：**`model` 为空的行是模型发现探测、不是调用**；**status 有三态**
+  （`success` / `error` / `cancelled`，cancelled 不算失败）。
 
 **⑥ 为什么需要**：REEVE 的 7 个 subagent 都标了 `hidden: true`（人在前台看不到、也不能用 `@` 直接找它们说话），
 而 v2 会把 hidden 的 agent **从 `subagent` 工具的"可用 subagent"宣传段里滤掉**（它只列 `!agent.hidden`；
@@ -158,7 +170,7 @@ opencode **v2** 插件。补齐 v2 原生缺的那几条：
 ## 验证
 
 ```bash
-# 全部测试（不依赖模型、不依赖 opencode）：68 + 30 + 8 + 11 = 117 项
+# 全部测试（不依赖模型、不依赖 opencode）：68 + 30 + 9 + 11 + 10 + 7 = 135 项
 npm test
 
 # 加载 + 工具是否进入模型工具表

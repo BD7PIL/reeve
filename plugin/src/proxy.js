@@ -23,6 +23,8 @@ import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
+import { defaultChainPath, parseChainText, readChainFile, resolveChain, rulesDrift, rulesSame } from './chain.js'
+
 /** 插件自带的默认链（与仓库 proxy/config.json 同源；单测里有一条断言盯着它俩不漂移）。 */
 export const BUNDLED_CHAIN_PATH = fileURLToPath(new URL('../default-chain.json', import.meta.url))
 
@@ -43,6 +45,8 @@ export const PROXY_DEFAULTS = Object.freeze({
   readyTimeoutMs: 20_000,
   /** 守护探活的间隔；0 = 不守护 */
   superviseMs: 20_000,
+  /** 盯链文件（`~/.reeve/chain.json`）的间隔：**只做一次 stat**，变了才重新派生 + 收敛 */
+  chainWatchMs: 5_000,
 })
 
 export function proxyPaths({ home = homedir(), dir = null } = {}) {
@@ -212,13 +216,7 @@ async function readChain(chainPath, bundledPath) {
   for (const p of [chainPath, bundledPath]) {
     if (!p) continue
     try {
-      const text = await readFile(p, 'utf8')
-      // 链文件允许整行注释（与仓库里的 proxy/config.json 同风格：注释只可能是整行）
-      const stripped = text
-        .split('\n')
-        .filter((l) => !l.trim().startsWith('//'))
-        .join('\n')
-      return { chain: JSON.parse(stripped), from: p }
+      return { chain: parseChainText(await readFile(p, 'utf8')), from: p }
     } catch {
       /* 换下一个 */
     }
@@ -240,6 +238,19 @@ async function readOrCreateToken(path) {
   return token
 }
 
+/**
+ * 只读那份 setup token（插件里的统计要用它打 `/api/logs`）。
+ * 单独导出而不是把 token 挂到代理的返回值上：**凭据不跟着状态对象到处走**。
+ */
+export async function readSetupToken(path) {
+  try {
+    const t = (await readFile(path, 'utf8')).trim()
+    return t.length > 0 ? t : null
+  } catch {
+    return null
+  }
+}
+
 async function healthy({ port, host = PROXY_DEFAULTS.host, timeoutMs = 1500, fetchImpl = fetch }) {
   try {
     const ctl = AbortSignal.timeout(timeoutMs)
@@ -250,39 +261,53 @@ async function healthy({ port, host = PROXY_DEFAULTS.host, timeoutMs = 1500, fet
   }
 }
 
-/** 把运行时的 routing_rules 收敛到文件（缺失→建、有差异→改、多余→删）。失败只记日志。 */
+/**
+ * 把运行时的 routing_rules 收敛到文件（缺失→建、有差异→改、多余→删），**并复核**。
+ *
+ * 复核那一步不是装饰：POST/PUT 是"我们以为改成什么了"，GET 一次才是"运行时现在是什么"。
+ * 快照里的 drift 就来自复核（面板据此显示"已收敛 / 还差几条"）。
+ */
 async function convergeRules({ port, host, token, desired, logger }) {
   const base = `http://${host}:${port}/api/routing/rules`
   const hdr = { 'X-Bifrost-Setup-Token': token, 'Content-Type': 'application/json' }
   const SERVER = ['config_hash', 'created_at', 'updated_at', 'chain_rule']
   const clean = (r) => Object.fromEntries(Object.entries(r).filter(([k]) => !SERVER.includes(k)))
-  const FIELDS = ['name', 'cel_expression', 'enabled', 'targets', 'fallbacks', 'priority', 'scope', 'description']
-  const same = (a, b) => FIELDS.every((k) => JSON.stringify(a?.[k]) === JSON.stringify(b?.[k]))
-  try {
+  const readRuntime = async () => {
     const res = await fetch(base, { headers: hdr })
-    if (res.status !== 200) return logger?.debug?.(`[reeve] 收敛：读不到运行时规则 HTTP ${res.status}`)
-    const runtime = new Map(((await res.json()).rules ?? []).map((r) => [r.id, r]))
-    const want = new Map((desired ?? []).map((r) => [r.id, r]))
+    if (res.status !== 200) return null
+    return (await res.json()).rules ?? []
+  }
+  try {
+    const runtime = await readRuntime()
+    if (runtime === null) return { changed: 0, drift: null, detail: '读不到运行时规则' }
+    const byId = new Map(runtime.filter((r) => r?.id).map((r) => [r.id, r]))
     let changed = 0
-    for (const [id, rule] of want) {
-      const have = runtime.get(id)
+    for (const rule of desired ?? []) {
+      const have = byId.get(rule.id)
       if (!have) {
         await fetch(base, { method: 'POST', headers: hdr, body: JSON.stringify(clean(rule)) })
         changed++
-      } else if (!same(have, rule)) {
-        await fetch(`${base}/${id}`, { method: 'PUT', headers: hdr, body: JSON.stringify(clean(rule)) })
+      } else if (!rulesSame(have, rule)) {
+        await fetch(`${base}/${rule.id}`, { method: 'PUT', headers: hdr, body: JSON.stringify(clean(rule)) })
         changed++
       }
     }
-    for (const id of runtime.keys()) {
+    const want = new Set((desired ?? []).map((r) => r?.id))
+    for (const id of byId.keys()) {
       if (!want.has(id)) {
         await fetch(`${base}/${id}`, { method: 'DELETE', headers: hdr })
         changed++
       }
     }
+    const after = await readRuntime()
+    const drift = after === null ? null : rulesDrift(desired, after)
     if (changed > 0) logger?.debug?.(`[reeve] 收敛：把运行时规则对齐到文件（改/建/删 ${changed} 条）`)
+    if (drift?.drifted) logger?.debug?.(`[reeve] 收敛后仍有差异：${JSON.stringify(drift)}`)
+    return { changed, drift, detail: null }
   } catch (err) {
-    logger?.debug?.(`[reeve] 收敛失败（忽略）：${String(err).slice(0, 120)}`)
+    const detail = String(err).slice(0, 120)
+    logger?.debug?.(`[reeve] 收敛失败（忽略）：${detail}`)
+    return { changed: 0, drift: null, detail }
   }
 }
 
@@ -310,31 +335,97 @@ export async function startOwnedProxy({
   const paths = proxyPaths({ dir: opts.dir ?? null })
   const readyTimeoutMs = Number(opts.readyTimeoutMs ?? PROXY_DEFAULTS.readyTimeoutMs)
   const superviseMs = Number(opts.superviseMs ?? PROXY_DEFAULTS.superviseMs)
+  const chainWatchMs = Number(opts.chainWatchMs ?? PROXY_DEFAULTS.chainWatchMs)
   const readdirImpl = opts.readdirImpl ?? readdir
   const auth = authPath ?? opts.authPath ?? join(homedir(), '.local', 'share', 'opencode', 'auth.json')
   const chainPath = opts.chainPath ?? join(homedir(), '.config', 'opencode', 'reeve.jsonc')
+  /** 只属于 REEVE 的那份小配置（面板写、插件读）。缺它就用链基座的规则 —— 回落现状。 */
+  const chainFilePath = opts.chainFilePath ?? opts.tiersPath ?? defaultChainPath({ home: opts.home ?? homedir() })
 
   const disposeFns = []
-  const result = { port, host, paths, ready: false, detail: null, dispose: async () => { for (const f of disposeFns.reverse()) await f().catch(() => {}) } }
-  const publish = () => { try { onState?.({ ready: result.ready, detail: result.detail, port, host, paths }) } catch { /* 视图的问题不是记账的问题 */ } }
+  const result = { port, host, paths, chainFilePath, ready: false, detail: null, dispose: async () => { for (const f of disposeFns.reverse()) await f().catch(() => {}) } }
+  /**
+   * 链的状态（进快照 → 面板据此显示来源/是否已生效/还有没有差异）。
+   * `appliedAt` 只在对运行时**复核过**之后才更新 —— 它表达的是"运行时真跟上了"，
+   * 不是"我们发过请求了"。
+   */
+  const chainState = {
+    tiersPath: chainFilePath,
+    source: null,
+    from: null,
+    tiers: null,
+    problems: [],
+    error: null,
+    marker: null,
+    changedAt: null,
+    appliedAt: null,
+    drift: null,
+    lastError: null,
+  }
+  result.chain = chainState
+  const publish = () => {
+    try {
+      onState?.({ ready: result.ready, detail: result.detail, port, host, paths, chain: chainState })
+    } catch {
+      /* 视图的问题不是记账的问题 */
+    }
+  }
   let env = null
   let rules = []
   let bootstrapping = null
 
+  /**
+   * 读链基座 + 读链文件 → 得出**实际要用的**那份链（判断逻辑在 chain.js 的 resolveChain，纯函数可测）。
+   * `effective === null` 表示"链文件坏了，当作未变更"——调用方这时**什么都不改**。
+   */
+  const deriveChain = async (file = null) => {
+    const { chain, from } = await readChain(chainPath, bundledChainPath)
+    const chainFile = file ?? (await readChainFile({ path: chainFilePath, readFileImpl: readFile }))
+    const resolved = resolveChain({ base: chain, from, file: chainFile, previous: chainState })
+    return { base: chain, from, file: chainFile, ...resolved }
+  }
+
+  const noteChain = (d, { changedAt = null, appliedAt = null, lastError = null } = {}) => {
+    // 坏文件只更新"有问题"这件事 —— 别把上一个好状态（来源/档位）冲掉
+    chainState.error = d.file?.error ?? null
+    chainState.marker = d.file?.marker ?? null
+    if (d.stale) {
+      chainState.problems = d.problems
+      if (changedAt !== null) chainState.changedAt = changedAt
+      if (lastError !== null) chainState.lastError = lastError
+      return
+    }
+    chainState.source = d.source
+    chainState.from = d.from
+    chainState.derived = d.derived
+    chainState.tiers = d.tiers
+    chainState.problems = d.problems
+    if (changedAt !== null) chainState.changedAt = changedAt
+    if (appliedAt !== null) chainState.appliedAt = appliedAt
+    if (lastError !== null) chainState.lastError = lastError
+  }
+
   /** 取件 → 派生配置 → 拉起/复用 → 等就绪 → 收敛。可重复调用（幂等）。 */
   const bootstrap = async () => {
     const binaryState = await ensureBinary({ paths, fetchImpl, logger })
-    const { chain, from } = await readChain(chainPath, bundledChainPath)
-    const providers = Object.entries(chain.providers ?? {}).map(([id, v]) => ({ id, ...v }))
+    const d = await deriveChain()
+    // 启动路径上"坏文件"没有上一份好的可留 —— 用基座（它至少是能跑的）
+    const effective = d.effective ?? d.base
+    const providers = Object.entries(effective.providers ?? {}).map(([id, v]) => ({ id, ...v }))
     const derived = deriveProviderEnv(await readAuth(auth), providers)
     if (derived.missing.length > 0) logger.debug(`[reeve] auth.json 里没有这些 provider 的 key：${derived.missing.join(', ')}`)
-    const proxyConfig = buildProxyConfig(chain, { noAuth: opts.requireVirtualKey !== true })
+    const proxyConfig = buildProxyConfig(effective, { noAuth: opts.requireVirtualKey !== true })
     await mkdir(paths.root, { recursive: true })
     await writeFile(paths.config, JSON.stringify(proxyConfig, null, 2), 'utf8')
     const token = await readOrCreateToken(paths.token)
     rules = proxyConfig.governance?.routing_rules ?? []
     env = { ...process.env, ...derived.env, BIFROST_SETUP_TOKEN: token }
-    logger.debug(`[reeve] 代理链来自 ${from}（${providers.length} 个 provider，${rules.length} 条档位规则）`)
+    noteChain(d)
+    logger.debug(
+      `[reeve] 代理链来自 ${d.source}${d.derived ? '（链文件派生）' : '（链基座，未发现可用链文件）'}` +
+        `（${providers.length} 个 provider，${rules.length} 条档位规则）` +
+        (d.problems.length > 0 ? `；⚠️ ${d.problems.join('；')}` : ''),
+    )
 
     const owner = await ownerOfPort({ dir: paths.root, readdirImpl: readdirImpl ?? readdir, readFileImpl: readFile })
     if (await healthy({ port, host, fetchImpl })) {
@@ -355,7 +446,10 @@ export async function startOwnedProxy({
       if (await healthy({ port, host, fetchImpl })) {
         result.ready = true
         publish()
-        await convergeRules({ port, host, token: env.BIFROST_SETUP_TOKEN, desired: rules, logger })
+        const c = await convergeRules({ port, host, token: env.BIFROST_SETUP_TOKEN, desired: rules, logger })
+        noteChain(d, { appliedAt: Date.now(), lastError: c.detail })
+        chainState.drift = c.drift
+        publish()
         logger.debug(`[reeve] ${result.detail}，已就绪`)
         return true
       }
@@ -365,6 +459,50 @@ export async function startOwnedProxy({
     publish()
     logger.debug(`[reeve] ${result.detail}`)
     return false
+  }
+
+  /**
+   * 链文件变了 → 重新派生 → 写回自持的 config.json（重启后仍是这份）→ 热更运行时规则。
+   * 代理没就绪时只更新状态，等 bootstrap 自己收敛（它会读同一份文件）。
+   */
+  const reconcileChain = async (file) => {
+    const d = await deriveChain(file)
+    if (d.effective == null) {
+      // 坏链文件 → 当作"未变更"：运行时保持上一份好的。
+      // 为什么不翻回基座：一次手滑（存盘到一半、少个括号）不该让线上路由整体换掉。
+      noteChain(d, { changedAt: Date.now(), lastError: '链文件读不动（当作未变更）' })
+      publish()
+      logger.debug(`[reeve] 链文件坏，当作未变更（运行时保持上一份）：${d.error ?? d.problems.join('；')}`)
+      return true
+    }
+    const proxyConfig = buildProxyConfig(d.effective, { noAuth: opts.requireVirtualKey !== true })
+    if (env == null) return false // bootstrap 还没跑过（二进制在后台取件）；等它
+    await writeFile(paths.config, JSON.stringify(proxyConfig, null, 2), 'utf8')
+    rules = proxyConfig.governance?.routing_rules ?? []
+    noteChain(d, { changedAt: Date.now() })
+    if (!result.ready) {
+      publish()
+      return true
+    }
+    const c = await convergeRules({ port, host, token: env.BIFROST_SETUP_TOKEN, desired: rules, logger })
+    chainState.appliedAt = Date.now()
+    chainState.drift = c.drift
+    chainState.lastError = c.detail
+    publish()
+    logger.debug(
+      `[reeve] 链文件变了（${d.source}）→ 运行时规则已对齐（改/建/删 ${c.changed} 条）` +
+        (d.problems.length > 0 ? `；⚠️ ${d.problems.join('；')}` : ''),
+    )
+    return true
+  }
+
+  /** 链文件有没有变（只 stat；不变就是一次 stat 的开销）。 */
+  const chainFileChanged = async () => {
+    const file = await readChainFile({ path: chainFilePath, readFileImpl: readFile })
+    // 从来没有过这份文件（marker 还是 null）→ 不折腾：回落链基座，与从前行为一致
+    if (!file.exists) return chainState.marker == null ? null : file
+    if (file.marker === chainState.marker) return null
+    return file
   }
 
   const launch = () => {
@@ -404,6 +542,21 @@ export async function startOwnedProxy({
           bootstrapping = null
           publish()
         })
+    }
+
+    // 链文件守护：**只 stat**；变了才重新派生 + 热更运行时规则（所以面板保存后 ≤chainWatchMs 生效）
+    if (chainWatchMs > 0) {
+      const timer = setInterval(async () => {
+        try {
+          const file = await chainFileChanged()
+          if (!file) return
+          await reconcileChain(file)
+        } catch (err) {
+          logger.debug(`[reeve] 链文件热更失败（忽略）：${String(err).slice(0, 140)}`)
+        }
+      }, chainWatchMs)
+      timer.unref?.()
+      disposeFns.push(() => clearInterval(timer))
     }
 
     // 守护：没就绪就把 bootstrap 再走一遍（取件幂等）；已就绪只探活并按需重启

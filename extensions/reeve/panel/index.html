@@ -5,16 +5,105 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>REEVE 编排</title>
 <style>
-  /* 只放**结构**样式：配色、字体、控件外观都由宿主注入（applyHostReady + 宿主的 UI 样式）。 */
+  /* 只放**结构**与**排版**样式：配色、字体、控件外观、圆角全用宿主注入的 --oc-* token。
+     一条纪律：不写死颜色（写死就会在宿主的深/浅主题里有一半不可读）。 */
   html, body { margin: 0; padding: 0; height: 100%; }
   body { font: inherit; color: inherit; background: transparent; }
-  #root { display: flex; flex-direction: column; gap: 10px; padding: 10px; box-sizing: border-box; }
+  /* 底边留 16px：宿主底部有一条圆角条带，贴太近会被压住（实测只差 10px） */
+  #root { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px 16px; height: 100%; box-sizing: border-box; }
+
   .rv-head { display: flex; align-items: center; gap: 8px; }
-  .rv-push { flex: 1; }
-  .rv-section { display: flex; flex-direction: column; gap: 6px; }
-  .rv-sub { font-size: 11px; opacity: .65; letter-spacing: .02em; }
-  .rv-meta { font-size: 11px; opacity: .6; word-break: break-all; }
-  .rv-empty { font-size: 12px; opacity: .7; line-height: 1.5; padding: 6px 0; }
+  .rv-push, .rv-grow { flex: 1; }
+  .rv-body { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+  /* 内容区自己滚，页脚固定在底部 —— 三个 tab 的页脚位置才不会跳 */
+  .rv-section { flex: 1; min-height: 0; overflow: auto; display: flex; flex-direction: column; gap: 6px; }
+  .rv-section[hidden] { display: none; }
+  .rv-foot { padding-top: 6px; border-top: 1px solid var(--oc-border); flex: 0 0 auto; }
+
+  .rv-sub { font-size: 11px; color: var(--oc-muted); letter-spacing: .02em; }
+  .rv-meta { font-size: 11px; color: var(--oc-muted); line-height: 1.5; word-break: break-all; }
+  .rv-warn { font-size: 12px; color: var(--oc-warning-text, var(--oc-warning)); line-height: 1.5; }
+  .rv-empty { font-size: 12px; color: var(--oc-muted); line-height: 1.5; padding: 6px 0; }
+  .rv-empty-sm { font-size: 11px; color: var(--oc-muted); padding: 2px 0 4px; }
+  .rv-divider { height: 1px; background: var(--oc-border); margin: 10px 0 4px; }
+
+  /* ── 档位块（链 tab 与统计 tab 共用）── */
+  .rv-tier { display: flex; flex-direction: column; gap: 2px; padding: 6px 0 8px; border-bottom: 1px solid var(--oc-border); }
+  .rv-tier:last-of-type { border-bottom: none; }
+  .rv-tier-block { display: flex; flex-direction: column; gap: 3px; padding: 6px 0; border-bottom: 1px solid var(--oc-border); }
+  .rv-tier-head { display: flex; align-items: center; gap: 6px; min-height: 20px; }
+  .rv-tier-name { font-family: var(--oc-mono, monospace); font-size: 12px; font-weight: 600; }
+  .rv-tier-hint { font-size: 11px; color: var(--oc-muted); }
+  .rv-tier-count { font-family: var(--oc-mono, monospace); font-size: 11px; color: var(--oc-muted); }
+
+  /* ── 链的行 ── */
+  .rv-row { display: flex; align-items: center; gap: 6px; min-height: 24px; padding: 1px 0 1px 4px; }
+  .rv-row[data-kind="target"] { border-left: 2px solid var(--oc-primary); }
+  .rv-row[data-kind="fallback"] { border-left: 2px solid transparent; }
+  .rv-row-idx { font-size: 10px; color: var(--oc-muted); min-width: 30px; text-align: right; }
+  .rv-row-idx-first { color: var(--oc-fg); font-weight: 600; }
+  .rv-ref { font-family: var(--oc-mono, monospace); font-size: 12px; overflow-wrap: anywhere; }
+  .rv-row-note { font-size: 10px; color: var(--oc-muted); }
+  .rv-row-btns { display: flex; align-items: center; gap: 4px; }
+  /* 行的操作按钮：ghost 变体默认太淡（实测对比度 ~2:1，看不出可用还是禁用）。
+     用 color-mix 从前景色推：可用 78% / 禁用 30%。
+     ⚠️ 必须显式 `opacity: 1`：宿主 SDK 有一条全局 `.oc-sdk button:disabled { opacity: .5 }`，
+     会把 color-mix 的结果又乘一半（实测渲染出来只有 13.5%，肉眼几乎与背景同色）。 */
+  .rv-row-btns .oc-sdk-btn[data-variant="ghost"] { color: color-mix(in srgb, var(--oc-fg) 78%, transparent); opacity: 1; }
+  .rv-row-btns .oc-sdk-btn[data-variant="ghost"]:hover { color: var(--oc-fg); }
+  .rv-row-btns .oc-sdk-btn[data-variant="ghost"]:disabled { color: color-mix(in srgb, var(--oc-fg) 30%, transparent); opacity: 1; }
+  .rv-row-add { display: flex; align-items: center; gap: 6px; padding-left: 4px; }
+
+  /* ── 选择器（加 / 换模型）── */
+  .rv-picker { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 4px 0 2px 4px; }
+  .rv-picker-select { flex: 1 1 200px; min-width: 160px; }
+  .rv-picker-field { flex: 0 1 180px; min-width: 130px; }
+  .rv-picker-hint { flex: 1 1 100%; font-size: 10px; color: var(--oc-muted); }
+
+  .rv-savebar { display: flex; align-items: center; gap: 8px; padding-top: 8px; border-top: 1px solid var(--oc-border); }
+  /* 禁用态的主按钮：宿主默认是"主色低透明压底 + 更浅的字"，实测 ~1.5–2:1（几乎与底同明度）。
+     改成中性：底 10% 前景、字 48% 前景；同样要 `opacity: 1` 挡掉 SDK 的全局 .5。 */
+  .rv-savebar .oc-sdk-btn[data-variant="default"]:disabled,
+  .rv-savebar .oc-sdk-btn[data-variant="ghost"]:disabled {
+    background: color-mix(in srgb, var(--oc-fg) 10%, transparent);
+    color: color-mix(in srgb, var(--oc-fg) 48%, transparent);
+    border-color: transparent;
+    opacity: 1;
+  }
+  .rv-save-status { font-size: 11px; color: var(--oc-muted); }
+
+  /* ── 统计 ── */
+  /* 两块指标（Bifrost / 台账）共用同一个网格：4 列 × N 行，两块纵向对齐 */
+  .rv-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px 10px; padding: 2px 0 6px; }
+  .rv-stat { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+  .rv-stat-label { font-size: 10px; color: var(--oc-muted); }
+  .rv-stat-value { font-family: var(--oc-mono, monospace); font-size: 14px; text-align: right; }
+  /* 0 与"有值"必须能一眼分开：一堆 0 不该跟 7/6/1 抢注意力 */
+  .rv-stat-value[data-zero="true"] { color: color-mix(in srgb, var(--oc-fg) 45%, transparent); }
+  /* 语义色用**原色**（--oc-success/error/warning），不用 -text 变体：实测宿主浅色主题下
+     -text 变体会落到近黑，于是"成功"在深色是绿的、浅色却不变色（两版不一致）。 */
+  .rv-stat-value[data-tone="success"] { color: var(--oc-success); }
+  .rv-stat-value[data-tone="error"] { color: var(--oc-error); }
+  .rv-stat-value[data-tone="warning"] { color: var(--oc-warning); }
+  .rv-stat-value[data-tone="primary"] { color: var(--oc-primary); }
+
+  /* 一行：名字 | 次数 | 延迟条 | 数字。数字列固定宽度 → 跨行的数字落在同一列。
+     数字列 132px：再宽就把 provider 名挤到要省略号了（实测 150px 时 `zhipuai-coding-plan` 被截） */
+  .rv-line { display: grid; grid-template-columns: minmax(96px, 1.3fr) auto minmax(70px, 1fr) 132px; align-items: center; gap: 8px; min-height: 22px; }
+  .rv-line-name { font-family: var(--oc-mono, monospace); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .rv-line-count { font-family: var(--oc-mono, monospace); font-size: 11px; color: var(--oc-muted); white-space: nowrap; }
+
+  .rv-bar-wrap { display: none; }
+  /* 轨道从前景色推 18%：两版主题下都看得见（宿主浅色主题的 subtle 太接近底色，量程读不出来） */
+  .rv-bar { height: 6px; border-radius: 3px; background: color-mix(in srgb, var(--oc-fg) 18%, transparent); overflow: hidden; min-width: 40px; }
+  /* 条用中性色（强调色留给"首选"），避免与"失败红"抢眼 */
+  .rv-bar-fill { height: 100%; background: color-mix(in srgb, var(--oc-fg) 58%, transparent); }
+  .rv-bar-text { font-family: var(--oc-mono, monospace); font-size: 10px; color: var(--oc-muted); white-space: nowrap; text-align: right; }
+  /* 档位块里只有"条 + 数字"两格（跟 .rv-line 共用同一个数字列宽） */
+  .rv-tier-lat { display: grid; grid-template-columns: minmax(0, 1fr) 132px; align-items: center; gap: 8px; }
+
+  .rv-prov { display: flex; flex-wrap: wrap; gap: 4px 8px; padding: 2px 0 0 4px; }
+  .rv-chip { font-family: var(--oc-mono, monospace); font-size: 10px; color: var(--oc-muted); }
 </style>
 </head>
 <body>

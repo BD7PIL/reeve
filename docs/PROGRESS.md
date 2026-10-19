@@ -1016,3 +1016,104 @@ key 一直在真 home 那份里；默认值是 `<HOME>/.local/share/opencode/aut
 | 面板能看到子任务状态与台账 | ✅ **已验**（CDP 读 iframe DOM + 截图） | 2026-10-19 |
 | 保存配置后插件正确读到 | ⚠️ **未验**（只读面板不做保存；见 5.4） | — |
 | 无任何双写冲突 | ✅ 机制层已验（插件无写路径 + 配置 mtime/hash 不变） | 2026-10-19 |
+
+---
+
+## 6.11 可视化面板：链编辑 + 性能统计 + 多模态迭代（2026-10-20）
+
+把 §6.9 的可行性结论做成了实物：面板从"只读"变成"**只写一个文件**"（`~/.reeve/chain.json`），
+并加了两张统计表。四轮多模态评审（`multimodal-looker`）全部"可以收尾"。
+
+### 数据契约
+
+**`~/.reeve/chain.json`（面板写、插件读）**
+
+```jsonc
+{ "version": 1, "updatedAt": 1792436038687,
+  "tiers": { "flash":      { "targets": [{"provider":"xiaomi","model":"mimo-v2.6-flash"}],
+                             "fallbacks": ["lmuai/glm-5.3-flash", "…"] },
+             "pro":        { … }, "multimodal": { … } } }
+```
+
+- 派生：`tiers` → `governance.routing_rules`（id `reeve-<tier>`、name `reeve/<tier>`、CEL `model == "reeve/<tier>"`、
+  priority 10/20/30、target 带 `ttft_timeout_ms: 30000`），**只换 `reeve-*` 三条**，providers 仍来自链基座。
+- 描述 / TTFT 从基座同 id 规则**继承** —— 否则每次热更都会把人工写的中文说明冲掉。
+- 缺文件 → 回落链基座（与从前一致）；**坏文件（解析不了 / 声明的档位一条都没活下来）→ 当作"未变更"**，
+  运行时保持上一份好的（一次手滑不该让线上路由整体换掉）。
+- 收敛触发：插件守护里一个 **5 秒只 stat 一次**的 tick（`chainWatchMs`）。实测 EL7：写文件 → ≤4 秒运行时规则跟上。
+
+**快照新增三节**（`~/.reeve/ledger.json`）：`chain{source,tiersPath,derived,tiers,appliedAt,changedAt,drift,problems,error}`、
+`models{source,discovered,candidates[]}`（面板选择器的候选）、`stats{source,error,windowMs,bifrost{…},orchestrate{…}}`。
+
+### `/api/logs` 实测形状（Bifrost 2.3.0，EL7）
+
+`GET /api/logs?limit=N&offset=0&sort_by=timestamp&order=desc`，头 `X-Bifrost-Setup-Token`（插件自己写的 600 文件）：
+
+- 200 → `{ has_logs, logs:[…], pagination:{limit,offset,sort_by,order,total_count}, stats:{…} }`；无 token → 401。
+- 行里的关键字段：`id, timestamp(ISO/纳秒), provider, model, fallback_index, number_of_retries,
+  routing_rule_id, routing_rule_name, selected_key_name, latency(ms 浮点), upstream_latency, overhead_latency,
+  status('success'|'error'|'cancelled'), stream, session_id, prompt/completion/total_tokens`。
+- `limit` 上限在 1000（5000 → 400）；**未知参数被静默忽略**（试过 `content=false` 等一律无效）→
+  `content_summary`（每行约 6.7 KB，含完整提示词）**没有开关**，所以插件聚合时一律丢掉，并且只抓最新 N 行。
+- ⚠️ **`model` 为空的行不是调用**：那是代理去上游探 `/v1/models` 的痕迹（实测**一次探测 = 7 行**，每个 provider 一行）。
+  混进来会把"调用次数"灌爆（实测 40 行里 34 行是探测）。聚合时按"有 model"过滤，并在面板上如实写"已排除 N 行探测"。
+- ⚠️ **模型目录别高频轮询**：`/v1/models` 是真去上游的探测，会写日志。插件里 `stats.modelsIntervalMs` 默认 **30 分钟**
+  （统计本体 60 秒，用"总数+最新 id"当指纹，没变化就不抓第二遍）。
+- 归因只有这里能拿到真模型：引擎侧永远记 `reeve/pro` 这类别名（§6.2 归因边界）。
+
+### EL7 验收（staging，生产 :4096 全程未碰）
+
+| 验收项 | 结果 |
+|---|---|
+| 链文件热更：写 `chain.json` → 运行时规则 | ✅ 写于 02:21:29.6，规则 **02:21:33.7** 已变（≈4.1 s）；flash target 与 pro fallbacks 同时改对 |
+| 坏链文件（截断 JSON） | ✅ 规则**保持上一份好的**（不回退基座） |
+| 删掉链文件 | ✅ 回落链基座（opencode/mimo free），与从前一致 |
+| 恢复好文件 | ✅ 再次跟到 xiaomi |
+| 统计口径互校 | ✅ 插件聚合（`logs 51`）与**直读 `logs.db`**同窗口逐项一致：tier flash 3/2/1、pro 27/27/0、(none) 21/12/9；按 provider 全对；回退请求 1 = 1 |
+| 面板保存 → 运行时生效 | ✅ 面板里 ↑ 调序 + 加 `deepseek-api/deepseek-v4-pro` 回退 → 「保存并生效」→ 链文件写入 → 运行时 `multimodal.fallbacks` 多出该项 → 快照 `appliedAt` 前进、`drift=false` → 面板显示"已生效" |
+| 真实调用未坏 | ✅ `--model reeve/pro` / 配置默认 `model: reeve/pro` 的裸 run 都出 `rule=reeve/pro` 日志；还抓到一次**真实回退**：zhipuai ttft 30.001 s 超时（正好是配的 30000）→ `fallback_index=1` → lmuai 成功 |
+| 空闲时也能热更 | ✅ 无会话在跑时改链文件，≤4 s 收敛（守护 tick 与实例无关） |
+
+### 这一轮踩到并记档的坑
+
+1. **裸 `opencode run`（不带 `--model`/`--agent`）会静默旁路 REEVE**：客户端自己带一个默认模型
+   （`opencode/minimax-m3.1-flash-free`），服务端照用 —— agent 上注册的 `reeve/pro` 不生效。
+   曲线证据：消息记录里 `agent: "foreman"` 但 `model: {providerID:"opencode",id:"minimax-m3.1-flash-free"}`，
+   且 Bifrost 里没有任何对应行。**修法（已验）**：引擎配置加一行 `"model": "reeve/pro"` → 裸 run 也走档位。
+   ⚠️ 这条对"模型选择面缩成 3 个"这个目标很关键，已写进样板注释。
+2. **宿主把扩展面板放在 sandbox 且不给 allow-same-origin 的 iframe 里**（`contentDocument === null`）。
+   驱动它只能走正规通道：读/求值用 `Page.createIsolatedWorld(frameId)`，点按用 `Input.dispatchMouseEvent`
+   （坐标在隔离世界里量 + iframe 偏移）。页面一重载，隔离世界就作废，缓存必须能重建。
+3. **没被选中的 section 也挂着 iframe 且尺寸正常**（526×983）—— 只量尺寸会误判"面板在前台"，
+   必须问 `checkVisibility()`。
+4. **宿主的设置窗是坑**：它保存设置时会弹一个带背景模糊的 "Saving…" 抽屉把面板整个盖住（四张评审图全废）；
+   切主题只能走 设置→外观→颜色模式 再点 `aria-label="Close settings"` 关掉；
+   而且 **`settings.json.themeVariant` 不是运行时的真相**（改文件没用）。
+   最终判定"当前浅色还是深色"改成读**渲染出来的背景亮度**（`style.colorScheme` 根本不更新）。
+5. **`/v1/models` 只覆盖 4/7 个 provider**（zhipuai-coding-plan 的对话路径是自定义的、opencode zen 与 alibaba-cn 同理）
+   → 面板的模型候选 = 发现出来的 ∪ 链上在用的 ∪ 引擎注册的（`reeve/*`），并且**允许手填** `provider/model`。
+   要"只从不隐藏的模型里选"得请 openchamber 侧开口子（它的 `hiddenModels` 在宿主浏览器 store 里）——记档，不阻塞。
+6. **插件 stderr 在托管服务形态下进不了引擎日志**（`serve --service` 的 fd1 是 /dev/null、fd2 是给客户端的 socket）。
+   所以**快照就是插件对外的日志**：链的来源/生效时刻/漂移/问题全部落进快照，面板读它。
+
+### 守门闸门的改动（理由）
+
+`extensions/reeve/check.mjs` 原来禁止任何 `writeFile(`。现在面板**必须**写链文件，所以闸门改成：
+**每个 `writeFile(` 的实参都必须是 `chainPathFor(…)`**（路径取自快照里插件正在读的那份，兜底 `~/.reeve/chain.json`），
+`startSession/prompt/compose/attach` 继续禁；扫源码前先剥注释（注释里讨论 API 是正常的），并断言"至少有一处写调用"
+（否则闸门会被一次重构悄悄变成空转）。
+
+### 多模态迭代（4 轮，全部记档）
+
+工具：`extensions/reeve/cdp-open-panel.mjs`（打开面板 / 读面板文本 / 真鼠标点按 / 真输入 / 按 iframe 裁剪截图浅深两版）。
+
+| 轮 | 结论 | 主要改动 |
+|---|---|---|
+| 1 | 链 tab 可接受；统计需要修；深色图**抓错了**（抓到宿主侧栏） | 修采集；延迟条统一量程；两块指标共用 4 列网格 + 0 值变灰；台账只留一个状态；页脚固定；按钮对比度；文案去实现细节 |
+| 2 | 上一轮 8 条已修；四张图被宿主 "Saving…" 浮层遮住 → **证据作废**（采集事故） | 加"干净度断言"（无 Saving / 无 aria-busy / 无对话框 / 面板非读取中）+ 面板不在前台就拒绝出图 |
+| 3 | 深色可读性全部达标；剩 3 条必改：真浅色图、禁用按钮 opacity 被 SDK 再乘一半、箭头没按方向禁用 | 显式 `opacity:1`；↑ 在同类组首行禁用、↓ 在末行禁用；主题判定改读渲染亮度 |
+| 4 | **可以收尾**（无必改项）：78%/30%/10%/48%/45%/18%+58% 全部逐像素落在声明值上；浅/深语义色成对一致 | 注释口径对齐（30%） |
+
+截图（不入库，只记路径）：`.zcode/shots/r20-chain.png`（浅·链）、`r21-stats.png`（浅·统计）、
+`r20-ledger.png`（浅·台账）、`r14-stats-dark.png`（深·统计）、`r15-*/r16-*`（过程图与失败样本）。
+第 3/4 轮的像素取证脚本在 `.zcode/shots/_px.js`、`_crop.js`（评审代跑）。

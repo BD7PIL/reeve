@@ -90,7 +90,10 @@ export class SnapshotWriter {
  * 未必是你以为的那个引擎（实测踩过 —— 它连到另一个 HOME 的服务，报出别人的表）。
  * 这一份是**引擎进程内部**读的，落盘可核对，也是"前台只出现编排者"这条设计的证据。
  */
-export function buildSnapshot(records, { now = Date.now(), version = null, agents = null, roster = null, proxy = null, registered = null, endpoint = null } = {}) {
+export function buildSnapshot(
+  records,
+  { now = Date.now(), version = null, agents = null, roster = null, proxy = null, registered = null, endpoint = null, chain = null, models = null, stats = null } = {},
+) {
   const tasks = records
     .map((r) => ({
       taskID: r.taskID,
@@ -121,10 +124,34 @@ export function buildSnapshot(records, { now = Date.now(), version = null, agent
     agentTable: agents,
     roster,
     proxy,
+    chain: chain == null ? null : projectChain(chain),
+    models,
     registered,
     endpoint,
+    stats,
     counts,
     tasks,
+  }
+}
+
+/**
+ * 链的状态 → 面板要的那一小块。
+ * `tiers` 就是 `~/.reeve/chain.json` 里那份形状（面板编辑的就是它，写回也是它）。
+ */
+export function projectChain(chain) {
+  if (!chain) return null
+  return {
+    tiersPath: chain.tiersPath ?? null,
+    source: chain.source ?? null,
+    from: chain.from ?? null,
+    derived: chain.derived === true,
+    tiers: chain.tiers ?? null,
+    problems: chain.problems ?? [],
+    error: chain.error ?? null,
+    changedAt: chain.changedAt ?? null,
+    appliedAt: chain.appliedAt ?? null,
+    drift: chain.drift ?? null,
+    lastError: chain.lastError ?? null,
   }
 }
 
