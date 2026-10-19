@@ -267,6 +267,20 @@ experimental.ws.handshake · experimental.ws.send · experimental.ws.receive
 
 例：`SessionContext = { sessionID, model, system, messages, options, agent, tools }`（可变）。
 
+**⚠️ 其中三个是"provider 传输层"钩子，而且能替换**（2026-10-19 实测，见
+[PROGRESS §6.5](../../PROGRESS.md) 与探针 `scripts/probe-http-hooks/`）：
+
+| 钩子 | 载荷 | 可写 | 实测 |
+|---|---|---|---|
+| `http.request` | `{sessionID, agent, model, kind, request: Request}` | **`request`**（整体替换）；`model` 只读 | ✅ 改 body 里的模型名**到得了线上**（Bifrost 日志证实落到另一条链） |
+| `http.response` | 同上 + `response: Response` | `response` | 只读了 `status` |
+| `retry` | `{…, error, attempt, decision}` | **`decision`**（`{retry:false}` / `{retry:true,delay}`） | 可写；未验"引擎是否照办" |
+| `model.request` | `{…, baseURL?, headers}` | `baseURL` / `headers` | 未测 |
+
+`kind` = `primary` / `title` / `compaction` / `generate`。契约是**改传入对象**，不是返回值。
+→ 所以"回退只能下沉到代理层"的说法要改成：**v2 做得到（进程内换请求），但那样做没有审计轨迹**；
+代理层仍是回退的落点，理由是成熟与可审计，不是"做不到"。
+
 ### 4.3 ⚠️ v1 钩子名在 v2 不存在
 
 `tool.execute.before`、`chat.message`、`chat.params`、`experimental.chat.messages.transform`

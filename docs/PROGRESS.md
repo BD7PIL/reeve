@@ -796,7 +796,38 @@ managed service（端口来自 `service.json`，默认 `0xC0DE`=49374），实�
 仍由 REEVE 的部署脚本管。ocrc 若要把这条也接上，需要 setup token 生成 + VK 建/轮换 + 注入 serve 行；
 这是下一片，不在本次范围内。
 
-### 6.5 面板（步 5 的增补）
+### 6.5 ⚠️ 更正一条旧判断：v2 **有** provider 传输层钩子（2026-10-19 实测）
+
+**旧判断**（施工图 §4.1、PLAN 的代理层理由）："v2 没有 v1 那群钩子 → 回退只能下沉到代理层"。
+**现在更正**：v2 没有的是 v1 的 `chat.params` / `chat.headers` / `chat.message` / `experimental.chat.messages.transform`；
+但它在**更低一层**给了一组 HTTP/模型请求钩子，而且**能替换**。实测（EL7 staging，v2.0.27，探针见
+[`scripts/probe-http-hooks/`](../scripts/probe-http-hooks/README.md)）：
+
+| 钩子 | 载荷（实测读出） | 可写（源码 `packages/plugin/src/promise/session.ts` @v2.0.27） | 实测结果 |
+|---|---|---|---|
+| `http.request` | `{sessionID, agent, model, kind, request: Request}` | **`request`**（整体替换）；`model` 只读 | ✅ **有效** —— 在插件里把 body 的 `model` 从 `reeve/pro` 换成 `reeve/flash`；同一次运行里 Bifrost 日志出现两条：`reeve/pro → zhipuai/glm-5.3 hop=0 success`（标题调用，未改）与 **`reeve/flash → xiaomi/mimo-v2.6-flash hop=0 success`**（主调用，被改）→ **替换真的到了线上** |
+| `http.response` | 同上 + `response: Response` | `response` | 只读了 `status`（401 可见） |
+| `retry` | `{…, error, attempt, decision}` | **`decision`** = `{retry:false}` \| `{retry:true,delay}` | 可写（写回读得到）；"引擎是否照办"**未验** |
+| `model.request` | `{…, baseURL?, headers}` | `baseURL` / `headers` | 未测 |
+
+`kind` 取值 `primary` / `title` / `compaction` / `generate` —— 可以只对主调用动手。
+钩子契约是**改传入对象**（`registration.ts`：`callback: (input) => Promise<void> | void`），不是返回值。
+
+**两个坑**：① `model` 是只读的 —— 往里写不生效，**而且会漏进会话状态**（实测 CLI 标签从 `pro` 变成 `flash`）；
+② 改 body 里的模型名 = 引擎仍然记着原模型 → **归因只会更差**（Bifrost 至少在自己的 logs 里留了真相）。
+
+**这意味着什么**（对我们的路线选择）：
+
+- "omo 那种全在引擎里的形态"在 v2 上**可以复刻**：插件自己换请求体/换 Authorization（它本来就能读
+  opencode 的 `auth.json` —— omo 就是这么读的）、用 `retry.decision` 控制重试节奏；
+- 但**跨 provider 回退要自己实现**配额/限流/网络故障的判定、退避、以及"哪家还有量"的记忆，
+  并且**没有审计轨迹**（引擎记的模型名不变，代理那层又没有日志）；
+- 所以**结论不变、理由要改**：回退仍放在代理层 —— 不是因为"v2 做不到"，而是因为代理层**成熟且可审计**
+  （加权 target、key 降级、ttft 超时、logs 表），而钩子路线的回退在账上是隐形的。
+  钩子更适合做"不需要审计轨迹的单点增强"（例如按 agent 给某次调用加头/改指向）。
+- **进程归属与这件事正交**：谁来拉起 Bifrost（插件 / ocrc）不依赖这组钩子。
+
+### 6.6 面板（步 5 的增补）
 
 - 新增：台账节里一行"前台可见 agent：foreman · 隐藏 N 个 · 名册已注入（7 个 subagent）"（读快照里的 `agentTable`/`roster`）。
 - 定位结论（④）：**openchamber 本体已经满足"看会话/看子会话/看成本"**；REEVE 面板真正独有的只有**台账**
