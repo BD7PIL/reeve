@@ -3,8 +3,12 @@
 #
 #   bash scripts/publish-repo.sh              # 用 HEAD
 #   bash scripts/publish-repo.sh <ref>        # 用指定 ref（默认 HEAD）
+#   bash scripts/publish-repo.sh --tag        # 推完再给这个版本打标签 v<plugin 版本>（= 发布）
 #   REMOTE=<name> bash scripts/publish-repo.sh
 #
+# `--tag` 是**发布开关**：标签打在公开树那次提交上（本地 master 的 sha 不在远程，所以标签
+# 在临时仓库里建、直接推给远程），推送后 GitHub Actions 的 publish.yml 会用 OIDC 发布这个版本。
+# 标签已存在就跳过（同一个版本不会发两次）。
 # 公开树**不带开发历史**（每次重建、单提交、force-push）：
 #   · `docs/`  —— 内部记录（含内网地址与迁移叙事），**从不发布**，也不许进历史
 #   · `.zcode/` —— 施工草稿（plan / probe / shots）
@@ -15,7 +19,14 @@
 set -euo pipefail
 
 EXCLUDE=(docs .zcode)
-REF="${1:-HEAD}"
+TAG_RELEASE=0
+REF=HEAD
+for arg in "$@"; do
+  case "$arg" in
+    --tag) TAG_RELEASE=1 ;;
+    *) REF="$arg" ;;
+  esac
+done
 REMOTE="${REMOTE:-origin}"
 
 ROOT="$(git rev-parse --show-toplevel)"
@@ -59,6 +70,22 @@ echo "  顶层：$(git ls-files | cut -d/ -f1 | sort -u | tr '\n' ' ')"
 
 echo "=== 4. 推 $URL 的 main ==="
 git push --force "$URL" main
+
+if [ "$TAG_RELEASE" = "1" ]; then
+  echo
+  echo "=== 5. 打标签并发布（v<plugin 版本>）==="
+  VER="$(git -C "$ROOT" show "$REF:plugin/package.json" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>console.log(JSON.parse(s).version))')"
+  TAG="v$VER"
+  if git ls-remote --tags "$URL" "refs/tags/$TAG" | grep -q "$TAG"; then
+    echo "  标签 $TAG 已存在 —— 跳过（同版本不发两次）"
+  else
+    # 标签要指向**公开树的那次提交**（它就在这个临时仓库里），所以在这里建、直接推。
+    git tag "$TAG"
+    git push "$URL" "$TAG"
+    echo "  已推 $TAG → GitHub Actions 会用 OIDC 发布 $VER（不需要任何 secret）"
+    echo "  看进度：gh run list -R BD7PIL/reeve -L 3"
+  fi
+fi
+
 echo
 echo "完成。GitHub 上的 CI 会因这次推送重跑一遍。"
-echo "下一步（首次发布插件）见 README「发布」一节。"
