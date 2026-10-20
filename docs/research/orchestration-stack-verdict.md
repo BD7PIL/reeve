@@ -276,8 +276,8 @@ model, never reconciled against the provider response"——**已由 stale bot �
 
    → 用户有 `unspecified-high`，故**该段生效**（此前"可能没装防呆"的猜测不成立）。
 
-3. **category 不是 agent。** `resolveCategoryExecution` 里只有一行
-   `agentToUse: SISYPHUS_JUNIOR_AGENT2` —— **8 个 category 全部派给同一个 `Sisyphus-Junior`**，
+3. **category 不是 agent。** `resolveCategoryExecution` 把每一个 category 都解析到同一个
+   junior agent 常量 —— **8 个 category 全部派给同一个 `Sisyphus-Junior`**，
    只是模型档不同。真实拓扑比配置看起来简单得多。
 
 **最值钱的三段（说扛住大部分效果、也最便宜移植）**：
@@ -300,9 +300,8 @@ model, never reconciled against the provider response"——**已由 stale bot �
 > 已改为中文转述——`NOTICE.md` 的提交门禁禁止把 omo 的 prompt 字面留在仓库里（SUL-1.0）。
 > 论证不受影响；需要核对原始字面时，去上游源码（引用索引 §10 给了函数名与行号）。
 
-**(b) omo 的"证据"是自述的。** 其 Evidence Requirements：
-`File edit → lsp_diagnostics clean on changed files / Test run → Pass`
-——**子 agent 自己声称**。对"agent 会欺上瞒下"这个已知问题，这等于没有证据。
+**(b) omo 的"证据"是自述的。** 它的"证据要求"只是**改完文件后 LSP 诊断干净、测试跑过**
+——而且这些结论由**子 agent 自己声称**。对"agent 会欺上瞒下"这个已知问题，这等于没有证据。
 
 → **架构约束（由需求推出）**：**证据必须由 orchestrator 独立复现，不能由 subagent 自述。**
 验证者不能是执行者，且拿到的是**产物本身**（diff、文件、真跑一遍），不是那份报告。

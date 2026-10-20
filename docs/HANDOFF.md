@@ -468,9 +468,8 @@ v2 的 provider catalog 条目里有 **`modelID`** 字段：它决定"发给 pro
 > **证据必须由 orchestrator 独立复现，不能由 subagent 自述。**
 > 验证者不能是执行者，且拿到的是**产物本身**（diff、文件、真跑一遍），不是那份报告。
 
-**反面教材（omo 的做法）**：其 Evidence Requirements 是
-`File edit → lsp_diagnostics clean on changed files / Test run → Pass`
-——**子 agent 自己声称**。对一个会欺上瞒下的 agent，这等于没有证据。
+**反面教材（omo 的做法）**：它的"证据要求"只是**改完文件后 LSP 诊断干净、测试跑过**
+——而且这些结论由**子 agent 自己声称**。对一个会欺上瞒下的 agent，这等于没有证据。
 
 ### 5.3 agent 名单（从实测数据来，不是从配置来）
 
@@ -498,11 +497,8 @@ orchestrator（`foreman`/`lead`）+ `planner` / `critic` / `advisor` / `scout` /
 
 ### 5.4 数据结构的关键认知：category 不是 agent
 
-omo 的 `resolveCategoryExecution` 里只有一行：
-
-```js
-agentToUse: SISYPHUS_JUNIOR_AGENT2
-```
+omo 的 `resolveCategoryExecution` 把**每一个 category 都解析到同一个 junior agent 常量**，
+没有按 category 选择不同的执行者。
 
 → **8 个 category 全部派给同一个 `Sisyphus-Junior`**，只是模型档不同。
 真实拓扑比配置看起来简单得多。**REEVE 里档位同样只是"模型选择"，不是"派给谁"。**

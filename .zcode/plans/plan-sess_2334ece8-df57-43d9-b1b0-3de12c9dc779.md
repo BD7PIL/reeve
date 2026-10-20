@@ -1,119 +1,77 @@
-# REEVE 收尾计划（**无停点**）
+## REEVE 可视化面板：链编辑 + 性能统计（含多模态迭代）
 
-## 零、这份计划的硬性质
+### 目标与边界
 
-**没有"等你批准 / 等你给信息"的停点。** 上一轮我犯的错是把"自己设的谨慎"当成"需要授权"——
-你早就批准了计划、还给了 ssh。这一版里：
+**做**：在 openchamber 扩展里加一个**能写 REEVE 自己配置**的面板——三个档位的 fallback 链可视化编辑（↑↓ 排序 + 搜索式模型选择），加两个性能统计 tab（Bifrost 归因 / 编排台账）。
 
-- 所有**决定**我取默认值，写进 `docs/PROGRESS.md` 并标 `【默认，可改】`——事后你一句话我就改。
-- 所有**动作**我自己做（含 EL7 上机）。**不再回来问。**
+**不做**（明确划出）：provider 增删（要改文件+重启，属部署）；任何 controller 动作（不 `startSession`/`prompt`）；拖拽排序（SDK 套件无 dnd）；会话树一节（与宿主重复，移除）。
 
-### 我自行取的默认值（都可事后一句话推翻）
+凡涉及"写"，只写 `~/.reeve/`：`chain.json`（REEVE 自己的配置）。引擎配置仍然只由插件的"端点自举"那一处写（§6.8）。
 
-| # | 决定 | 我取的默认 | 理由 |
-|---|---|---|---|
-| 1 | 档位数量 | **3 档**（`reeve/flash` / `pro` / `multimodal`） | 已按此实现；`free` 当链序而非档位 |
-| 2 | `limits.default` | **8** | 你实测峰值 88，无上限是失控风险；8 是保守起点 |
-| 3 | 台账 `retentionDays` | **30** | 只清已落终态的记录，在飞的不动 |
-| 4 | Bifrost `log_retention_days` | **30** | `logs.db` 只增不减 |
-| 5 | 审查 severity 门禁 | **都不卡流程** | 规则有 Java 企业栈指纹，先跑两周看误报率 |
-| 6 | 部署路径 | **先做 EL7 staging**（隔离 HOME），**不动生产**；ocrc 集成留作后续 | 隔离杠杆是 `HOME`（两端已实测）；改 ocrc 是另一个仓库的活 |
-| 7 | Bifrost `setup_token` | **本机随机生成一个**，只写进 staging 的 env，不落仓库 | `/api/routing/rules` 需要它，否则 403 |
+### 数据契约
 
----
+**1) `~/.reeve/chain.json`（面板写、插件读；链的唯一可编辑输入）**
 
-## 一、步 4 上机（EL7，staging，不碰生产）
+```jsonc
+{ "version": 1, "updatedAt": 1730000000000,
+  "tiers": {
+    "flash":      { "targets": [{ "provider": "xiaomi", "model": "mimo-v2.6-flash" }],
+                    "fallbacks": ["zhipuai-coding-plan/glm-5.3-flash", "lmuai/glm-5.3-flash"] },
+    "pro":        { "targets": [...], "fallbacks": [...] },
+    "multimodal": { "targets": [...], "fallbacks": [...] } } }
+```
 
-**为什么用 staging**：`~/.config/opencode` 是 v1 生产引擎**正在用**的目录。
-PLAN §2 说了隔离杠杆是 `HOME`，而改 ocrc 的启动行不归本仓库。
-→ 我起一个**独立 HOME** 的 staging 实例，全链验证，**生产一行不动**。
+派生：`tiers` → `governance.routing_rules`（id `reeve-<tier>`、name `reeve/<tier>`、CEL `model == "reeve/<tier>"`、priority 10/20/30、target 带 `ttft_timeout_ms: 30000`、weight 1），**与链基座里的 providers 合并**（providers 仍来自仓库 `proxy/config.json` / 插件自带那份）。缺 `chain.json` 时回落到现状（`reeve.jsonc` → bundled）。
 
-### 步骤
+**2) 快照新增三节**（`~/.reeve/ledger.json`）：`chain{source,appliedAt,drift,tiers}`、`models[{providerID,modelID,name,context}]`（来自 `ctx.provider.list()`；openchamber 的 hidden 状态取不到，见风险）、`stats{generatedAt,window,bifrost{byTier,byProvider,chain,source},orchestrate{byAgent,queue,uncertain}}`。
+
+### 插件侧改动
+
+| 文件 | 改什么 |
+|---|---|
+| `plugin/src/chain.js`（新） | 纯函数：`chain.json` → routing_rules 派生、与运行时规则比对、drift 判定、`readChainFile`（注入 impl 便于测试） |
+| `plugin/src/stats.js`（新） | `/api/logs` 拉取 + 聚合（注入 `fetchImpl`）；编排侧从台账聚合（每 agent 时长 p50/p95、超时/停止/对账、在飞、**排队数来自 `admission.waitingCount`**） |
+| `plugin/src/proxy.js` | bootstrap 改用 `chain.js` 派生；**守护 tick 增加"链文件 mtime 变了就重新派生 + 收敛"**（现无文件监听，这是唯一的收敛触发点） |
+| `plugin/src/index.js` | 折进快照；加一个 unref 的统计定时器（默认 60s，失败只记日志） |
+| `plugin/src/snapshot.js` | 三个新槽位（`chain`/`models`/`stats`） |
+
+**统计取数顺序（每步失败就退下一个，全部失败就如实标 `source:"unavailable"`）**：
+① `GET /api/logs?limit=N` + `X-Bifrost-Setup-Token`（token 是插件自己写的 600 文件）→ **形状先实测**（仓库里只有消费假设：`d.logs || d.data`）；
+② 直读 `~/.reeve/proxy/logs.db`（需先验引擎运行时有没有 `node:sqlite`；`scripts/served-model.mjs` 的外部 node 版已在用同一批列）；
+③ 不产出统计，面板显示"拿不到，用 `served-model.sh` 看"。
+
+### 面板侧改动
+
+- **Tab 结构**（`mountTabs`）：`链` / `统计` / `台账`（台账保留既有列表 + "前台可见 agent"一行）。
+- **链 tab**：三个档位各一块。行 = `模型名 · provider` + `↑` `↓`（`mountButton` size sm ghost）+ `×`；`＋ 加回退` → `mountSelect`（searchable，候选 = 快照 `models` 里未选的）；改完**显式**「保存并生效」→ `host.writeFile('~/.reeve/chain.json', …)` → 显示"已写入，等待收敛（≤20s）"，轮询快照 `chain.appliedAt` 变化。
+- **统计 tab**：上"Bifrost 归因"（档位×provider：请求/成功/失败/回退跳/平均延迟 + 每档位合计），下"编排台账"（每 agent：n/ok/err/stop/p50/p95/超时率 + 在飞/排队/不确定）。数字用 `--oc-mono`，延迟用 CSS 宽度条，状态用 `--oc-success/--oc-error/--oc-warning`。
+- **观感规则**（跟宿主一致）：只用宿主 token，不引新色；1px `--oc-border` 分隔；行高与宿主列表一致；空态用 `mountEmpty` 且给可执行的话；所有按钮 `size:'sm' variant:'ghost'`。
+- **守门闸门改**（`check.mjs:94-100`）：从"禁止 writeFile"改成"**只允许写 `~/.reeve/chain.json`**"——静态断言源码里每个 `writeFile(` 的实参都是那个常量；`startSession/prompt/compose/attach` 继续禁。
+
+### 多模态迭代（你要的那条，独立成步）
+
+1. 新增 `extensions/reeve/cdp-panel-shot.mjs`：**重开 iframe**（改完 JS 才生效）→ 用 `DOM.getBoxModel` 拿 iframe 矩形 → `Page.captureScreenshot({clip})` **只截面板**（浅色+深色各一张）→ 需要时在 guest 上下文里点按（`Input.dispatchMouseEvent` 按 iframe 偏移换算）。
+2. 每轮：截图 → 交给 **`multimodal-looker`** 按 rubric 评审（信息层级 / 密度 / 对齐 / 对比度 / 与宿主一致性 / 文案可读性）→ 我按结论改 → 再截。
+   **至少 3 轮**，每轮的结论与改动记进 `docs/PROGRESS.md`（含截图路径）。
+   > 说明：`documents:visual-judge` 明确只适用于 pptx/docx/xlsx/pdf/poster/chart，UI 面板不能用它；这里用 `multimodal-looker`（图像分析）。
+3. 迭代到"问题清零或只剩已记档的取舍"为止。
+
+### 执行顺序与验收（每步可独立停下）
 
 | # | 做什么 | 验收 |
 |---|---|---|
-| 1 | 在 EL7 建 `~/.reeve-staging/`（隔离 HOME），把 Bifrost 二进制从 `~/.reeve-smoke/` 移进去 | 目录就位 |
-| 2 | scp 传 reeve 资产：`agents/` `skills/` `plugin/` `proxy/config.json` | 文件数对得上 |
-| 3 | 从 EL7 **已有的** `~/.local/share/opencode/auth.json` 读 key（**不打印、不落盘到仓库**），注入 Bifrost 的 `env.*` | Bifrost 起来且 provider 可用 |
-| 4 | 起 Bifrost（**端口 18080**，app-dir = staging），设 `log_retention_days=30` + `setup_token` | `/v1/models` 返回 200 |
-| 5 | 写 staging 的 `opencode.json`：`providers.reeve`（原生复数 + `package`/`settings` + **`{env:VAR}`** + `modelID`）+ `plugins` + 8 个 agent + skill | `debug config` 里出现 `document` 源 |
-| 6 | 用 staging HOME 起 v2 引擎，跑一次真实调用 | Bifrost 侧收到 **`reeve/flash`** |
-| 7 | **验回退**：把链头 provider 的 key 临时换成坏的 → 第二个自动接上、请求成功 | 请求成功且 `is_fallback` 为真 |
-| 8 | **验归因**：查 Bifrost `logs.db` 的 `served_model` / provider | `scripts/served-model.sh` 答得出"谁真的服务了" |
-| 9 | **验视觉档**：发一次带图的调用，看是否只有它走 `reeve/multimodal` | 档位分流正确 |
-| 10 | 收工：停 staging 引擎与 Bifrost，**生产 :4096 全程不动** | 生产进程仍在 |
+| 1 | 插件：`chain.js` + 派生/收敛接线 + mtime 触发；测试 | 单测全过；EL7：手改 `chain.json` → ≤20s 运行时规则跟上（GET `/api/routing/rules` 佐证） |
+| 2 | 插件：`stats.js` + 定时器 + 快照三节 | EL7：Bifrost 侧数字与 `served-model.sh --days 1` 同窗口一致；编排侧与 `counts` 一致 |
+| 3 | 面板：三 tab 骨架 + 链编辑（含保存/等待收敛） | 面板里调换顺序并加一个模型 → 保存 → 规则变、跑一次真实调用档位分流未坏 |
+| 4 | 面板：两个统计 tab | 截图可读；数字口径与第 2 步一致 |
+| 5 | **多模态迭代 ≥3 轮** | 每轮 verdict 与改动记档；截图存 `extensions/reeve/`（不入库大图，只记路径） |
+| 6 | 文档 + 提交 | PROGRESS 新节（含 `/api/logs` 实测形状、闸门改动理由、迭代记录）；`config/opencode.sample.jsonc` 与两个 README 同步；117→N 项测试全过；EL7 收工（staging 全停、生产 :4096 不动） |
 
-### 验收表（步 4）
+### 风险与对策（按实测优先）
 
-| 检查项 | 标准 |
-|---|---|
-| 回退可靠 | 坏 key 链头 → 第二个接上且请求成功 |
-| 别名稳定 | 同一会话多轮，Bifrost 始终收到 `reeve/<档位>` |
-| 视觉别名 | 只有视觉调用走 `reeve/multimodal` |
-| 半截流 | ✅ **已验**：opencode 不把截断流当成功，会重试 |
-| 归因可查 | `served-model.sh` 能答"这 196 次 quota 错误分别是哪个 provider 撞的" |
-
----
-
-## 二、步 5 控制台（openchamber extension）
-
-**参照**：ocrc 的 `extensions/ocrc-omo-view`（已验证可行：`listProjects` → `listSessions` + `onSessions`，
-`parentId` 建树，声明式注册）。
-
-**产出** `extensions/reeve/`：
-- `package.json` —— `openchamber` 块贡献 `panel`（`id: reeve`）+ `actions`
-- `panel/index.html` + `src/` —— 挂载 Panel
-- **只读**：读会话树 + 读插件写的台账 JSON（**同机文件桥**）
-- **不做 controller**（控制面在模型侧）
-
-**验证**：EL7 上有 openchamber 2.3.3 实例 → 把扩展装上去，看面板是否识别、能否渲染。
-
----
-
-## 三、「零冲突」验收（唯一挂着的验收项）
-
-两层验：
-
-1. **机制层（我能独立完成）**：插件**不写** `agents.*.model`。
-   - 代码层：grep 全仓确认插件代码里没有任何 `agents`/`model` 的写路径
-   - 运行时：记录 `opencode.json` 的 mtime + hash，加载插件跑一轮，再比对——**必须完全不变**
-2. **面板层（若 EL7 的 openchamber 能装扩展）**：在面板 Agents 页保存一次，比对配置有无被静默覆盖。
-
----
-
-## 四、收尾配置
-
-- `limits.default=8` 写进部署配置
-- `retentionDays=30` 写进插件 options
-- Bifrost `log_retention_days=30` + 随机 `setup_token`
-- 把上述写进 `proxy/README.md` 与 `plugin/README.md` 的部署示例
-
----
-
-## 五、收尾文档与提交
-
-- `docs/PROGRESS.md` 补齐步 4/步 5 的验收记录与证据
-- `docs/PLAN.md` §11 未决项全部标结（或标"为什么仍开放"）
-- `docs/PLAN.md` §12 待确认项 → 改成"**已取默认值**（列出），可事后改"
-- 打第二个 commit
-
----
-
-## 六、明确不做
-
-- **不碰** EL7 生产引擎（:4096）与 `~/.config/opencode`（v1 在用）
-- **不改** ocrc 仓库（隔离杠杆的改动归它，我不越界）
-- 不引入 omo 的任何代码或 prompt 字面（SUL-1.0）
-- 控制台不做 controller；插件不写 `agents.*.model`
-- 不在 EL7 上留常驻进程（staging 跑完即停；要常驻你说一声）
-
----
-
-## 七、做完之后的状态
-
-**全部验收项都有实测结论**，除了：
-- 面板层「零冲突」——若 EL7 的 openchamber 装不上扩展，我会如实标"机制层已验、面板层未验"，**不假装通过**
-- 步 5 的渲染效果——同上
-
-**如果哪一步在 EL7 上真的做不下去**（例如权限、端口、网络），我会**换等价做法继续**（本地 staging / 换端口），
-把卡点与替代方案写进 PROGRESS，**而不是停下来等你**。
+1. **`/api/logs` 形状未知** → 第 2 步第一件事就是实测它并记档；不行退 `logs.db`（先验 `node:sqlite`）；再不行如实降级。
+2. **收敛时延**：守护 tick 20s 是上限；若体感慢，把 tick 对"链文件 mtime"单独提到 5s（只 stat，不碰代理）。
+3. **并发写**：面板写用宿主原子写（temp+rename），插件读取包 try/catch，坏 JSON 视为"未变更"并记日志。
+4. **openchamber 的 hidden 状态取不到**（它在宿主浏览器端，guest SDK 不暴露）→ 模型候选给"引擎里全部可用"并标注来源；要做"只显示不隐藏的"只能请 openchamber 侧开接口（记进文档，不阻塞）。
+5. **能力重新批准**：globs 不变（`~/.reeve/**` 已在），预计不用重新批准；若宿主索要，面板按既有失败文案提示"去 设置→扩展 批准文件系统"。
+6. provider 增删仍需"改文件 + 重启 Bifrost"（本轮不做，文档里已写明）。

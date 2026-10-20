@@ -655,7 +655,7 @@ reeve/
 | 权限闸门 | `critic` / `advisor` 无法 edit/shell（尝试时应被拒） |
 | 验收独立性 | subagent 声称完成 → `foreman` **自己**读产物/跑测试，不引用它的结论 |
 | 多轮评审 | 一个有明显缺陷的计划被驳回 **≥2 轮**，且每轮聚焦不同维度 |
-| 无 omo 字面 | 全仓 grep 无 `Sisyphus` / `Momus` / `Atlas` / `Prometheus` / `Metis` 与 omo 的 prompt 片段 |
+| 无 omo 字面 | 全仓 grep 无 omo 的**代码或 prompt 原文**（`NOTICE.md` 的提交门禁命令零命中）；品牌名只允许作为事实标识出现，不得用于命名我们自己的东西 |
 
 **步 2 — 记账插件**
 

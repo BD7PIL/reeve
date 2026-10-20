@@ -275,8 +275,8 @@ for(const id of ["opencode","zhipuai-coding-plan","deepseek","xiaomi","alibaba-c
 | `lmuai`（自定义） | `https://api.lmuai.com` | `/v1/chat/completions` |
 | `xxyapi-deepseek`（自定义） | `https://www.xxyapi.com` | `/v1/chat/completions` |
 
-（`lmuai` / `xxyapi-deepseek` 的 endpoint 来自使用者的 `D:\develop\OpenCodeConfig`；
-其余来自 models.dev 目录。）
+（`lmuai` / `xxyapi-deepseek` 的 endpoint 来自使用者的本地 opencode 配置
+（`~/.config/opencode/`）；其余来自 models.dev 目录。）
 
 **链上用到的 model id 都在目录里核对过存在**：
 

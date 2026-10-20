@@ -5,3 +5,6 @@ dist/
 # 实验/临时
 .tmp-*
 *.tsbuildinfo
+
+# 内部运维脚本（EL7 staging 专用，不随公开树发布）
+.zcode/

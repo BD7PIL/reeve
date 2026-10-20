@@ -59,3 +59,14 @@ jobs:
         with:
           node-version: 24
       - run: node scripts/check-config-sample.mjs
+
+  public-tree:
+    name: 公开树门禁（内网地址 / 个人路径 / 凭据形状）
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      # docs/ 与 .zcode/ 不随公开树发布，导出时会被剪掉；其余文件必须干净。
+      - run: node scripts/check-public-tree.mjs --root . --exclude docs --exclude .zcode

@@ -120,8 +120,19 @@ v2 插件 API 的真实形态（钩子真名、**`codemode:false` 才是工具�
 **0.1.1 起全部由 CI 发布、带 provenance**（registry 上 0.1.1 的 `dist.attestations.provenance.predicateType = slsa.dev/provenance/v1`）。
 要改走 token 方案时，加一个仓库 secret `NPM_TOKEN` 就行——工作流是"有它用 token、没有回落 OIDC"，代码不用动。
 
-**面板扩展**（`extensions/reeve/`）走的是宿主的另一套：路径 / 公网 zip / git 分支三种装法，
-**只有 git 形态能自更新**（宿主 `updateGuest` 只认 git 源）；对应的发布工作流（zip 资产 + subtree 镜像分支）**还没建**。
+**面板扩展**（`extensions/reeve/`）走宿主另一套：路径 / 公网 zip / git 分支三种装法，
+**只有 git 形态能自更新**（宿主 `updateGuest` 只认 git 源）。发布走
+`.github/workflows/reeve-extension.yml`（手动 dispatch）：
+
+- `reeve.zip` → Release 资产；pin `reeve-<版本>` 不变，通道 `reeve-latest` 每次覆盖，
+  稳定安装地址 `https://github.com/BD7PIL/reeve/releases/download/reeve-latest/reeve.zip`
+- `extensions/reeve` → `git subtree split` 镜像到 `reeve` 分支
+  （`https://github.com/BD7PIL/reeve#reeve`，可自更新）
+
+**`provision.json`（插件包根，随 npm tarball 发布）** 是给装配器（ocrc）读的安装契约：
+插件 spec 与目录回退、Bifrost 工件（版本 + sha256 + 落点）、扩展 zip、发布后检查。
+手动安装的等价步骤就是上面两条命令，外加把 `bifrost-http`（2.3.0）放到
+`~/.reeve/proxy/` 并 `chmod 755` —— reeve 发现文件校验和匹配就不会再下载。
 
 ## 命名派生
 

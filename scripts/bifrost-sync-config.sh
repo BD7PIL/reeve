@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Bifrost 配置收敛：把 `config.json`（声明式期望态）同步到**运行中的** Bifrost。
 #
-#   bash bifrost-sync-config.sh --app-dir /home/demo/.reeve-staging/bifrost --port 18080 --apply
+#   bash bifrost-sync-config.sh --app-dir ~/.reeve/bifrost --port 18080 --apply
 #   bash bifrost-sync-config.sh --app-dir ... --port 18080 --check     # 只报漂移，不改（漂移时退出码 2）
 #   ... --apply --prune                                                # 额外删掉文件里没有的规则
 #

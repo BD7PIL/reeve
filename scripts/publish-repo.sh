@@ -51,12 +51,13 @@ done
 for need in README.md LICENSE NOTICE.md plugin/package.json extensions/reeve/package.json .github/workflows/ci.yml; do
   [ -e "$OUT/$need" ] || { echo "✗ 公开树缺 $need —— 中止"; exit 1; }
 done
-# 反向闸门：内网地址不许出现在任何被推的文件里。
-if grep -rIl --exclude-dir=.git -E '192\.168\.[0-9]+\.[0-9]+' "$OUT" 2>/dev/null | head -5 | grep -q .; then
-  echo "✗ 公开树里有内网地址 —— 中止："
-  grep -rIl -E '192\.168\.[0-9]+\.[0-9]+' "$OUT" | sed "s|$OUT/|  |"
+# 反向闸门：内网地址、个人主目录、开发机路径、凭据形状一律不许进公开树。
+# 规则与 CI 共用 scripts/check-public-tree.mjs —— 旧版只拦 192.168.*，漏了
+# /home/<name>、其他 RFC1918 段和 Windows 路径。
+node "$OUT/scripts/check-public-tree.mjs" --root "$OUT" || {
+  echo "✗ 公开树过不了 check-public-tree —— 中止"
   exit 1
-fi
+}
 
 echo "=== 3. 建公开提交（单提交，无历史）==="
 cd "$OUT"
