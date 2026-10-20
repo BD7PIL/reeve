@@ -4,7 +4,8 @@
   "type": "module",
   "description": "Tooling only. The publishable package is plugin/ (@bd7pil/reeve).",
   "scripts": {
-    "lint": "biome lint ."
+    "lint": "biome lint .",
+    "test:coverage": "npm --prefix plugin run test:coverage && node scripts/check-coverage.mjs"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.15"

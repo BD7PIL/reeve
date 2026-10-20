@@ -1,16 +1,20 @@
-// 代理层自持（纯插件形态）的单元验证：只测**纯函数**与派生规则；
-// 起进程/取件那部分是薄 IO（在 EL7 上真跑验过，见 docs/PROGRESS.md §6.7）。
+// 代理层自持（纯插件形态）的单元验证：纯函数、派生规则，以及 ensureBinary
+// 的判读分支（注入 fetchImpl + 临时目录，不打网络）；起进程那部分是薄 IO
+// （在 EL7 上真跑验过，见 docs/PROGRESS.md §6.7）。
 //   node plugin/test/proxy.mjs
 
 import assert from 'node:assert/strict'
-import { readFile } from 'node:fs/promises'
-import { readFileSync } from 'node:fs'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { readFileSync, existsSync } from 'node:fs'
+import { createHash } from 'node:crypto'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import {
   BIFROST_PIN, PROXY_DEFAULTS, proxyPaths, providerEnvName, deriveProviderEnv,
   buildProxyConfig, needsDownload, buildSpawnArgs, isReady, ownerOfPort,
+  ensureBinary,
 } from '../src/proxy.js'
 
 let passed = 0
@@ -57,6 +61,46 @@ const ok = (label) => {
   ok('deriveProviderEnv：只注链里用到的、缺的如实报')
 }
 
+// ---- 4b. ensureBinary：短路 / 重下 / 拒坏件（注入 fetchImpl，不打网络） ----
+{
+  const silent = { debug: () => {} }
+  const good = Buffer.from('#!/bin/sh\necho bifrost-stub\n', 'utf8')
+  const sha = (buf) => createHash('sha256').update(buf).digest('hex')
+  const pin = { version: 'test', url: 'https://invalid.test/bifrost', sha256: sha(good), size: good.byteLength }
+
+  const root = await mkdtemp(join(tmpdir(), 'reeve-bin-'))
+  const paths = { root, binary: join(root, 'bifrost-http') }
+  const noFetch = () => { throw new Error('这笔不该取件（短路失效）') }
+
+  // (a) 已就位且校验和相符 → 'ok'，一次网络都不打
+  await writeFile(paths.binary, good)
+  assert.equal(await ensureBinary({ paths, pin, fetchImpl: noFetch, logger: silent }), 'ok', '命中短路')
+
+  // (b) 内容被换掉（大小一致）→ 重下：fetch 返回正确字节，落 .part 后原子换名
+  await writeFile(paths.binary, Buffer.alloc(good.byteLength, 0x20))
+  let fetched = 0
+  const fetchOk = async () => {
+    fetched += 1
+    return { ok: true, arrayBuffer: async () => good.buffer.slice(good.byteOffset, good.byteOffset + good.byteLength) }
+  }
+  assert.equal(await ensureBinary({ paths, pin, fetchImpl: fetchOk, logger: silent }), 'installed', '校验和不符重下')
+  assert.equal(fetched, 1)
+  assert.deepEqual(await readFile(paths.binary), good, '坏件被换成正件')
+  assert.ok(!existsSync(`${paths.binary}.part`), '.part 不残留')
+
+  // (c) 取件回来校验和不符 → 抛错且不落盘（宁可不装也不装错的）
+  await rm(paths.binary, { force: true })
+  const bad = Buffer.from('not-the-binary')
+  const fetchBad = async () => ({ ok: true, arrayBuffer: async () => bad.buffer.slice(bad.byteOffset, bad.byteOffset + bad.byteLength) })
+  await assert.rejects(() => ensureBinary({ paths, pin, fetchImpl: fetchBad, logger: silent }), /sha256 不符/)
+  assert.ok(!existsSync(paths.binary), '坏件不落盘')
+
+  // (d) HTTP 非 2xx → 明确报取件失败
+  const fetch502 = async () => ({ ok: false, status: 502 })
+  await assert.rejects(() => ensureBinary({ paths, pin, fetchImpl: fetch502, logger: silent }), /HTTP 502/)
+  await rm(root, { recursive: true, force: true })
+  ok('ensureBinary：命中短路 / 校验和不符重下（.part 原子换名）/ 坏件与 HTTP 错误都拒')
+}
 // ---- 4. 派生 Bifrost 配置：去掉注释键 + 关掉回环鉴权 ----
 {
   const chain = { '//note': 'x', providers: {}, client: { log_retention_days: 30 }, governance: { routing_rules: [] } }

@@ -1,0 +1,12 @@
+{
+  "_comment": "覆盖率硬门槛基线（reeve）。只升不降：任何指标低于本文件 => scripts/check-coverage.mjs exit 1。提升基线必须连同改进（新测试）一起提交。生成命令：npm --prefix plugin run test:coverage（c8 包 npm test，读数在 plugin/coverage/coverage-summary.json）。",
+  "_generated": "2026-10-21",
+  "_history": [
+    "2026-10-21 初版：entry.mjs（入口装配 4 项）+ ensureBinary 分支用例落地后首测。"
+  ],
+  "global": { "statements": 79, "branches": 75, "functions": 85 },
+  "paths": {
+    "src/index.js": { "statements": 66, "branches": 46, "functions": 52 },
+    "src/proxy.js": { "statements": 39, "branches": 87, "functions": 58 }
+  }
+}

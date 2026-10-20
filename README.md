@@ -61,7 +61,7 @@ review layer    independent diff review        rules from OCR (Apache-2.0)   no 
 |---|---|---|
 | 0 | plan / API map / HANDOFF errata | — |
 | 1 | 8 agents in `agents/*.md` (7 subagents marked `hidden`) | ✅ permission gates, independent review, multiple rounds; only `foreman` is visible |
-| 2 | `plugin/` ledger layer (**135** tests) | ✅ concurrency queue / wall-clock interrupt / cross-restart reconcile / ledger round-trip / roster injected into the `subagent` tool description / proxy self-hosting / chain hot reload (≤4 s) / stats cross-check |
+| 2 | `plugin/` ledger layer (**140** tests) | ✅ concurrency queue / wall-clock interrupt / cross-restart reconcile / ledger round-trip / roster injected into the `subagent` tool description / proxy self-hosting / chain hot reload (≤4 s) / stats cross-check |
 | 3 | `skills/review/` review layer | ✅ real diff, line numbers, structured output |
 | 4 | `proxy/` Bifrost chain + deploy and convergence scripts | ✅ tier routing / fallback / vision tier / attribution |
 | 5 | `extensions/reeve/` console (chain editor + stats + ledger) | ✅ installed in openchamber 2.3.3, rendered, ledger read through the host file bridge; edit → save → runtime rules hot-reload → "applied" |
@@ -124,7 +124,7 @@ All in `.github/workflows/`, all offline (no provider traffic):
 
 | Action | Trigger | What it does |
 |---|---|---|
-| CI | push `main` / PR | plugin tests (node 22 and 24) · npm pack content assertions (license texts present, `docs/` and secrets absent) · extension gate + byte-identical rebuild · engine config sample · public-tree gate |
+| CI | push `main` / PR | plugin tests (ubuntu node 22 + 24, windows node 24) · npm pack content assertions (license texts present, `docs/` and secrets absent) · extension gate + byte-identical rebuild · engine config sample · public-tree gate |
 | Release (normal path) | `bash scripts/publish-repo.sh --tag` | export public tree → tag `v<plugin version>` on that commit → CI publishes with OIDC (SLSA provenance) |
 | Release (manual) | push tag `v<version>` or dispatch the workflow | tag↔version check → version not published → tests → pack assertions → `npm publish --access public --provenance` |
 

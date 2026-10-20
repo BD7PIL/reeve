@@ -8,3 +8,6 @@ dist/
 
 # 内部运维脚本（EL7 staging 专用，不随公开树发布）
 .zcode/
+
+# 覆盖率产物（c8，本地与 CI 皆可重建）
+coverage/
