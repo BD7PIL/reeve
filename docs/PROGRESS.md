@@ -1198,3 +1198,29 @@ key 一直在真 home 那份里；默认值是 `<HOME>/.local/share/opencode/aut
 **一个假阴性要记**：第一次 `run` 因模型调用报 transport 错并撞超时被杀，缓存目录当时是**空的** ——
 看着像"没装上"，其实取件+安装要 ~50 s，**必须让它跑完再判定**；而且插件自己的日志是 debug 级，
 不开 `--print-logs` 只能看到引擎的 `loading plugin` 一行。
+
+---
+
+## 2026-10-20 · 三仓切换与发布（D4–D6）
+
+**本地 tarball → 隔离栈 T1（Windows）**
+
+| 检查 | 证据 |
+|---|---|
+| 两个组件同时加载 | 引擎日志 `loading plugin` 两条（deep-memory 目录、reeve 目录）；reeve `注册：agent 8 个、skill 1 个`；openchamber managed 层探针同时 `loaded` |
+| 工具面 | 模型请求的 tools 列表含 `memory_store/memory_search/...`（7 个）与 `reeve_task_status` |
+| 子会话注入 | deep-memory 的 `e2e:v2` 38/38（含子会话 spawn 与 context 注入） |
+| 台账 | 真引擎里 foreman → scout 的子会话 `ses_ea850d67dffeWjdpSQZW2MakW8`；台账 `completed` + childSessionID |
+| 配置并集 | `plugins` 跨两层并集（真实 v2.0.32）；reeve 加载前后两个配置文件 sha256 不变 |
+| 扩展 | 本地 openchamber 2.3.3：`reeve 0.1.1` 装成，capabilities requested/granted = sessions+filesystem |
+
+**EL7 真机 T2**
+
+- `ocrc remote apply … --component <deep-memory.tgz> --component <reeve.tgz>`：目录安装到 `~/.ocrc/components/*/package`，Bifrost 2.3.0 落到 `~/.reeve/proxy/bifrost-http`（sha256 命中），扩展装成并授权；`plugins` 写成绝对目录条目。
+- `up` 后：OpenCode 2.0.32；Bifrost 由 reeve 启动（:8080 `/api/version` 200）；v1 引擎 :4096（pid 4944）与 `oh-my-opencode-slim.json`/`auth.json` 哈希均未变。
+- 真多步任务：foreman 派 scout 列目录 → 子会话 `ses_ea8407f9effe1KQ6wYmYvWjZwi`；台账两条 `completed`。
+- **回退触发**：Bifrost 日志 `opencode/mimo-v2.6-flash-free hop=0 error (no_key_supports_model)` → `zhipuai-coding-plan/glm-5.3-flash hop=1 success`。
+
+**开发机（D5）**：`~/.config/opencode/opencode.jsonc` 切到 v2 `plugins`（发布包 `@bd7pil/opencode-deep-memory@0.16.3` + `@bd7pil/reeve@0.1.2`，`proxy:false`/`ownEndpoint:false`），8 个 reeve agent 映射到本机 provider；v1 配置快照 `*.v1-backup-2026-10-20` 保留 7 天。发布包在隔离引擎上实际加载成功（npm 缓存路径见引擎日志）。
+
+**发布**：deep-memory `0.16.3`（latest）、reeve `0.1.2`（latest）、ocrc `2.0.0-alpha.10`（next）、扩展 `reeve-0.1.1` + `reeve-latest` + `reeve` 分支。
