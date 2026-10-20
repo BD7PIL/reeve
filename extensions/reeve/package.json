@@ -1,0 +1,47 @@
+{
+  "name": "reeve",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "REEVE 编排视图 —— 链编辑（只写 ~/.reeve/chain.json）+ 性能统计 + 台账",
+  "openchamber": {
+    "apiVersion": 1,
+    "contributes": {
+      "panel": {
+        "id": "reeve",
+        "name": "REEVE 编排",
+        "icon": "git-branch",
+        "entry": "panel/index.html"
+      },
+      "filesystem": [
+        "~/.reeve-staging/.reeve/**",
+        "~/.reeve/**",
+        "~/.local/share/opencode/reeve/**",
+        "~/.reeve-staging/.local/share/opencode/reeve/**"
+      ],
+      "capabilities": [
+        "sessions"
+      ],
+      "actions": [
+        {
+          "id": "reeve-inspect",
+          "label": "查看编排",
+          "where": "session",
+          "mode": "open"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "build": "node build.mjs",
+    "check": "node --check panel/main.js",
+    "gate": "node check.mjs"
+  },
+  "devDependencies": {
+    "@openchamber/sdk": "2.3.2",
+    "esbuild": "0.28.2"
+  },
+  "//devDeps": "只给**构建与守门**用（CI 与本地同一套）：宿主 SDK 是公共 npm 包，钉在验证过的那一档（对应 openchamber 2.3.3）；esbuild 用来把 src/panel 打成 classic IIFE。build.mjs / check.mjs 会优先用本目录的 node_modules，找不到才回落到相邻的 ocrc 检出。",
+  "//filesystem": "第二条是 EL7 staging 验证用的（引擎 HOME 与 openchamber 的 HOME 不同）。生产部署只留第一条即可 —— 与部署时给插件的 options.snapshotPath/chainFilePath 保持一致。",
+  "//write": "面板**只写一个文件**：~/.reeve/chain.json（REEVE 自己的链配置；路径取自快照里插件正在读的那份）。绝不写引擎配置（providers.reeve 那两行由插件的端点自举写），绝不 startSession/prompt/compose/attach —— check.mjs 里有一条静态守门盯着这两件事。"
+}
