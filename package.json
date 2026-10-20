@@ -1,6 +1,6 @@
 {
   "name": "reeve",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "type": "module",
   "description": "REEVE 编排视图 —— 链编辑（只写 ~/.reeve/chain.json）+ 性能统计 + 台账",

@@ -85,9 +85,9 @@ node check.mjs          # 宿主解析器校验 manifest + 打包完整性 + 守
 装法（当时用的）：
 
 ```bash
-# 包放在 /home/demo/.reeve-ext-src（Install 会**引用**这个路径，不复制）
+# 包放在 ~/.reeve-ext-src（Install 会**引用**这个路径，不复制）
 curl -b <会话 cookie> -X POST -H 'Content-Type: application/json' \
-  -d '{"path":"/home/demo/.reeve-ext-src"}' http://127.0.0.1:2610/api/guests        # → 201
+  -d "{\"path\":\"${HOME}/.reeve-ext-src\"}" http://127.0.0.1:2610/api/guests   # → 201
 curl -b <会话 cookie> -X PUT -H 'Content-Type: application/json' \
   -d '{"granted":["sessions","filesystem"]}' \
   http://127.0.0.1:2610/api/guests/reeve/capabilities                              # → 200

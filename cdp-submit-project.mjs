@@ -1,5 +1,6 @@
-// 在 Projects 页输入路径并提交，把 /home/demo/.reeve-staging/work 注册成一个项目。
-const DIR = '/home/demo/.reeve-staging/work'
+// 在 Projects 页输入路径并提交，把一个 staging 目录注册成项目（REEVE_PROJECT_DIR 可覆盖）。
+import { homedir } from 'node:os'
+const DIR = process.env.REEVE_PROJECT_DIR || `${homedir()}/.reeve-staging/work`
 const targets = await (await fetch('http://127.0.0.1:9222/json/list')).json()
 const page = targets.find((t) => t.type === 'page' && t.url.includes('2610'))
 const ws = new WebSocket(page.webSocketDebuggerUrl)

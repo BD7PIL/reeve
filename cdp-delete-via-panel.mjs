@@ -1,6 +1,7 @@
 // 清理：用页面上下文里的同源 fetch 调面板自己的删除端点，然后确认文件消失。
 const NAME = 'zc-zeroconf-probe'
-const DIR = '/home/demo/.reeve-staging/work'
+import { homedir } from 'node:os'
+const DIR = process.env.REEVE_PROJECT_DIR || `${homedir()}/.reeve-staging/work`
 const targets = await (await fetch('http://127.0.0.1:9222/json/list')).json()
 const page = targets.find((t) => t.type === 'page' && t.url.includes('2610'))
 const ws = new WebSocket(page.webSocketDebuggerUrl)
