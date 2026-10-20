@@ -1,0 +1,12 @@
+{
+  "name": "reeve-workspace",
+  "private": true,
+  "type": "module",
+  "description": "Tooling only. The publishable package is plugin/ (@bd7pil/reeve).",
+  "scripts": {
+    "lint": "biome lint ."
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.5.15"
+  }
+}
