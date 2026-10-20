@@ -34,7 +34,14 @@ const raw = execFileSync(process.execPath, [npmCli, 'pack', '--dry-run', '--json
   encoding: 'utf8',
 })
 
-const [info] = JSON.parse(raw)
+// `npm pack --json` 的形状跨大版本变过：npm 11 给数组，npm 12 给对象（按包名索引）。
+// CI 上装的是 `npm@11`（钉住了），这里两种都吃，免得工具链一漂就红。
+const parsed = JSON.parse(raw)
+const info = Array.isArray(parsed) ? parsed[0] : Object.values(parsed)[0]
+if (!info?.files) {
+  console.error(`读不懂 npm pack 的输出形状（顶层是 ${Array.isArray(parsed) ? 'array' : typeof parsed}）`)
+  process.exit(2)
+}
 const paths = info.files.map((f) => f.path)
 
 const problems = []

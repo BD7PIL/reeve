@@ -40,7 +40,9 @@ jobs:
           registry-url: https://registry.npmjs.org
 
       - name: npm ≥ 11.5.1（OIDC 发布的门槛）
-        run: npm install -g npm@latest
+        # 钉大版本而不是 @latest：npm 12 把 `npm pack --json` 的输出形状从数组改成了对象
+        # （本地是在 11.x 上验的）。要升大版本时，先跑一次彩排（workflow_dispatch + dry_run）。
+        run: npm install -g npm@11
 
       - name: 读版本 + 与标签对表
         id: ver
