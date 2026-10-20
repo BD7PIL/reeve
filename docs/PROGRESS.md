@@ -1117,3 +1117,57 @@ key 一直在真 home 那份里；默认值是 `<HOME>/.local/share/opencode/aut
 截图（不入库，只记路径）：`.zcode/shots/r20-chain.png`（浅·链）、`r21-stats.png`（浅·统计）、
 `r20-ledger.png`（浅·台账）、`r14-stats-dark.png`（深·统计）、`r15-*/r16-*`（过程图与失败样本）。
 第 3/4 轮的像素取证脚本在 `.zcode/shots/_px.js`、`_crop.js`（评审代跑）。
+
+## 6.12 发布链：从 npm registry 装插件（2026-10-20）
+
+**需求**：插件要能从 npm registry 装（`"plugins": ["@bd7pil/reeve"]`），不再依赖"机器上有检出"。
+摸下来的缺口：仓库**没有远程**（任何"跟随/自动更新"都无从谈起）、没有 CI、包元数据自相矛盾
+（`private: true` + `license: SEE LICENSE IN ../LICENSE` 但仓库根没有 `LICENSE`；第三方许可文本没进 `files`）。
+
+### 做出来的东西
+
+| 文件 | 干什么 |
+|---|---|
+| `LICENSE` / `plugin/LICENSE` | 自写代码 MIT（`Copyright (c) 2026 bd7pil (reeve)`） |
+| `plugin/licenses/*.LICENSE` / `plugin/THIRD-PARTY.md` | 两份外来许可的**包内副本** + 包内清单（`skills/review/*.md` 是 Apache-2.0 原样副本、记账算法参照 MIT 的 omo-slim；npm 包里 `../licenses` 够不着，必须随包） |
+| `plugin/package.json` | `private` 去掉；0.0.1 → **0.1.0**；`repository/homepage/bugs/engines(>=22)/publishConfig(public)`；`prepublishOnly = npm test`；`files` 增加许可三项 |
+| `.github/workflows/ci.yml` | 插件测试（node 22 / 24 各一遍）· npm 包内容断言 · 扩展守门 + **重建后产物逐字节一致** · 引擎样板校验 |
+| `.github/workflows/publish.yml` | tag `v<版本>` → 标签↔版本对表 → 查重 → 测试 → 断言 → `npm publish --access public --provenance`（Trusted Publishing/OIDC，无需 secret；`NPM_TOKEN` 存在时优先 token）；派发路径成功后补打标签 |
+| `scripts/check-plugin-pack.mjs` | 包内容断言：该在的都在（入口/agents/skills/链基座/四份许可）· `docs/`、`.zcode/`、`test/`、密钥类**不许在** · 逐文件扫私钥字面/内网地址/真实 key 赋值 |
+| `scripts/publish-repo.sh` | 公开树导出：`git archive` → 剪 `docs/` 与 `.zcode/` → **单提交、force-push `main`**（不带历史：git 的历史同样会被上传，所以不能"推 master 再删 docs"） |
+
+### 验收（都是实测，不是推断）
+
+- **本地**：135 项测试全过；包断言 39 文件 / 83 KB（`agents=8 skills=8 src=15`，四份许可在内）；扩展 `npm ci` 后重建 → 与提交产物**逐字节一致**；两个 workflow 过 YAML 解析；`bash -n` 过脚本。
+- **GitHub 首次 CI**（`39356593493`）：四个 job 全 `success`（plugin node22 / node24、扩展、样板）。
+- **发布彩排**（`dry_run=true` 派发 `39356818083`）：**success** —— 版本对表、查重（`@bd7pil/reeve@0.1.0` 未发过）、测试、包断言、`npm publish --dry-run` 全部走通（真发只差凭据）。
+- **公开仓库**：`BD7PIL/reeve` 公开、92 文件、顶层无 `docs/`（API 查 `/contents/docs` → **404**）、无内网地址（脚本里有一道反向闸门，每次推送前扫）。
+- 公开面（排除 `docs/`、`.zcode/`）整仓扫描：无密码/私钥/`Authorization` 字面、无 `192.168.*`。
+
+### 首次发布前**只有使用者能做**的两步
+
+1. npm 网站为 `@bd7pil/reeve` 配 Trusted Publisher（`BD7PIL` / `reeve` / `publish.yml`）；
+   若那时 npm 还不允许给"尚未发布的包名"配，就先加仓库 secret `NPM_TOKEN`（用一次性 token 发首版）。
+2. 然后 `git tag v0.1.0 && git push origin v0.1.0`（或派发工作流把 `dry_run` 改成 false）。
+
+### 待验一项（如实标着）
+
+**registry 形态的插件装载**：v2 的 `plugins` 条目过 `npm-package-arg`（`packages/util/src/npm.ts` 的 `parse` 只有
+`registry` 与 `git` 两种 target，`packages/core/src/plugin/module.ts` 对非绝对路径一律 `Npm.add`），
+机制是源码级确认的；但 EL7 上实测过的只有**目录形态**。首版发出去后要在 staging 上跑一次
+`"plugins": ["@bd7pil/reeve"]` 的真装载（并看它落进引擎的 npm 缓存目录）。
+
+### 这一轮踩到并记档的坑
+
+1. **npm 12 的 `pack --json` 输出形状变了**（数组 → 按包名索引的对象）。本地 npm 11 看不出来，
+   是 **CI 彩排**在 runner 上装到 npm 12 才暴露：断言脚本在解构那一行崩。两处修：脚本两种形状都吃、
+   形状不认识就退 2；发布工作流把 npm 钉在**大版本 11**（OIDC 门槛 ≥11.5.1）。
+   → 教训：**发布链的非 GitHub 部分（npm CLI 行为）要靠彩排真跑一遍**，本地版本测不出 runner 的版本。
+2. **提交信息里不能用反引号**（双引号里会被 shell 当命令执行）：这条信息的初稿把
+   `npm install -g npm@latest` 真跑了 —— 本机 npm 被升到 12.2.0，已还原 11.16.0。改走 heredoc。
+3. **扩展的"包内不许有 node_modules"断言被 devDeps 绊倒**：加了构建依赖后该断言反而挡住 CI。
+   改断言方向而不是删断言：`node_modules` 允许存在但**必须仍被 `.gitignore` 挡住**（防"哪天忽略规则没了、依赖树被提交"），TS 源码继续禁。
+4. **openchamber 侧只有 git 形态能自更新**（`updates.js` 的 `checkGuestUpdate` 对非 git 源一律 `not-git`；
+   `install.js` 只在 `isHttpsZipUrl` 之后才认 `parseGitInstallUrl`），而且 git 装法的 guest 根 = **克隆根**
+   （`cloneGitRepository --depth 1 --branch <ref>` + `unwrapGuestRoot`）→ monorepo 子目录装不了，必须
+   `git subtree split` 出镜像分支（ocrc 的 `ocrc-extension.yml` 已验证这条路）。面板的发布工作流**本轮未建**，记在 README。

@@ -67,6 +67,7 @@ omo 在 v2 上拿到的全部支持是"加载 + 每次启动弹一个指向 OmO 
 | 6 | `config/` 引擎样板 + 前台可见性 + 同步语义 | ✅ 见 [PROGRESS.md](docs/PROGRESS.md) §6（含四组 Bifrost 同步实验） |
 | 6.6 | **纯插件形态**：代理归插件自持 + **配置瘦身** | ✅ 取件/拉起/复用/守护全在插件里；**配置只剩「两行端点 + 一行插件」**；EL7 全新机器模拟实测（无脚本、无 VK、无 ocrc） |
 | 6.11 | **可视化面板**：链编辑（只写 `~/.reeve/chain.json`）+ 性能统计（Bifrost 归因 / 编排台账） | ✅ EL7：面板里调序 + 加回退 → 保存 → 运行时 `routing_rules` 变、快照 `appliedAt` 前进；统计与直读 `logs.db` 互校 PASS；四轮多模态评审「可以收尾」 |
+| 6.12 | **发布链**：CI 四道闸门 + npm 发布（OIDC / provenance）+ 公开树导出 | ✅ GitHub CI 四 job 全绿；发布**彩排**（dry-run）全绿；远程 `docs/` = 404、无内网地址；首次真发只差 npm 侧凭据 |
 
 > ⚠️ **一条必读**：裸 `opencode run`（不带 `--model` / `--agent`）会**静默旁路** REEVE ——
 > 客户端会自带一个默认模型，服务端照用（实测消息里 `agent=foreman` 但 `model=opencode/minimax-…`
