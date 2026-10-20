@@ -16,6 +16,17 @@ on:
   workflow_dispatch:
 
 jobs:
+  lint:
+    name: lint（biome，只查不格式化）
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: npm ci
+      - run: npm run lint
+
   plugin:
     name: plugin 测试（node ${{ matrix.node }}）
     runs-on: ubuntu-latest

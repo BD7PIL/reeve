@@ -53,10 +53,12 @@ function walk(dir) {
     text.split(/\r?\n/).forEach((line, index) => {
       for (const rule of RULES) {
         rule.re.lastIndex = 0;
-        let match;
-        while ((match = rule.re.exec(line)) !== null) {
-          if (rule.keep && !rule.keep(match)) continue;
-          hits.push(`${rel}:${index + 1}: ${rule.id}: ${line.trim().slice(0, 160)}`);
+        let match = rule.re.exec(line);
+        while (match !== null) {
+          if (!rule.keep || rule.keep(match)) {
+            hits.push(`${rel}:${index + 1}: ${rule.id}: ${line.trim().slice(0, 160)}`);
+          }
+          match = rule.re.exec(line);
         }
       }
     });

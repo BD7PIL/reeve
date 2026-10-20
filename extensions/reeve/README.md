@@ -1,5 +1,12 @@
 # 控制台扩展（openchamber）
 
+> **In English:** an openchamber console with three tabs — **chain** (edit the
+> fallback chain for three tiers; the only writable place), **stats** (Bifrost
+> attribution and orchestration ledger) and **ledger** (child task list). It
+> writes exactly one file, `~/.reeve/chain.json`; the plugin hot-reloads it
+> within seconds. It never starts sessions, prompts, or touches the engine
+> config. The rest of this document is the detailed Chinese reference.
+
 面板：三个 tab —— **链**（三个档位的回退链可视化编辑，唯一会写的地方）/ **统计**（Bifrost 归因 + 编排台账）/ **台账**（子任务列表）。
 装在 openchamber 上（宿主的扩展机制）。
 
