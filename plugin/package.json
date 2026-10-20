@@ -1,14 +1,18 @@
 {
   "name": "@bd7pil/reeve",
-  "version": "0.0.1",
-  "description": "REEVE 记账层：opencode v2 的子任务台账 / 静默死亡 / 在飞查询 / 墙钟 / 并发 / 跨重启对账",
+  "version": "0.1.0",
+  "description": "REEVE 编排层（opencode v2 插件）：agent/skill 注册 + 子任务台账 + 代理自持（Bifrost 链热更）+ 性能统计",
   "type": "module",
   "main": "index.js",
   "exports": {
     ".": "./src/index.js"
   },
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
-    "test": "node test/unit.mjs && node test/reconcile.mjs && node test/snapshot.mjs && node test/proxy.mjs && node test/chain.mjs && node test/stats.mjs"
+    "test": "node test/unit.mjs && node test/reconcile.mjs && node test/snapshot.mjs && node test/proxy.mjs && node test/chain.mjs && node test/stats.mjs",
+    "prepublishOnly": "npm test"
   },
   "files": [
     "index.js",
@@ -16,10 +20,24 @@
     "agents",
     "skills",
     "default-chain.json",
+    "LICENSE",
+    "THIRD-PARTY.md",
+    "licenses",
     "README.md"
   ],
-  "license": "SEE LICENSE IN ../LICENSE",
-  "private": true,
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/BD7PIL/reeve.git",
+    "directory": "plugin"
+  },
+  "homepage": "https://github.com/BD7PIL/reeve#readme",
+  "bugs": {
+    "url": "https://github.com/BD7PIL/reeve/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "keywords": [
     "opencode",
     "opencode-plugin",

@@ -125,9 +125,16 @@ check('守门：只允许写链文件（writeFile 必须走 chainPathFor），�
   return `${files.length} 个源文件，写调用 ${writes} 处（都写链文件）`
 })
 
-check('包内没有 node_modules / TS 源码', () => {
-  const bad = readdirSync(here).filter((n) => n === 'node_modules' || n.endsWith('.ts') || n.endsWith('.tsx'))
+check('包内没有 TS 源码，依赖树不进版本库', () => {
+  // TS 源码不许在包里（宿主不编译 TS）。node_modules 是 devDeps 的落点 —— **只用于构建**，
+  // 发布形状只取 panel/；但它必须仍被 .gitignore 挡住，否则会被提交进仓库。
+  const bad = readdirSync(here).filter((n) => n.endsWith('.ts') || n.endsWith('.tsx'))
   if (bad.length) throw new Error(`不该在包里的：${bad.join(', ')}`)
+  if (existsSync(join(here, 'node_modules'))) {
+    const ignore = readFileSync(join(here, '..', '..', '.gitignore'), 'utf8')
+    if (!/^node_modules\/$/m.test(ignore)) throw new Error('node_modules 存在，但 .gitignore 不再忽略它')
+    return '干净（node_modules 只用于构建，已被 .gitignore 挡住）'
+  }
   return '干净'
 })
 

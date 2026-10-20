@@ -1,6 +1,9 @@
-# `@bd7pil/reeve` — 记账层
+# `@bd7pil/reeve` — REEVE 编排层（opencode v2 插件）
 
-opencode **v2** 插件。补齐 v2 原生缺的那几条：
+包里就是**整个系统**：8 个 agent + review skill + 记账/闸门/墙钟/对账 + 代理自持（Bifrost 链热更）+ 性能统计。
+配置目录里不需要放任何 REEVE 文件——装插件、写两行配置即可（见下「安装」）。
+
+v2 原生缺的那几条，全靠这个插件补齐：
 
 | # | v2 原生缺什么 | 本插件怎么补 |
 |---|---|---|
@@ -72,11 +75,24 @@ opencode **v2** 插件。补齐 v2 原生缺的那几条：
 
 插件目录必须**在目录根有入口文件**（实测：`package.json` 的 `main` 指向子目录时 loader 不认）。
 
+v2 的 `plugins` 条目会过一遍 `npm-package-arg`（`packages/util/src/npm.ts`）——**包名 / 版本 / tag / git spec / 绝对路径都在支持范围**，
+包名形态由引擎自己装进它的全局 npm 缓存。两种常用装法：
+
+```jsonc
+// ① 从 registry 装（推荐；引擎自动取件，机器上不需要检出）
+{ "plugins": ["@bd7pil/reeve"] }
+
+// ② 本地目录（开发用；绝对路径，**Windows 上必须用正斜杠**）
+{ "plugins": ["D:/path/to/reeve/plugin"] }
+```
+
+一个完整的最小配置：
+
 ```jsonc
 // $HOME/.config/opencode/opencode.json
 {
-  "plugins": ["D:/path/to/reeve/plugin"],   // ⚠️ Windows 上必须用正斜杠：
-                                            //    反斜杠是非法 JSON 转义，会让整份配置被静默丢弃
+  "model": "reeve/pro",                     // 别删：裸 run 用的是客户端默认模型，会静默绕过档位（§6.11）
+  "plugins": ["@bd7pil/reeve"],
   "providers": {
     "reeve": {
       "package": "@ai-sdk/openai-compatible",   // ⚠️ 必须原生复数 providers 形态，
@@ -194,13 +210,15 @@ opencode run --standalone --auto --print-logs "hi"
 
 ## 许可
 
-本插件的**算法**参照 `oh-my-opencode-slim` v3.0.5（**MIT**，`Copyright (c) 2025`）——
-终态判定门、静默宽限、墙钟监督器、准入队列、惰性重启对账的思路。
-MIT 许可原文见 [`../licenses/oh-my-opencode-slim.LICENSE`](../licenses/oh-my-opencode-slim.LICENSE)。
+**本包是 MIT**（[`LICENSE`](LICENSE)）。包内有两处外来内容，许可原文随包分发（清单：[`THIRD-PARTY.md`](THIRD-PARTY.md)）：
 
-**注意**：`oh-my-opencode-slim` 是 **v1 插件**（用 `'tool.execute.before'` 与
-`'experimental.chat.messages.transform'` 这些 v1 钩子名）。**算法可抄，接线全部按 v2 重写。**
+- **`oh-my-opencode-slim`（MIT）**——算法参照：终态判定门、静默宽限、墙钟监督器、准入队列、惰性重启对账的思路。
+  它是 **v1 插件**（`'tool.execute.before'` / `'experimental.chat.messages.transform'` 这些钩子名）——
+  **算法可抄，接线全部按 v2 重写**。原文：[`licenses/oh-my-opencode-slim.LICENSE`](licenses/oh-my-opencode-slim.LICENSE)。
+- **`alibaba/open-code-review`（Apache-2.0）**——`skills/review/` 下 7 份规则文档是**原样副本**。
+  原文：[`licenses/open-code-review.LICENSE`](licenses/open-code-review.LICENSE)。
 
 **未引入** `oh-my-openagent`(omo) 的任何代码或 prompt 字面（SUL-1.0，永久禁止）。
 
-施工图（写代码前必读）：[`../docs/research/opencode-v2-plugin-api.md`](../docs/research/opencode-v2-plugin-api.md)
+开发记录（施工图 `docs/research/opencode-v2-plugin-api.md`、PROGRESS、PLAN 等）只在**开发仓库**里，
+不随公开树与 npm 包发布——README 里 `§x.y` 这类引用指的都是那份记录。

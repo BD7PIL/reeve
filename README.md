@@ -45,6 +45,11 @@ omo 在 v2 上拿到的全部支持是"加载 + 每次启动弹一个指向 OmO 
 | 查一手证据 | [docs/research/orchestration-stack-verdict.md](docs/research/orchestration-stack-verdict.md)（归档，**若干条已被取代**） |
 | 引入外来内容前 | [NOTICE.md](NOTICE.md)（许可边界） |
 
+> **公开树不含 `docs/`**：GitHub 上的 `main`、以及 npm 包，只发布代码 / 配置 / README / 许可文本。
+> 上面的开发记录（PLAN、HANDOFF、PROGRESS、research）与 `.zcode/` 施工草稿**只留在开发仓库**，
+> 用 `bash scripts/publish-repo.sh` 导出公开树时被剪掉，也不进公开历史。
+> 所以下文里 `§6.11` 这类引用指的都是那份本地记录。
+
 ## 状态（2026-10-19 晚）
 
 **步 0–6 全部产出完成，并已在 EL7 上跑完整轮实机验收**（隔离 `HOME` 的 staging；生产 v1 引擎全程未动）。
@@ -89,17 +94,46 @@ v2 插件 API 的真实形态（钩子真名、**`codemode:false` 才是工具�
 > 上机踩到的坑（**各自都是静默失败**：配置合法、能加载、只是必然出错）与逐条证据：
 > [docs/PROGRESS.md](docs/PROGRESS.md) §4.4（12 条）+ §5.3。
 
+## 安装与发布
+
+**插件（引擎侧）**：从 npm registry 一行装 —— 引擎自己把它取进全局 npm 缓存，机器上不需要检出。
+
+```jsonc
+// $HOME/.config/opencode/opencode.json
+{ "model": "reeve/pro", "plugins": ["@bd7pil/reeve"] }
+```
+
+（`plugins` 条目过 `npm-package-arg`：包名 / 版本 / tag / git spec / 绝对路径都支持；
+目录形态是 EL7 上实测过的，registry 形态走的是同一条路径。完整配置见 [plugin/README.md](plugin/README.md)。）
+
+**CI 与发布**（都在公开仓库上跑，`.github/workflows/`）：
+
+| 动作 | 触发 | 干什么 |
+|---|---|---|
+| CI | push `main` / PR | 插件 **135** 项测试（node 22 与 24 各一遍）· npm 包内容断言（许可文本要在、`docs/` 与密钥不许在）· 扩展守门 + **重建后产物必须逐字节一致** · 引擎配置样板校验 |
+| 发布插件 | push tag `v<版本>`（或手动派发，默认彩排） | 标签↔版本对表 → 这个版本还没发过 → 测一遍 → 包内容断言 → `npm publish --access public --provenance` |
+| 公开树 | `bash scripts/publish-repo.sh` | 由本地提交导出**不含 `docs/` 与 `.zcode/` 的单提交**，force-push 到 `main` |
+
+**发布凭据用 npm Trusted Publishing（OIDC）——不需要任何 secret**。首次发布前的一次性设置：
+① npm 网站为该包配 Trusted Publisher（`BD7PIL` / `reeve` / `publish.yml`）；
+② 若那时 Trusted Publisher 还不支持"尚未发布过的包名"，就在仓库里加一个 secret `NPM_TOKEN`
+（工作流里"有它用 token、没有回落 OIDC"，两者都不用改代码）。
+
+**面板扩展**（`extensions/reeve/`）走的是宿主的另一套：路径 / 公网 zip / git 分支三种装法，
+**只有 git 形态能自更新**（宿主 `updateGuest` 只认 git 源）；对应的发布工作流（zip 资产 + subtree 镜像分支）**还没建**。
+
 ## 命名派生
 
 ```
 品牌        REEVE
 机器标识    reeve
-npm 包      @bd7pil/reeve          插件
+仓库        github.com/BD7PIL/reeve （公开树：不含 docs/ 与 .zcode/）
+npm 包      @bd7pil/reeve          插件（MIT）
 扩展目录    extensions/reeve        panel.id = reeve
 台账        ~/.reeve/ledger.json
 配置        ~/.config/opencode/reeve.jsonc（用户级）/ .opencode/reeve.jsonc（项目级）
-发布资产    reeve.zip
-tag         reeve-<ver> / reeve-latest
+tag         插件 v<ver>（发布用）；扩展 reeve-<ver> / reeve-latest（资产，待建）
+发布资产    reeve.zip（面板扩展，待建）
 ```
 
 ## 许可
