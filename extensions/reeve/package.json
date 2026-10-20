@@ -38,7 +38,7 @@
     "gate": "node check.mjs"
   },
   "devDependencies": {
-    "@openchamber/sdk": "2.3.2",
+    "@openchamber/sdk": "2.4.0",
     "esbuild": "0.28.2"
   },
   "//devDeps": "只给**构建与守门**用（CI 与本地同一套）：宿主 SDK 是公共 npm 包，钉在验证过的那一档（对应 openchamber 2.3.3）；esbuild 用来把 src/panel 打成 classic IIFE。build.mjs / check.mjs 会优先用本目录的 node_modules，找不到才回落到相邻的 ocrc 检出。",
