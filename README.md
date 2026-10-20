@@ -59,12 +59,13 @@ cp -r extensions/reeve ~/.config/openchamber/extensions/reeve
 ## 改
 
 ```bash
+npm install             # 一次：devDeps 钉了宿主 SDK（2.3.2，对应 openchamber 2.3.3）+ esbuild（0.28.2）
 node build.mjs          # src/panel/main.js → panel/main.js（IIFE，esbuild）
-node check.mjs          # 用宿主自己的解析器校验 manifest + 打包完整性
+node check.mjs          # 宿主解析器校验 manifest + 打包完整性 + 守门（禁控制调用 / 只许写链文件）
 ```
 
-`build.mjs` **不 vendor** `@openchamber/sdk`（它是宿主的产物，版本跟着宿主走）：
-默认去 `node_modules/` 或相邻的 ocrc 检出里找，找不到就用 `--sdk=<路径>` 指定。
+`build.mjs` **不 vendor** `@openchamber/sdk`（它是宿主的产物，版本跟着宿主走，这里只钉在验证过的那一档）：
+优先用本目录 `node_modules/`，找不到才回落到相邻的 ocrc 检出，再找不到就用 `--sdk=<路径>` 指定。
 `check.mjs` 同理（`--sdk=<路径>`）。
 
 **改完必跑 `check.mjs`**：它查的正是宿主 `install` 时会拒的那几项
