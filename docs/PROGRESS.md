@@ -1171,3 +1171,48 @@ key 一直在真 home 那份里；默认值是 `<HOME>/.local/share/opencode/aut
    `install.js` 只在 `isHttpsZipUrl` 之后才认 `parseGitInstallUrl`），而且 git 装法的 guest 根 = **克隆根**
    （`cloneGitRepository --depth 1 --branch <ref>` + `unwrapGuestRoot`）→ monorepo 子目录装不了，必须
    `git subtree split` 出镜像分支（ocrc 的 `ocrc-extension.yml` 已验证这条路）。面板的发布工作流**本轮未建**，记在 README。
+
+### 6.12.1 首次发布与 CI 首发（2026-10-20）
+
+**顺序（被 npm 的规则逼出来的）**：`npm trust github <包>` **要求包已存在** → 所以只能先发一版、再配 Trusted Publisher。
+
+| 版本 | 谁发的 | 凭据 | provenance |
+|---|---|---|---|
+| **0.1.0** | 本机手动（tarball） | npm 网页 2FA（一次性） | 无（手动发不带） |
+| **0.1.1** | **GitHub Actions**（推 tag `v0.1.1`） | **OIDC（Trusted Publishing），仓库里零 secret** | ✅ SLSA v1（sigstore 透明日志 `logIndex=3329885006`） |
+
+- registry 侧现状：`dist-tags.latest = 0.1.1`；0.1.1 的 manifest 带
+  `dist.attestations.provenance.predicateType = https://slsa.dev/provenance/v1`。
+- **0.0.0-stage**：首次发布时 npm 会先放一个占位版本（"Temporary package placeholder for staged publishing"），
+  真版本随后替换 `latest`。看到它别慌，等几分钟再看 packument。
+- 发布开关：`bash scripts/publish-repo.sh --tag` —— 导出公开树 → 把 `v<plugin 版本>` 标签打在**公开树那次提交**上
+  （本地 master 的 sha 不在远程，所以标签在临时仓库里建好后直推）→ CI 用 OIDC 发布。标签已存在就跳过。
+
+### 6.12.2 坑：npm 的写操作在非 TTY 下给不了网页认证
+
+`npm publish` / `npm trust` 需要 2FA；npm 本有"网页认证"这条路（打开 URL → 你在浏览器点批准 → CLI 轮询拿凭据
+→ **自动重试**），但它写在 `lib/utils/auth.js` 的 `otplease` 里，**判据是 `process.stdin.isTTY && process.stdout.isTTY`**：
+
+- 非 TTY（agent 的非交互 shell）→ 直接抛 EOTP，而且那个认证 URL **连 npm 自己的 debug log 里都被打码成 `***`**
+  （它的报错格式化器干了这事），所以"把 URL 给人点"这条路在非 TTY 下连 URL 都拿不到。
+- 解法（已存档 `.zcode/probe/tty-stub.cjs`）：小包装脚本把 `process.stdin/stdout.isTTY` 打桩成 `true`
+  再 `require` npm 的 CLI，配 `--browser=false`（跳过"按回车打开浏览器"那步，我们自己开）。
+  于是 npm 走 `webAuthOpener`：`outputMsg` 那行是 **`redact: false`** —— URL 原样打印，你点批准后 npm 自动完成。
+- 使用者那两次"点一下批准"就是这么来的；除此之外发布链全自动。
+
+### 6.12.3 EL7 实测：registry 形态真装载（隔离 HOME，端口 4098，生产 :4096 全程未碰）
+
+配置就一行：`{ "plugins": [{ "package": "@bd7pil/reeve", "options": { "proxy": false, "stats": false, "snapshotPath": … } }] }`
+
+| 观察点 | 实测 |
+|---|---|
+| `serve` 单独启动 | **不加载插件**（懒加载，要有会话；日志里连一行 plugin 都没有） |
+| 跑一次会话后 | `.cache/opencode/npm/@bd7pil/reeve@latest/<代次>/node_modules/@bd7pil/reeve/src/index.js` |
+| 引擎日志 | `msg="loading plugin" id=@bd7pil/reeve entrypoint=…` |
+| 插件自身日志（要 `--log-level debug --print-logs` 才看得见） | `已启动；从盘上恢复 0 条` → `快照开启` → `端点自举：added` → `注册：agent 8 个、skill 1 个` → `名册已注入 subagent 工具描述（7 个）` → `引擎 agent 表：15 个；前台可见 [foreman]` → `已卸载` |
+| 落盘 | `ledger.json` 2256 B；配置被写 `providers.reeve`（同目录 `.reeve-bak` 备份，原文件 168 B → 315 B） |
+| 收工 | 隔离 HOME 的服务 `stopped`；4098/4099 空；生产 :4096（pid 4944）与既有实例未动；测试残留 7.2 MB 留在 `~/.reeve-regtest` 作证据 |
+
+**一个假阴性要记**：第一次 `run` 因模型调用报 transport 错并撞超时被杀，缓存目录当时是**空的** ——
+看着像"没装上"，其实取件+安装要 ~50 s，**必须让它跑完再判定**；而且插件自己的日志是 debug 级，
+不开 `--print-logs` 只能看到引擎的 `loading plugin` 一行。

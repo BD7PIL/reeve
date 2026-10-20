@@ -67,7 +67,7 @@ omo 在 v2 上拿到的全部支持是"加载 + 每次启动弹一个指向 OmO 
 | 6 | `config/` 引擎样板 + 前台可见性 + 同步语义 | ✅ 见 [PROGRESS.md](docs/PROGRESS.md) §6（含四组 Bifrost 同步实验） |
 | 6.6 | **纯插件形态**：代理归插件自持 + **配置瘦身** | ✅ 取件/拉起/复用/守护全在插件里；**配置只剩「两行端点 + 一行插件」**；EL7 全新机器模拟实测（无脚本、无 VK、无 ocrc） |
 | 6.11 | **可视化面板**：链编辑（只写 `~/.reeve/chain.json`）+ 性能统计（Bifrost 归因 / 编排台账） | ✅ EL7：面板里调序 + 加回退 → 保存 → 运行时 `routing_rules` 变、快照 `appliedAt` 前进；统计与直读 `logs.db` 互校 PASS；四轮多模态评审「可以收尾」 |
-| 6.12 | **发布链**：CI 四道闸门 + npm 发布（OIDC / provenance）+ 公开树导出 | ✅ GitHub CI 四 job 全绿；发布**彩排**（dry-run）全绿；远程 `docs/` = 404、无内网地址；首次真发只差 npm 侧凭据 |
+| 6.12 | **发布链**：CI 四道闸门 + npm 发布（OIDC / provenance）+ 公开树导出 | ✅ `@bd7pil/reeve@0.1.1` **由 CI 发布、带 SLSA provenance**（registry `latest`）；CI 四 job 全绿；远程 `docs/` = 404、无内网地址；**EL7 实测 registry 形态真装载**（取件 → `loading plugin` → 8 agent / 1 skill / 名册注入 / 端点自举 / 快照落盘） |
 
 > ⚠️ **一条必读**：裸 `opencode run`（不带 `--model` / `--agent`）会**静默旁路** REEVE ——
 > 客户端会自带一个默认模型，服务端照用（实测消息里 `agent=foreman` 但 `model=opencode/minimax-…`
@@ -112,13 +112,13 @@ v2 插件 API 的真实形态（钩子真名、**`codemode:false` 才是工具�
 | 动作 | 触发 | 干什么 |
 |---|---|---|
 | CI | push `main` / PR | 插件 **135** 项测试（node 22 与 24 各一遍）· npm 包内容断言（许可文本要在、`docs/` 与密钥不许在）· 扩展守门 + **重建后产物必须逐字节一致** · 引擎配置样板校验 |
-| 发布插件 | push tag `v<版本>`（或手动派发，默认彩排） | 标签↔版本对表 → 这个版本还没发过 → 测一遍 → 包内容断言 → `npm publish --access public --provenance` |
-| 公开树 | `bash scripts/publish-repo.sh` | 由本地提交导出**不含 `docs/` 与 `.zcode/` 的单提交**，force-push 到 `main` |
+| **发布（正路）** | `bash scripts/publish-repo.sh --tag` | 导出公开树 → 把 `v<plugin 版本>` 标签打在**公开树那次提交**上 → CI 用 OIDC 发布（**带 SLSA provenance**）；标签已存在就跳过 |
+| 发布（手动） | 推 tag `v<版本>`（或派发工作流，默认彩排） | 标签↔版本对表 → 这个版本还没发过 → 测一遍 → 包内容断言 → `npm publish --access public --provenance` |
 
-**发布凭据用 npm Trusted Publishing（OIDC）——不需要任何 secret**。首次发布前的一次性设置：
-① npm 网站为该包配 Trusted Publisher（`BD7PIL` / `reeve` / `publish.yml`）；
-② 若那时 Trusted Publisher 还不支持"尚未发布过的包名"，就在仓库里加一个 secret `NPM_TOKEN`
-（工作流里"有它用 token、没有回落 OIDC"，两者都不用改代码）。
+**发布凭据：npm Trusted Publishing（OIDC）——仓库里没有任何 npm secret。** 已配好（`npm trust github @bd7pil/reeve --file publish.yml --repo BD7PIL/reeve --allow-publish`）。
+引导顺序有个硬约束：`npm trust` **要求包已存在**，所以第一版（0.1.0）是本机手动发的（走 npm 网页 2FA、不带 provenance）；
+**0.1.1 起全部由 CI 发布、带 provenance**（registry 上 0.1.1 的 `dist.attestations.provenance.predicateType = slsa.dev/provenance/v1`）。
+要改走 token 方案时，加一个仓库 secret `NPM_TOKEN` 就行——工作流是"有它用 token、没有回落 OIDC"，代码不用动。
 
 **面板扩展**（`extensions/reeve/`）走的是宿主的另一套：路径 / 公网 zip / git 分支三种装法，
 **只有 git 形态能自更新**（宿主 `updateGuest` 只认 git 源）；对应的发布工作流（zip 资产 + subtree 镜像分支）**还没建**。
