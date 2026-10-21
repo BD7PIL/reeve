@@ -34,6 +34,8 @@ import { reconcileParent } from './reconcile.js'
 import { SnapshotWriter, buildSnapshot, projectAgentTable } from './snapshot.js'
 import { SUBAGENT_ROSTER, withRoster } from './roster.js'
 import { readSetupToken, startOwnedProxy } from './proxy.js'
+import { startGate } from './gate/gate.js'
+import { defaultFallbackConfigPath } from './gate/config.js'
 import { REEVE_TIERS, BUILTINS_TO_HIDE, mergeTierModels, pickDefaultAgent, readEndpoint } from './models.js'
 import { STATS_DEFAULTS, aggregateBifrostRows, aggregateLedger, buildStats, fetchBifrostLogs, fetchBifrostModels, mergeModelCandidates } from './stats.js'
 import { loadAgents, loadSkills } from './register.js'
@@ -75,6 +77,8 @@ export default {
     let roster = null
     /** 代理层自持的状态（进快照：面板可显示、上机可核对）。必须在快照块之前声明。 */
     let proxyState = null
+    /** GATE 的运行态（进快照）。必须在快照块之前声明。 */
+    let gateState = null
     /** 链文件的状态（代理那边在维护，这里只留引用给快照）。必须在快照块之前声明。 */
     let chainRef = null
     /** 性能统计（进快照）。必须在快照块之前声明。 */
@@ -136,6 +140,7 @@ export default {
           registered: { agents: registeredAgents, skills: registeredSkills },
           endpoint: endpointState,
           stats: statsState,
+          gate: gateState,
         })
       snapshotFlush = () => snapshot.schedule(build)
       ledger.onChange = () => snapshot.schedule(build)
@@ -159,6 +164,29 @@ export default {
       endpointState = { status: endpointWrite.status, path: endpointWrite.path, detail: endpointWrite.detail }
     }
 
+    // ---- GATE（代理层，opt-in：options.gate.enabled；缺省关）----
+    // 启用时 **GATE 占端点口**（引擎认的还是 providers.reeve 那个 baseURL），Bifrost 挪到 +1
+    // 当"下游执行器"（guard 期内先并存；退役 Bifrost 是下一步）。失败只记日志：引擎照常跑。
+    let gateHandle = null
+    if (options.gate?.enabled === true) {
+      try {
+        const endpoint = await readEndpoint({})
+        const gatePort = Number(options.gate.port ?? endpoint?.port ?? PROXY_DEFAULT_PORT)
+        gateHandle = await startGate({
+          port: gatePort,
+          host: options.gate.host ?? endpoint?.host ?? '127.0.0.1',
+          configPath: options.gate.configPath ?? options.fallbackConfigPath ?? defaultFallbackConfigPath(),
+          ledgerPath: options.gate.ledgerPath ?? undefined,
+          logger,
+        })
+        gateState = gateHandle.snapshot()
+        logger.debug(`[reeve] GATE：:${gateHandle.port}（链 ${gateState.chains.join('/')}）`)
+      } catch (err) {
+        gateState = { error: String(err).slice(0, 200) }
+        logger.debug(`[reeve] GATE 起不来（忽略，引擎照常）：${gateState.error}`)
+      }
+    }
+
     // ---- 代理层自持（opt-in：options.proxy.enabled）----
     // 纯插件形态：取件 → 派生链 → 拉起/复用 → 等就绪 → 收敛 → 守护。
     // 不需要任何外部脚本；失败只记日志（代理起不来时引擎照常跑，模型会吵地报错）。
@@ -171,9 +199,13 @@ export default {
       if (opts.port == null) {
         const endpoint = await readEndpoint({})
         if (endpoint) {
-          opts = { ...opts, port: endpoint.port, host: endpoint.host }
-          logger.debug(`[reeve] 代理端口取自配置：${endpoint.host}:${endpoint.port}（来自 ${endpoint.from}）`)
+          // GATE 开着时 Bifrost 让位（端点是 GATE 的），挪 +1
+          const shift = gateHandle ? 1 : 0
+          opts = { ...opts, port: endpoint.port + shift, host: endpoint.host }
+          logger.debug(`[reeve] 代理端口取自配置：${endpoint.host}:${endpoint.port + shift}（来自 ${endpoint.from}）`)
         }
+      } else if (gateHandle) {
+        opts = { ...opts, port: Number(opts.port) + 1 }
       }
       // 状态一变就刷新快照 —— 尤其"后台取件完成、代理起来了"那一刻（否则面板会一直显示未就绪）
       const onState = (st) => {
@@ -572,6 +604,7 @@ export default {
         void snapshot.flush().catch(() => {})
       }
       if (proxyHandle) void proxyHandle.dispose().catch(() => {})
+      if (gateHandle) void gateHandle.dispose().catch(() => {})
       logger.debug('[reeve] 已卸载')
     }
   },

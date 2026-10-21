@@ -92,7 +92,7 @@ export class SnapshotWriter {
  */
 export function buildSnapshot(
   records,
-  { now = Date.now(), version = null, agents = null, roster = null, proxy = null, registered = null, endpoint = null, chain = null, models = null, stats = null } = {},
+  { now = Date.now(), version = null, agents = null, roster = null, proxy = null, registered = null, endpoint = null, chain = null, models = null, stats = null, gate = null } = {},
 ) {
   const tasks = records
     .map((r) => ({
@@ -124,6 +124,7 @@ export function buildSnapshot(
     agentTable: agents,
     roster,
     proxy,
+    gate,
     chain: chain == null ? null : projectChain(chain),
     models,
     registered,

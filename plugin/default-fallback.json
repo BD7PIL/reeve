@@ -1,6 +1,7 @@
 {
   "//": "GATE 的兜底配置（机器上没有任何 reeve-fallback.jsonc 时用它）。刻意只放付费候选——免费车道（9router）属于每台机器自己的选择，写在用户配置里。",
   "//cells": "providers.<id>：base_url + path（默认 /v1/chat/completions）+ auth（auth.json 里的 id，按序取第一个有 key 的）+ key（env.X 引用或公开字面量，覆盖 auth）+ lane（native | passthrough）+ models/models_fetch（目录来源）。",
+  "//tiers": "chain_for_model 里的 `reeve/*` 三条 = 引擎档位模型（插件注册的 reeve/flash|pro|multimodal）。引擎发**全名**进请求体，键必须写全名。没有免费车道时：flash → tier2a（便宜付费链）、multimodal → tier2a（bundle 里没有视觉专链）。",
   "schema": 1,
   "policy": {
     "retry_on_errors": [401, 402, 403, 429, 500, 503, 529],
@@ -38,6 +39,9 @@
     "librarian": "default"
   },
   "chain_for_model": {
+    "reeve/flash": "tier2a",
+    "reeve/pro": "tier1",
+    "reeve/multimodal": "tier2a",
     "zhipuai-coding-plan/glm-5.3": "tier1",
     "zhipuai-coding-plan/glm-5.3-flash": "tier2a"
   },
