@@ -11,7 +11,7 @@
     "node": ">=22"
   },
   "scripts": {
-    "test": "node test/unit.mjs && node test/reconcile.mjs && node test/snapshot.mjs && node test/proxy.mjs && node test/chain.mjs && node test/stats.mjs && node test/entry.mjs",
+    "test": "node test/unit.mjs && node test/reconcile.mjs && node test/snapshot.mjs && node test/proxy.mjs && node test/chain.mjs && node test/gate.mjs && node test/stats.mjs && node test/entry.mjs",
     "test:coverage": "c8 --reporter=text --reporter=json-summary --reports-dir=coverage --exclude=test/** --exclude=bench.mjs npm test",
     "check:coverage": "node ../scripts/check-coverage.mjs",
     "prepublishOnly": "npm test"
