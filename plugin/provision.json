@@ -1,0 +1,51 @@
+{
+  "schema": 1,
+  "name": "reeve",
+  "version": "0.1.4",
+  "license": "MIT",
+  "host": {
+    "node": ">=22",
+    "os": ["linux"],
+    "arch": ["x64"]
+  },
+  "enginePlugin": {
+    "spec": "@bd7pil/reeve@0.1.4",
+    "kind": "package",
+    "entry": "~/.ocrc/components/reeve/node_modules/@bd7pil/reeve",
+    "requiresPeer": []
+  },
+  "artifacts": [
+    {
+      "id": "bifrost",
+      "version": "2.3.0",
+      "url": "https://downloads.getmaxim.ai/bifrost/v2.3.0/linux/amd64/bifrost-http",
+      "sha256": "e62a6425218d037e2aea10446f1f4ad1979291902623575a04b7e0ed46886f92",
+      "size": 134264480,
+      "dest": "~/.reeve/proxy/bifrost-http",
+      "mode": "0755"
+    }
+  ],
+  "extension": {
+    "apiVersion": 1,
+    "id": "reeve",
+    "zip": "https://github.com/BD7PIL/reeve/releases/download/reeve-latest/reeve.zip",
+    "tag": "reeve-latest",
+    "capabilities": ["sessions", "filesystem"],
+    "filesystem": [
+      "~/.reeve-staging/.reeve/**",
+      "~/.reeve/**",
+      "~/.local/share/opencode/reeve/**",
+      "~/.reeve-staging/.local/share/opencode/reeve/**"
+    ]
+  },
+  "configSync": ["reeve.jsonc", "agents"],
+  "verify": [
+    {
+      "kind": "file",
+      "path": "~/.reeve/proxy/bifrost-http",
+      "mode": "0755"
+    },
+    { "kind": "engine-plugin-loaded", "spec": "@bd7pil/reeve" },
+    { "kind": "guest-installed", "id": "reeve" }
+  ]
+}
