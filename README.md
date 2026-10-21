@@ -154,6 +154,18 @@ node cdp-open-panel.mjs --tab=chain "--click=[data-tier=\"flash\"] [data-act=\"a
 
 > 结论：**截图类验收必须有"干净度断言"**，否则会拿到"看起来像证据其实拍的是别的东西"的图（第 2 轮四张全废）。
 
+## 本地预览与动线审计（开发工具，不进发布包）
+
+面板跑在宿主的 sandbox iframe 里，没有宿主就完全打不开；每改一次都去装一遍 app 太慢。所以：
+
+| 脚本 | 干什么 |
+|---|---|
+| `scripts/preview.mjs` | 起本地预览（`127.0.0.1:5399`）：**只换 `connectHost`**（`preview/host-shim.js`）+ 真 `panel/index.html` + 真 kit —— 预览看到的就是线上那一套。读你机器上的**真**快照与真 GATE 配置；**写默认只进内存**（`--allow-write` 才落盘）。 |
+| `scripts/audit.mjs` | 按固定清单（16 项）驱动预览：点击 → 视口截图 → `preview/audit/*.png`。清单与结论表在 `preview/audit/README.md`；**弹层/吸底条是 fixed/sticky，所以默认拍视口而不是整页**（`--full` 才整页）。 |
+
+改面板之后的纪律：跑 `audit.mjs` → **逐张看过** → 更新 `preview/audit/README.md` 的结论列 →
+`npm run build` + `node check.mjs` → 提交（CI 会再验一次"产物与 src 逐字节一致"）。
+
 旧脚本（保留，做别的验证用）：
 
 | 脚本 | 干什么 |

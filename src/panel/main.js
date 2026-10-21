@@ -11,9 +11,10 @@
 // 唯一能碰引擎配置的地方是插件的"端点自举"（写 providers.reeve 那两行），也不在这里。
 
 import { connectHost } from '@openchamber/sdk'
-import { applyHostReady, mountBadge, mountButton, mountTabs } from '@openchamber/sdk/ui'
+import { applyHostReady } from '@openchamber/sdk/ui'
 
-import { el, fmtClock, readSnapshot, shortPath } from './util.js'
+import { badge, button, tabs } from './kit.js'
+import { el, fmtAgo, fmtClock, readSnapshot, shortPath } from './util.js'
 import { createChainTab } from './chain-tab.js'
 import { createStatsTab } from './stats-tab.js'
 import { createLedgerTab } from './ledger-tab.js'
@@ -29,24 +30,27 @@ function main() {
   const host = connectHost()
   host.onReady((ctx) => applyHostReady(ctx, document.documentElement))
 
-  // ---- 骨架 ----
-  const header = el('div', { class: 'rv-head' })
-  const badgeHost = el('span')
-  const refreshHost = el('span')
-  header.append(el('strong', { text: 'REEVE 编排' }), badgeHost, el('span', { class: 'rv-push' }), refreshHost)
+  // ---- 骨架：页（头 / tab / 段落 / 脚）----
+  const page = el('div', { class: 'oc-page' })
+  const header = el('div', { class: 'oc-row oc-row-between' })
+  const headLeft = el('div', { class: 'oc-row' })
+  const badgeKit = badge({ label: '读取中…', tone: 'neutral' })
+  headLeft.append(el('strong', { text: 'REEVE' }), badgeKit.node)
+  const refreshBtnKit = button({ label: '刷新', variant: 'ghost', size: 'sm', data: { 'data-act': 'refresh' }, onClick: () => void refresh() })
+  header.append(headLeft, refreshBtnKit.node)
   const tabsHost = el('div')
-  const body = el('div', { class: 'rv-body' })
-  const foot = el('div', { class: 'rv-meta rv-foot' })
-  root.append(header, tabsHost, body, foot)
+  const body = el('div', { class: 'oc-col oc-grow' })
+  const foot = el('div', { class: 'oc-xs oc-off' })
+  page.append(header, tabsHost, body, foot)
+  root.append(page)
 
-  const badge = mountBadge(badgeHost, { label: '读取中…', tone: 'neutral' })
-  const refreshBtn = mountButton(refreshHost, { label: '刷新', variant: 'ghost', size: 'sm', onClick: () => void refresh() })
+  const refreshBtn = refreshBtnKit
 
   // 三个 tab 各有自己的 section（切换只切显隐，不重建 DOM —— 免得每次切回来都掉滚动位置）
   const sections = {
-    chain: el('div', { class: 'rv-section' }),
-    stats: el('div', { class: 'rv-section' }),
-    ledger: el('div', { class: 'rv-section' }),
+    chain: el('div', { class: 'oc-col' }),
+    stats: el('div', { class: 'oc-col' }),
+    ledger: el('div', { class: 'oc-col' }),
   }
   for (const s of Object.values(sections)) body.append(s)
 
@@ -60,7 +64,7 @@ function main() {
   const statsTab = createStatsTab()
   const ledgerTab = createLedgerTab({ host })
 
-  const tabs = mountTabs(tabsHost, {
+  const tabsKit = tabs({
     items: TABS,
     activeId: active,
     onChange: (id) => {
@@ -68,6 +72,7 @@ function main() {
       paint(true)
     },
   })
+  tabsHost.append(tabsKit.node)
 
   /** 只渲染当前 tab；`force` 用于切换 tab（复用 DOM 时要重画一次）。 */
   function paint(force = false) {
@@ -76,7 +81,7 @@ function main() {
     else if (active === 'stats') statsTab.render(sections.stats, snapshot)
     else ledgerTab.render(sections.ledger, snapshot, read)
     if (force) return
-    tabs.update({
+    tabsKit.handle.update({
       items: [
         { id: 'chain', label: '链', count: (snapshot?.gate?.chains?.length ?? 0) || undefined },
         { id: 'stats', label: '统计', count: snapshot?.stats?.gate?.requests ?? undefined },
@@ -88,7 +93,7 @@ function main() {
 
   function paintBadge() {
     if (!read?.ok) {
-      badge.update({ label: '台账未就绪', tone: 'warning' })
+      badgeKit.handle.update({ label: '台账未就绪', tone: 'warning' })
       return
     }
     const counts = snapshot?.counts ?? {}
@@ -96,10 +101,10 @@ function main() {
     const waiting = snapshot?.stats?.orchestrate?.queue?.waiting ?? 0
     // GATE 起不来/起一半都要吵：模型面会整层失败，而面板别处看不出来
     if (gate && (gate.error || !gate.port)) {
-      badge.update({ label: `GATE 未就绪 · ${counts.running ?? 0} 在飞`, tone: 'error' })
+      badgeKit.handle.update({ label: `GATE 未就绪 · ${counts.running ?? 0} 在飞`, tone: 'error' })
       return
     }
-    badge.update({
+    badgeKit.handle.update({
       label: `${counts.running ?? 0} 在飞${waiting ? ` / ${waiting} 排队` : ''} / ${counts.total ?? 0} 总`,
       tone: (counts.running ?? 0) > 0 || waiting > 0 ? 'primary' : 'neutral',
     })
@@ -108,7 +113,7 @@ function main() {
   async function refresh() {
     if (busy) return
     busy = true
-    refreshBtn.update({ label: '读取中…', loading: true })
+    refreshBtn.handle.update({ label: '读取中…', loading: true })
     try {
       read = await readSnapshot(host)
       snapshot = read.ok ? read.doc : null
@@ -116,13 +121,13 @@ function main() {
       paintBadge()
       const gen = snapshot?.generatedAt
       foot.textContent = snapshot
-        ? `快照 ${fmtClock(gen)} · ${shortPath(read.path)}${chainTab.isDirty() ? ' · 链有未保存改动' : ''}`
+        ? `快照 ${fmtClock(gen)}（${fmtAgo(gen)}） · ${shortPath(read.path)}`
         : `读不到快照（试过 ${read?.tried?.length ?? 0} 个路径）`
     } catch (err) {
       foot.textContent = `刷新失败：${err instanceof Error ? err.message : String(err)}`
     } finally {
       busy = false
-      refreshBtn.update({ label: '刷新', loading: false })
+      refreshBtn.handle.update({ label: '刷新', loading: false })
     }
   }
 
@@ -158,6 +163,6 @@ try {
 } catch (err) {
   const root = document.getElementById('root')
   if (root) {
-    root.replaceChildren(el('div', { class: 'rv-empty', text: `面板未能启动：${err instanceof Error ? err.message : String(err)}` }))
+    root.replaceChildren(el('div', { class: 'oc-xs oc-err', text: `面板未能启动：${err instanceof Error ? err.message : String(err)}` }))
   }
 }
