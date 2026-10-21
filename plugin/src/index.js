@@ -33,9 +33,9 @@ import { Supervisor } from './supervisor.js'
 import { reconcileParent } from './reconcile.js'
 import { SnapshotWriter, buildSnapshot, projectAgentTable } from './snapshot.js'
 import { SUBAGENT_ROSTER, withRoster } from './roster.js'
-import { startGate } from './gate/gate.js'
+import { probeGate, startGate } from './gate/gate.js'
 import { defaultFallbackConfigPath } from './gate/config.js'
-import { REEVE_TIERS, BUILTINS_TO_HIDE, mergeTierModels, pickDefaultAgent, readEndpoint } from './models.js'
+import { REEVE_TIERS, BUILTINS_TO_HIDE, mergeTierModels, pickDefaultAgent, readEndpoint, resolveGateEndpoint } from './models.js'
 import { STATS_DEFAULTS, aggregateGateRows, aggregateLedger, buildStats, fetchGateModels, mergeModelCandidates, readLedgerTail } from './stats.js'
 import { loadAgents, loadSkills } from './register.js'
 import { ensureProviderBlock, reeveProviderBlock } from './config-write.js'
@@ -147,7 +147,7 @@ export default {
     // （只加不改 / 备份 / 写完自校验 / 保留注释）。
     let endpointWrite = null
     if (options.ownEndpoint !== false) {
-      const wantPort = Number(options.gate?.port ?? options.proxy?.port ?? GATE_DEFAULT_PORT)
+      const wantPort = resolveGateEndpoint({ gate: options.gate === true ? null : options.gate, proxy: options.proxy === true ? null : options.proxy, fallbackPort: GATE_DEFAULT_PORT }).port
       endpointWrite = await ensureProviderBlock({
         configDir: options.engineConfigDir ?? null,
         block: reeveProviderBlock({ port: wantPort }),
@@ -160,23 +160,40 @@ export default {
     // ---- GATE（代理层 —— 唯一入口；opt-out：`gate: false`）----
     // 引擎认的是 `providers.reeve` 那个 baseURL，GATE 就占那个端口；路由/回退/执行/台账都在
     // 它里面（唯一代理层，见 docs/GATE.md）。失败只记日志：引擎照常跑，模型会吵地报错。
+    //
+    // **复用优先**：引擎是**按工作区**加载插件的 —— 同一个引擎里可能有多个插件实例（每个工作区一个）。
+    // 第一个实例把 GATE 拉到端点口上，后面的实例**用健康检查接上**（`external: true`），
+    // 而不是去抢同一个口（抢必失败 → 快照里会出现假的"GATE 未就绪"，面板跟着误报）。
+    // 自己起的才自己关：接上别人的实例在卸载时**不动**那台 GATE。
     let gateHandle = null
     if (options.gate !== false && options.gate?.enabled !== false) {
-      try {
-        const endpoint = await readEndpoint({})
-        const gatePort = Number(options.gate?.port ?? options.proxy?.port ?? endpoint?.port ?? GATE_DEFAULT_PORT)
-        gateHandle = await startGate({
-          port: gatePort,
-          host: options.gate?.host ?? endpoint?.host ?? '127.0.0.1',
-          configPath: options.gate?.configPath ?? options.fallbackConfigPath ?? defaultFallbackConfigPath(),
-          ledgerPath: options.gate?.ledgerPath ?? undefined,
-          logger,
-        })
-        gateState = gateHandle.snapshot()
-        logger.debug(`[reeve] GATE：:${gateHandle.port}（链 ${gateState.chains.join('/')}）`)
-      } catch (err) {
-        gateState = { error: String(err).slice(0, 200) }
-        logger.debug(`[reeve] GATE 起不来（忽略，引擎照常）：${gateState.error}`)
+      const endpoint = await readEndpoint({})
+      const { port: gatePort, host: gateHost } = resolveGateEndpoint({
+        gate: options.gate === true ? null : options.gate,
+        proxy: options.proxy === true ? null : options.proxy,
+        endpoint,
+        fallbackPort: GATE_DEFAULT_PORT,
+      })
+      const configPath = options.gate?.configPath ?? options.fallbackConfigPath ?? defaultFallbackConfigPath()
+      const probe = await probeGate({ port: gatePort, host: gateHost })
+      if (probe.ok) {
+        gateState = { ...probe.snapshot, reused: true }
+        logger.debug(`[reeve] GATE 已在 :${gatePort} 上跑着（复用；链 ${(probe.snapshot?.chains ?? []).join('/')}）`)
+      } else {
+        try {
+          gateHandle = await startGate({
+            port: gatePort,
+            host: gateHost,
+            configPath,
+            ledgerPath: options.gate?.ledgerPath ?? undefined,
+            logger,
+          })
+          gateState = gateHandle.snapshot()
+          logger.debug(`[reeve] GATE：:${gateHandle.port}（链 ${gateState.chains.join('/')}）`)
+        } catch (err) {
+          gateState = { error: String(err).slice(0, 200) }
+          logger.debug(`[reeve] GATE 起不来（忽略，引擎照常）：${gateState.error}`)
+        }
       }
       // 状态一变就刷快照 —— 尤其"起来了"或"起不来（如实报错）"这一刻。
       // 少了这一次，消费方只能等下一次台账变化才看到 gate 段（起不来时会一直显示 null）。

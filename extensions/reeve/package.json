@@ -3,7 +3,7 @@
   "version": "0.1.1",
   "private": true,
   "type": "module",
-  "description": "REEVE 编排视图 —— 链编辑（只写 ~/.reeve/chain.json）+ 性能统计 + 台账",
+  "description": "REEVE 编排视图 —— GATE 配置编辑（链 / agent 映射 / 策略）+ 性能统计 + 台账",
   "openchamber": {
     "apiVersion": 1,
     "contributes": {
@@ -17,7 +17,9 @@
         "~/.reeve-staging/.reeve/**",
         "~/.reeve/**",
         "~/.local/share/opencode/reeve/**",
-        "~/.reeve-staging/.local/share/opencode/reeve/**"
+        "~/.reeve-staging/.local/share/opencode/reeve/**",
+        "~/.config/opencode/reeve/**",
+        "~/.reeve-staging/.config/opencode/reeve/**"
       ],
       "capabilities": [
         "sessions"

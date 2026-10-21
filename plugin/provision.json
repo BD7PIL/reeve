@@ -27,7 +27,7 @@
       "~/.local/share/opencode/reeve/**",
       "~/.reeve-staging/.local/share/opencode/reeve/**",
       "~/.config/opencode/reeve/**",
-      "~/.config/opencode/reeve-staging/**"
+      "~/.reeve-staging/.config/opencode/reeve/**"
     ]
   },
   "//configSync": "GATE 的 fallback 配置（链/策略）由 ocrc 的 sync 推；reeve.jsonc 与 agents 是插件自身的配置面。",

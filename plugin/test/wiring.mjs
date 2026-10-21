@@ -123,10 +123,58 @@ const CONFIG = {
   }
 }
 
+// ---- 3. 复用：第二个插件实例（同一台机器、同一个口）接上已在跑的 GATE，不抢口也不误报 ----
+{
+  const dir = await mkdtemp(join(tmpdir(), 'reeve-wiring-reuse-'))
+  const port = await freePort()
+  const configPath = join(dir, 'fallback.jsonc')
+  await writeFile(configPath, JSON.stringify(CONFIG), 'utf8')
+  const firstSnap = join(dir, 'first.json')
+  const secondSnap = join(dir, 'second.json')
+  const first = await plugin.setup(
+    makeCtx({
+      gate: { enabled: true, port, configPath, ledgerPath: join(dir, 'gate.jsonl') },
+      ownEndpoint: false,
+      snapshotPath: firstSnap,
+      retentionDays: 0,
+      stats: { intervalMs: 0 },
+    }),
+  )
+  const second = await plugin.setup(
+    makeCtx({
+      gate: { enabled: true, port, configPath, ledgerPath: join(dir, 'gate.jsonl') },
+      ownEndpoint: false,
+      snapshotPath: secondSnap,
+      retentionDays: 0,
+      stats: { intervalMs: 0 },
+    }),
+  )
+  try {
+    await sleep(400)
+    const snap2 = JSON.parse(await readFile(secondSnap, 'utf8'))
+    assert.equal(snap2.gate?.error ?? null, null, `第二个实例不该报错（实际：${JSON.stringify(snap2.gate?.error)}）`)
+    assert.equal(snap2.gate.reused, true, '标记为复用（不是自己起的）')
+    assert.deepEqual(snap2.gate.chains, ['t1'], '复用者也拿到运行态（链列表）')
+    assert.deepEqual(snap2.gate.chain_targets, { t1: ['p1/m1'] })
+    // 第二个实例卸载：**不动**别人的 GATE（自己起的才自己关）
+    second()
+    await sleep(150)
+    const still = await fetch(`http://127.0.0.1:${port}/gate/version`).then((r) => r.ok, () => false)
+    assert.equal(still, true, '复用者卸载后，原本那台 GATE 照常活着')
+  } finally {
+    first()
+    await sleep(150)
+    await rm(dir, { recursive: true, force: true })
+    ok('复用：第二个实例接上（不抢口/不误报/卸载不动别人的 GATE）')
+  }
+}
+
 // ---- 2. 端口被占：setup 不抛，gate 段如实报错 ----
 {
   const dir = await mkdtemp(join(tmpdir(), 'reeve-wiring-busy-'))
-  const busy = createNetServer()
+  const busy = createNetServer((s) => s.destroy())
+  // 只占口、不回话（连接的来客立刻断 —— 免得探针的 socket 把 close() 拖住）
+  busy.on('connection', (s) => s.destroy())
   await new Promise((r) => busy.listen(0, '127.0.0.1', r))
   const port = busy.address().port
   const snapPath = join(dir, 'ledger.json')
@@ -144,7 +192,7 @@ const CONFIG = {
     await sleep(400)
     const snap = JSON.parse(await readFile(snapPath, 'utf8'))
     assert.ok(snap.gate && typeof snap.gate.error === 'string' && snap.gate.error.length > 0, `gate 段报错（实际：${JSON.stringify(snap.gate)}）`)
-    ok('端口被占：setup 不抛、引擎照常、快照如实报错')
+    ok('端口被占且不是 GATE：setup 不抛、引擎照常、快照如实报错')
   } finally {
     dispose()
     await new Promise((r) => busy.close(r))

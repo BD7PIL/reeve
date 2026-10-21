@@ -3,6 +3,7 @@
 //
 // 覆盖的是"最贵的 bug 是静默不一致"那几条：终态单调性、静默宽限、并发不自死锁、超时不可逆。
 
+import assert from 'node:assert/strict'
 import { Ledger } from '../src/ledger.js'
 import { Admission, _runtimes } from '../src/concurrency.js'
 import { Supervisor } from '../src/supervisor.js'
@@ -10,6 +11,7 @@ import { decideStop, VERDICT } from '../src/terminal-gate.js'
 import { STATE, REASON, STOP_CONFIRMATION_GRACE_MS } from '../src/constants.js'
 import { SUBAGENT_ROSTER, ROSTER_MARKER, buildSubagentRoster, withRoster } from '../src/roster.js'
 import { readdirSync, readFileSync } from 'node:fs'
+import { resolveGateEndpoint } from '../src/models.js'
 
 let pass = 0
 let fail = 0
@@ -236,5 +238,16 @@ section('名册：subagent 工具描述补名 + 与 agents/*.md 不漂移')
 }
 
 // ---------------------------------------------------------------------------
-console.log(`\n结果：${pass} 通过 / ${fail} 失败`)
-process.exit(fail === 0 ? 0 : 1)
+// ---- resolveGateEndpoint：四级回落（纯函数；来源优先级不该靠碰真配置来验） ----
+{
+  const e = (o) => resolveGateEndpoint(o)
+  ok('显式 gate.port 最优先', JSON.stringify(e({ gate: { port: 1234 } })) === JSON.stringify({ port: 1234, host: '127.0.0.1' }))
+  ok('旧 proxy.port 作回落（迁移期配置还写着它）', e({ proxy: { port: 18081 } }).port === 18081)
+  ok('再落到配置里的 providers.reeve 端点', JSON.stringify(e({ endpoint: { port: 18080, host: '10.0.0.5' } })) === JSON.stringify({ port: 18080, host: '10.0.0.5' }))
+  ok('什么都没有 → 默认 8080', e({}).port === 8080 && e({}).host === '127.0.0.1')
+  ok('gate 同时给 port 与 host', JSON.stringify(e({ gate: { port: 1, host: '0.0.0.0' }, proxy: { port: 2 }, endpoint: { port: 3 } })) === JSON.stringify({ port: 1, host: '0.0.0.0' }))
+}
+
+
+console.log(`
+结果：${pass} 通过 / ${fail} 失败`)

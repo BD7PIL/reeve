@@ -11,3 +11,6 @@ dist/
 
 # 覆盖率产物（c8，本地与 CI 皆可重建）
 coverage/
+
+# 面板预览截图（scripts/preview.mjs 的产物）
+.preview-shots/

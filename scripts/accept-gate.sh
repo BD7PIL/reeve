@@ -82,7 +82,7 @@ done
 [ -n "$free_ok" ] && pass ② "直连 9router 免费档" "$free_ok → 200 且有输出" || fail ② "直连 9router 免费档" "所有候选都不通；最后：$free_why"
 
 # ── ③ GATE 面 ──
-v=$(curl -s --max-time 5 "$GATE_URL/gate/version" 2>/dev/null | head -c 600)
+v=$(curl -s --max-time 5 "$GATE_URL/gate/version" 2>/dev/null | head -c 2000)
 echo "$v" | grep -q '"reeve-gate"' && pass ③ "GATE 版本面" "$(echo "$v" | head -c 160)" || fail ③ "GATE 版本面" "读到：$(echo "$v" | head -c 120)"
 echo "$v" | grep -q '"chains"' && pass ③b "GATE 有链" "$(echo "$v" | sed -n 's/.*"chains":\[\([^]]*\)\].*/\1/p' | head -c 200)" || fail ③b "GATE 有链" "无 chains 字段"
 echo "$v" | grep -q '"problems":\[\]' && pass ③c "配置无 problems" "problems 空" || fail ③c "配置无 problems" "$(echo "$v" | sed -n 's/.*"problems":\(\[[^]]*\]\).*/\1/p' | head -c 160)"
@@ -191,9 +191,10 @@ else
   fail ⑦ "热更 ≤5s（文件改 → 新序生效）" "seen=$seen $((t1 - t0))s；HTTP $c；头：${fb7:-无}"
 fi
 
-# ── ⑨ Bifrost 进程（退役完成前为 INFO；拆完之后变硬断言 0）──
+# ── ⑨ Bifrost 已退役：进程必须是 0（拆完之后这条是硬断言，不再是 INFO）──
 bf=$(tasklist //FI "IMAGENAME eq bifrost-http.exe" //FO CSV 2>/dev/null | grep -c bifrost || true)
-echo "INFO ⑨ Bifrost 进程数=${bf:-0}（Bifrost 退役后这一条会变成断言 = 0）"
+[ "${bf:-0}" -eq 0 ] && pass ⑨ "Bifrost 进程 = 0" "进程表里没有 bifrost-http（代理层只剩 GATE）" || fail ⑨ "Bifrost 进程 = 0" "还有 ${bf} 个 bifrost-http 在跑（旧层没清干净）"
+if [ -d "$HOME/.reeve/proxy" ]; then echo "INFO ⑨b ~/.reeve/proxy 还在（$(ls "$HOME/.reeve/proxy" | tr '\n' ' ' | head -c 80)）—— 机器上的旧工件，删掉不影响运行"; fi
 
 echo
 if [ "$fails" -eq 0 ]; then echo "accept-gate: 全过"; else echo "accept-gate: $fails 项失败"; fi

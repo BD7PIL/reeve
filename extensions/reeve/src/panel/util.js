@@ -88,34 +88,47 @@ export const STATE_TONE = {
   reconciled: 'neutral',
 }
 
-export const TIER_ORDER = ['flash', 'pro', 'multimodal']
-export const TIER_LABEL = { flash: '便宜档', pro: '强推理档', multimodal: '多模态档' }
-export const TIER_HINT = {
-  flash: '探索 / 检索 / 照文档干活',
-  pro: '编排 / 规划 / 评审 / 审查',
-  multimodal: '需要读图 / 读 PDF 的调用',
-}
-
-/** 每档一行的颜色：与宿主 token 对齐（不引新色）。 */
-export const TIER_TONE = { flash: 'info', pro: 'primary', multimodal: 'success' }
-
 /** 延迟条的宽度百分比（相对本组最大值；0 也算一条细线）。 */
 export const barWidth = (value, max) => {
   if (!Number.isFinite(Number(value)) || !Number.isFinite(Number(max)) || max <= 0) return '0%'
   return `${Math.max(4, Math.round((Number(value) / Number(max)) * 100))}%`
 }
 
+/** GATE 的配置候选位置（与 package.json 的 contributes.filesystem 一一对应）。 */
+export const GATE_CONFIG_PATHS = [
+  '~/.config/opencode/reeve/fallback.jsonc',
+  '~/.reeve-staging/.config/opencode/reeve/fallback.jsonc',
+]
+
 /**
- * 面板唯一会写的那一个文件：REEVE 自己的链配置。
+ * 面板唯一会写的那个文件：GATE 的 fallback 配置（链 / agent 映射 / 策略）。
  *
- * 路径**取自快照**（插件正在读的那份，可以被 options.chainFilePath 改；EL7 staging 上
- * 引擎的 HOME 与 openchamber 的 HOME 不同，两边必须指同一个文件）。快照里没有才退回默认。
+ * 路径**取自快照**（`gate.from` 就是 GATE 正在读的那份；可以被 options.gate.configPath 改）——
+ * 面板写错文件会表现成"保存了但没生效"。快照里没有才退回候选里的第一份。
  * 守门（check.mjs）就盯这一条：源码里每个 `writeFile(` 的第一个实参都必须是本次调用。
  */
-export function chainPathFor(snapshot) {
-  const p = snapshot?.chain?.tiersPath
+export function fallbackConfigPathFor(snapshot) {
+  const p = snapshot?.gate?.from
   if (typeof p === 'string' && (p.startsWith('/') || p.startsWith('~/'))) return p
-  return '~/.reeve/chain.json'
+  return GATE_CONFIG_PATHS[0]
+}
+
+/** 读 GATE 的配置文件（返回文本；读不到就报出原因，让面板显示"为什么"）。 */
+export async function readGateConfig(host, snapshot) {
+  const preferred = fallbackConfigPathFor(snapshot)
+  const paths = [preferred, ...GATE_CONFIG_PATHS.filter((p) => p !== preferred)]
+  const tried = []
+  for (const path of paths) {
+    try {
+      const res = await host.readFile(path)
+      return { ok: true, path, content: String(res?.content ?? ''), tried }
+    } catch (err) {
+      const code = err?.code ?? err?.name ?? 'UNKNOWN'
+      tried.push({ path, code, message: err instanceof Error ? err.message : String(err) })
+      if (code === 'NOT_GRANTED' || code === 'BAD_PATH') return { ok: false, code, path, tried }
+    }
+  }
+  return { ok: false, code: tried.at(-1)?.code ?? 'UNKNOWN', path: preferred, tried }
 }
 
 /** 把 home 那一段缩成 `~`：面板里同时出现绝对路径与 `~/` 写法会让人以为是两个文件。 */

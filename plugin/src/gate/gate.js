@@ -291,9 +291,20 @@ export async function startGate({
         return sendJson(res, 200, {
           name: 'reeve-gate',
           version: GATE_VERSION,
+          port: server.address()?.port ?? port,
           from: configFrom,
           chains: Object.keys(config.chains),
+          chain_targets: Object.fromEntries(Object.entries(config.chains).map(([name, spec]) => [name, [...(spec?.targets ?? [])]])),
           providers: Object.keys(config.providers),
+          policy: {
+            max_fallback_attempts: config.policy.max_fallback_attempts,
+            cooldown_seconds: config.policy.cooldown_seconds,
+            restore_primary_after_cooldown: config.policy.restore_primary_after_cooldown,
+            provider_retries: config.policy.provider_retries,
+          },
+          agents: { ...config.agents },
+          chain_for_model: { ...config.chain_for_model },
+          default_chain: config.default_chain ?? null,
           problems,
           sessions: sessions.snapshot(),
           ledger: ledger.path,
@@ -378,7 +389,11 @@ export async function startGate({
         max_fallback_attempts: config.policy.max_fallback_attempts,
         cooldown_seconds: config.policy.cooldown_seconds,
         restore_primary_after_cooldown: config.policy.restore_primary_after_cooldown,
+        provider_retries: config.policy.provider_retries,
       },
+      agents: { ...config.agents },
+      chain_for_model: { ...config.chain_for_model },
+      default_chain: config.default_chain ?? null,
       ledger: ledger.path,
       problems,
       sessions: sessions.snapshot(),
@@ -392,5 +407,40 @@ export async function startGate({
         }
       }
     },
+  }
+}
+/**
+ * 探一台**已经在跑的** GATE（引擎按工作区加载插件 → 同一台机器上会有多个插件实例，
+ * 只有第一个该去占端口；后面的实例用这个探针接上，而不是抢口失败后误报）。
+ *
+ * 判据严格：只有 `name === 'reeve-gate'` 才算（端口上可能是别人的东西 —— 不许瞎认）。
+ * @returns {{ok: boolean, reason?: string, snapshot?: object}}
+ */
+export async function probeGate({ port, host = '127.0.0.1', fetchImpl = fetch, timeoutMs = 800 } = {}) {
+  try {
+    const res = await fetchImpl(`http://${host}:${port}/gate/version`, { signal: AbortSignal.timeout(timeoutMs) })
+    if (!res.ok) return { ok: false, reason: `HTTP ${res.status}` }
+    const doc = await res.json()
+    if (doc?.name !== 'reeve-gate') return { ok: false, reason: '端口上有一个服务，但它不是 GATE' }
+    return {
+      ok: true,
+      snapshot: {
+        port: Number(doc.port ?? port),
+        version: doc.version ?? null,
+        from: doc.from ?? null,
+        chains: Array.isArray(doc.chains) ? doc.chains : [],
+        chain_targets: doc.chain_targets ?? {},
+        providers: Array.isArray(doc.providers) ? doc.providers : [],
+        policy: doc.policy ?? {},
+        agents: doc.agents ?? {},
+        chain_for_model: doc.chain_for_model ?? {},
+        default_chain: doc.default_chain ?? null,
+        ledger: doc.ledger ?? null,
+        problems: Array.isArray(doc.problems) ? doc.problems : [],
+        sessions: doc.sessions ?? null,
+      },
+    }
+  } catch (err) {
+    return { ok: false, reason: String(err?.message ?? err).slice(0, 120) }
   }
 }

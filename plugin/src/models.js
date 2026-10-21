@@ -112,3 +112,14 @@ export function pickDefaultAgent(editor, id = 'foreman') {
   }
   return false
 }
+
+/**
+ * GATE 该在哪个 `host:port` 上服务（纯函数，四级回落：显式 gate → 旧 proxy 键 → 配置里的端点 → 默认）。
+ * 抽出来是为了**可测**：真实回落链要碰机器上的真实配置（和真实的 18080），不该在单测里跑。
+ */
+export function resolveGateEndpoint({ gate = null, proxy = null, endpoint = null, fallbackPort = 8080, fallbackHost = '127.0.0.1' } = {}) {
+  return {
+    port: Number(gate?.port ?? proxy?.port ?? endpoint?.port ?? fallbackPort),
+    host: gate?.host ?? endpoint?.host ?? fallbackHost,
+  }
+}

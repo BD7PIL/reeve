@@ -18,7 +18,7 @@ import { BUNDLED_FALLBACK_PATH, loadGateConfig, normalizeGateConfig, stripLineCo
 import { classifyFailure, statusOf } from '../src/gate/classify.js'
 import { createSessionStore } from '../src/gate/state.js'
 import { attemptRow, buildUpstreamRequest, forwardedHeaders, modelsPathOf, parseTarget, planAttempts, resolveKeyFor, routeFor } from '../src/gate/lanes.js'
-import { createLedger, startGate } from '../src/gate/gate.js'
+import { createLedger, probeGate, startGate } from '../src/gate/gate.js'
 
 let passed = 0
 const ok = (label) => {
@@ -460,6 +460,38 @@ const postJson = (gate, path, body) =>
   assert.equal(native.headers.authorization, 'Bearer sk-x')
   assert.equal(forwardedHeaders({ 'X-Weird': 'v' })['X-Weird'], 'v', 'forwardedHeaders 保留未知头（大小写照原样）')
   ok('请求构造：透传逐字（UA+四个 session 头）/ 剥逐跳头与编码 / 模型映射 / tools 深比 / 原生最小集')
+}
+
+// ---- 5b. probeGate：复用探针（引擎按工作区加载插件 → 后面的实例要能认出"已经在跑的 GATE"） ----
+{
+  const okProbe = await probeGate({ port: 18080, fetchImpl: async (url) => {
+    assert.ok(String(url).endsWith('/gate/version'), '探的是 /gate/version')
+    return { ok: true, json: async () => ({ name: 'reeve-gate', version: '0.1.0', port: 18080, chains: ['c'], chain_targets: { c: ['p/m'] }, problems: [], sessions: { sessions: 1 } }) }
+  } })
+  assert.equal(okProbe.ok, true)
+  assert.equal(okProbe.snapshot.port, 18080)
+  assert.deepEqual(okProbe.snapshot.chain_targets, { c: ['p/m'] })
+  assert.deepEqual(okProbe.snapshot.chains, ['c'])
+  assert.deepEqual(okProbe.snapshot.problems, [])
+
+  const other = await probeGate({ port: 18080, fetchImpl: async () => ({ ok: true, json: async () => ({ name: '别的东西' }) }) })
+  assert.equal(other.ok, false, '端口上不是 GATE → 不许瞎认')
+  assert.ok(other.reason.includes('不是 GATE'))
+
+  const bad = await probeGate({ port: 18080, fetchImpl: async () => ({ ok: false, status: 503, json: async () => ({}) }) })
+  assert.equal(bad.ok, false)
+  assert.equal(bad.reason, 'HTTP 503')
+
+  const boom = await probeGate({ port: 18080, fetchImpl: async () => { throw new Error('ECONNREFUSED') } })
+  assert.equal(boom.ok, false)
+  assert.ok(boom.reason.includes('ECONNREFUSED'), '连不上 → 如实报原因（调用方据此去"自己起"）')
+
+  const half = await probeGate({ port: 18080, fetchImpl: async () => ({ ok: true, json: async () => ({ name: 'reeve-gate' }) }) })
+  assert.equal(half.ok, true)
+  assert.deepEqual(half.snapshot.chains, [], '缺字段的半截应答：给空壳而不是越界读')
+  assert.equal(half.snapshot.default_chain, null)
+  assert.equal(half.snapshot.problems.length, 0)
+  ok('probeGate：认出 GATE / 不是 GATE / 坏状态码 / 连不上 / 半截应答')
 }
 
 // ---- 6. 台账：字段、轮转、金丝雀 ----
