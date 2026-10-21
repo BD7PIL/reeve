@@ -1,6 +1,6 @@
 {
   "name": "reeve",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "private": true,
   "type": "module",
   "description": "REEVE 编排视图 —— GATE 配置编辑（链 / agent 映射 / 策略）+ 性能统计 + 台账",

@@ -56,3 +56,46 @@ panel extension has its own tags (`reeve-<version>`).
 
 - First publish (manual, bootstrap of the Trusted Publisher): plugin, agents,
   review skill, ledger/ledger gates, Bifrost proxy chain, openchamber console.
+
+## 0.1.5 — 2026-10-22
+
+**Bifrost retired; the proxy layer is now GATE only — plain JS inside the
+plugin (no binary, no separate service, no platform pins).** One delivery:
+retire + native proxy + panel UI.
+
+- **Removed**: `src/proxy.js` (Bifrost pins/fetch/spawn/converge/supervise),
+  `src/chain.js` (chain file ↔ `routing_rules`), `default-chain.json`,
+  `proxy/` (Bifrost app config), `scripts/bifrost-sync-config.sh`,
+  `scripts/served-model.*`, and their tests. `provision.json` loses the
+  `bifrost` artifact and its `verify` entry (`host.os` gains `win32`: no
+  platform binary any more).
+- **Stats** now read the GATE ledger (`~/.reeve/gate.jsonl`, JSONL, one row per
+  attempt) instead of `/api/logs`: request/attempt two-level rollups, fallback
+  hops, per-chain/per-provider/per-model attribution. Ledger rows gained `req`
+  (call id) and `n` (attempt ordinal) so fallback depth is visible.
+- **GATE reuse**: the engine loads plugins per workspace, so one machine can
+  have several plugin instances. `probeGate` checks `/gate/version` first —
+  healthy GATE is reused (`reused: true`) instead of racing for the port and
+  reporting a false "not ready"; only the instance that started it disposes it.
+  `/gate/version` now carries the full runtime picture (`chain_targets`,
+  `agents`, `chain_for_model`, `default_chain`, `policy`, `port`).
+- **Panel** (`extensions/reeve` 0.1.2): the chain editor now edits the GATE
+  config (`~/.config/opencode/reeve/fallback.jsonc`) — per-chain candidate
+  order, agent→chain mapping, policy, add/remove chain — and **only rewrites
+  the sections it changed**, keeping hand-written comments and layout
+  (`fallback-edit.js`, unit-tested; write-time self-check refuses bad JSON).
+  Stats tab shows GATE attribution. New `preview/` harness renders the real
+  panel against a fake host (read = real snapshot/config, write = memory by
+  default) for local visual review.
+- **Tests**: `test/wiring.mjs` (gate really starts / snapshot gate section /
+  stats read the ledger / busy port reported / reuse / ≤5s hot reload),
+  `test/runtime.mjs` (terminal-state attribution incl. wall-clock `timedOut`,
+  tool-result paths, endpoint bootstrap, hydrate truncation), `test/guard.mjs`
+  (static guard against Bifrost coming back), rewritten `test/stats.mjs`, plus
+  classify/lanes edge cases. Coverage ratchets up: global 95.7/79.5/96.5.
+- `scripts/accept-gate.sh`: real-host acceptance ①–⑨ (9router health → direct
+  free call → GATE surface → engine through GATE → fault-injection downgrade →
+  per-session stickiness → cooldown bookkeeping → ≤5s hot reload → paid direct
+  call → **Bifrost process count = 0**). `scripts/setup-9router.mjs` installs/
+  supervises 9router (pinned) **without any console window** (Windows: hidden
+  spawn + logon VBS; Linux: `--unit-print`).
