@@ -78,7 +78,7 @@ function main() {
     if (force) return
     tabs.update({
       items: [
-        { id: 'chain', label: '链', count: Object.keys(snapshot?.chain?.tiers ?? {}).length || undefined },
+        { id: 'chain', label: '链', count: (snapshot?.gate?.chains?.length ?? 0) || undefined },
         { id: 'stats', label: '统计', count: snapshot?.stats?.gate?.requests ?? undefined },
         { id: 'ledger', label: '台账', count: ledgerTab.count(snapshot) || undefined },
       ],
@@ -92,10 +92,11 @@ function main() {
       return
     }
     const counts = snapshot?.counts ?? {}
-    const proxy = snapshot?.proxy
+    const gate = snapshot?.gate
     const waiting = snapshot?.stats?.orchestrate?.queue?.waiting ?? 0
-    if (proxy && proxy.ready === false) {
-      badge.update({ label: `代理未就绪 · ${counts.running ?? 0} 在飞`, tone: 'error' })
+    // GATE 起不来/起一半都要吵：模型面会整层失败，而面板别处看不出来
+    if (gate && (gate.error || !gate.port)) {
+      badge.update({ label: `GATE 未就绪 · ${counts.running ?? 0} 在飞`, tone: 'error' })
       return
     }
     badge.update({

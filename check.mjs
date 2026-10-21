@@ -1,6 +1,7 @@
 // 用宿主自己的解析器校验 manifest + 打包完整性 —— 装之前先在这里挂掉，别到机器上才发现。
 //   node check.mjs [--sdk=<@openchamber/sdk 包目录>]
 import { existsSync, readFileSync, readdirSync } from 'node:fs'
+import { spawnSync } from 'node:child_process'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
@@ -91,10 +92,10 @@ check('打出来的是 classic IIFE（不是 ESM）', () => {
   return `${(src.length / 1024).toFixed(0)} KB`
 })
 
-check('守门：只允许写链文件（writeFile 必须走 chainPathFor），控制调用继续禁', () => {
+check('守门：只允许写 GATE 配置（writeFile 必须走 fallbackConfigPathFor），控制调用继续禁', () => {
   const srcDir = join(here, 'src/panel')
   const files = readdirSync(srcDir).filter((f) => f.endsWith('.js'))
-  if (!files.includes('chain-tab.js') || !files.includes('util.js')) {
+  if (!files.includes('chain-tab.js') || !files.includes('util.js') || !files.includes('fallback-edit.js')) {
     throw new Error(`面板源文件变了（${files.join(',')}）—— 这条守门要跟着改`)
   }
   // 粗剥注释：先去掉 `/* … */` 块，再逐行去掉 `//` 之后的部分
@@ -113,16 +114,22 @@ check('守门：只允许写链文件（writeFile 必须走 chainPathFor），�
     const hits = banned.filter((b) => src.includes(b))
     if (hits.length) throw new Error(`${f} 里出现控制调用：${hits.join(', ')}`)
     for (const m of src.matchAll(/writeFile\(/g)) {
-      const call = src.slice(m.index, m.index + 40)
-      // 唯一的合法形态：host.writeFile(chainPathFor(snapshot), …) —— 路径取自快照（插件正在读的那份）
-      if (!call.startsWith('writeFile(chainPathFor(')) throw new Error(`${f} 里的 writeFile 不是写链文件：${call.split('\n')[0]}`)
+      const call = src.slice(m.index, m.index + 48)
+      // 唯一的合法形态：host.writeFile(fallbackConfigPathFor(snapshot), …) —— 路径取自快照（GATE 正在读的那份）
+      if (!call.startsWith('writeFile(fallbackConfigPathFor(')) throw new Error(`${f} 里的 writeFile 不是写 GATE 配置：${call.split('\n')[0]}`)
       writes += 1
     }
   }
-  if (writes === 0) throw new Error('找不到链文件的写调用 —— 面板不能保存了？')
+  if (writes === 0) throw new Error('找不到 GATE 配置的写调用 —— 面板不能保存了？')
   const util = readFileSync(join(srcDir, 'util.js'), 'utf8')
-  if (!util.includes("return '~/.reeve/chain.json'")) throw new Error('chainPathFor 的兜底路径不是 ~/.reeve/chain.json')
-  return `${files.length} 个源文件，写调用 ${writes} 处（都写链文件）`
+  if (!util.includes("'~/.config/opencode/reeve/fallback.jsonc'")) throw new Error('fallbackConfigPathFor 的兜底路径不是 GATE 的配置')
+  return `${files.length} 个源文件，写调用 ${writes} 处（都写 GATE 配置）`
+})
+
+check('fallback-edit（配置编辑引擎）单测：注释保留 / 只改该改的节 / 写前自校验', () => {
+  const r = spawnSync(process.execPath, [join(here, 'test/fallback-edit.test.mjs')], { encoding: 'utf8' })
+  if (r.status !== 0) throw new Error((r.stderr || r.stdout || '').trim().split(/\r?\n/).at(-1))
+  return (r.stdout || '').trim().replace(/^\s*[✓✗]\s*/, '')
 })
 
 check('包内没有 TS 源码，依赖树不进版本库', () => {
