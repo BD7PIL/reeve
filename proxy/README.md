@@ -41,7 +41,7 @@
 | 角色 | 对 `proxy/config.json` 的权限 |
 |---|---|
 | **reeve 仓库（本文件）** | **持有源真相**——链只在这里改一次 |
-| ocrc | **只推送**（把本文件推到被控端），不生成内容；**生命周期归它**（取件/启动/守护，见下「安装」） |
+| ocrc | **只推送**（把本文件推到被控端），不生成内容；实例生命周期归它，**代理的取件/启动/守护不归它**（已交还插件，见下「安装」） |
 | 控制台/面板（可选） | **唯一运行时写者**（编辑 UI，写回同一份源真相） |
 | 记账插件（纯插件形态） | **代理归它**：取件/拉起/守护/收敛全在插件里（`plugin/src/proxy.js`，PROGRESS §6.6） |
 | `scripts/bifrost-sync-config.sh` | **收敛器**：把本文件当期望态同步进运行中的 Bifrost（它不生成内容） |
@@ -65,9 +65,11 @@ BIFROST_SETUP_TOKEN      # config.json 里 governance.setup_token = env.BIFROST_
 ## 安装（被控端）
 
 ```bash
-# 1. 取二进制（版本号从 https://getbifrost.ai/latest-release 的 name 字段取）
+# 1. 取二进制（版本号从 https://getbifrost.ai/latest-release 的 name 字段取；
+#    钉版本化 URL —— /latest 会漂。Windows：linux/amd64/bifrost-http 换
+#    windows/amd64/bifrost-http.exe，落点同名 .exe）
 curl -sL -o bifrost-http \
-  https://downloads.getmaxim.ai/bifrost/latest/linux/amd64/bifrost-http
+  https://downloads.getmaxim.ai/bifrost/v2.3.0/linux/amd64/bifrost-http
 chmod +x bifrost-http
 
 # 2. 起（app-dir 默认是 OS 配置目录 ~/.config/bifrost，这里显式指定）
@@ -79,8 +81,9 @@ curl -s -H "x-bf-vk: $REEVE_VK" 127.0.0.1:8080/v1/models
 
 **静态链接已确认**（不依赖宿主 glibc → EL7 可跑）。
 ⚠️ 但**二进制不在 GitHub Releases**（以 CI artifact 形式产出）→ **air-gap 分发要单独设计**。
-被控端上的取件/启动/守护已由 **ocrc** 接管（`src/core/bifrost.ts`：版本化 URL + sha256 pin、
-`/proc` 判活、跟着实例一起被监视）——本仓库只维护 `config.json` 这一份内容。
+取件/启动/守护已**交还插件**（`plugin/src/proxy.js`：**按平台 pin** 的版本化 URL + sha256、
+复用归属判定、守护自愈；ocrc 不携带任何 Bifrost pin，只推送本文件）——本仓库仍是 `config.json` 的源真相。
+已知限制：归属判定读 `/proc`，**Windows 上读不到 → 退回「健康即复用」**（三态有单测钉住）。
 
 ### ⚠️ 「改文件 vs 热改」的真实语义（2026-10-19 五组实验，别再按旧说法理解）
 

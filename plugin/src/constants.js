@@ -4,7 +4,7 @@
 export const PLUGIN_ID = 'reeve'
 
 /** 与 package.json 的 version 保持一致；快照文件里会带上，便于面板判断版本。 */
-export const PLUGIN_VERSION = '0.1.3'
+export const PLUGIN_VERSION = '0.1.4'
 
 /** 工具注册的命名空间。注意：真正决定"模型能否看见"的是 codemode:false（施工图 §3.1）。 */
 export const TOOL_NAMESPACE = 'reeve'

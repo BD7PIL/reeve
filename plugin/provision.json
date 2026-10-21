@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "name": "reeve",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "license": "MIT",
   "host": {
     "node": ">=22",
@@ -9,7 +9,7 @@
     "arch": ["x64"]
   },
   "enginePlugin": {
-    "spec": "@bd7pil/reeve@0.1.3",
+    "spec": "@bd7pil/reeve@0.1.4",
     "kind": "package",
     "entry": "~/.ocrc/components/reeve/node_modules/@bd7pil/reeve",
     "requiresPeer": []

@@ -46,6 +46,9 @@ v2 原生缺的那几条，全靠这个插件补齐：
 插件还会注册三个档位模型、把内置 agent 藏起来、设默认 agent —— 所以引擎配置里**不用写** `models` / `agents` / `default_agent`。
 `options.proxy.enabled` 打开后，
 插件自己完成 取件 → 派生链 → 拉起/复用 → 等就绪 → 收敛 → 守护，**不需要任何外部脚本**（见 `src/proxy.js` 与 PROGRESS §6.6）。
+二进制**按平台 pin**（`BIFROST_PINS`：`linux-x64` / `win32-x64`，各带版本化 URL + sha256 + size）；
+没 pin 的平台这一层显式报不可用、不装（插件其余部分照常）。给装配器读的 `provision.json`
+工件与 linux 那份 pin 由单测绑定防漂移。
 
 其中两件事在这里展开（都由面板里的可视化编辑/统计触发，见 PROGRESS §6.11）：
 

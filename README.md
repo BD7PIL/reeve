@@ -116,7 +116,10 @@ installation contract read by an assembler such as ocrc: plugin spec and
 directory fallback, the Bifrost artifact (version + sha256 + destination), the
 extension zip, and post-install checks. Manually, the equivalent is the two
 steps above plus placing `bifrost-http` (2.3.0) in `~/.reeve/proxy/` and
-`chmod 755`; reeve short-circuits when the checksum matches.
+`chmod 755`; reeve short-circuits when the checksum matches. Pins are per
+platform (`linux-x64` / `win32-x64` — on Windows the file is
+`bifrost-http.exe`); on an unpinned platform the proxy layer reports itself
+unavailable and the rest of the plugin runs unchanged.
 
 ## CI and release
 

@@ -28,14 +28,42 @@ import { defaultChainPath, parseChainText, readChainFile, resolveChain, rulesDri
 /** 插件自带的默认链（与仓库 proxy/config.json 同源；单测里有一条断言盯着它俩不漂移）。 */
 export const BUNDLED_CHAIN_PATH = fileURLToPath(new URL('../default-chain.json', import.meta.url))
 
-/** pin 住的那一份（与 ocrc 的 pin 一致；实测版本化 URL 与已部署二进制的 sha256 逐字节相同）。 */
-export const BIFROST_PIN = Object.freeze({
-  version: '2.3.0',
-  url: 'https://downloads.getmaxim.ai/bifrost/v2.3.0/linux/amd64/bifrost-http',
-  sha256: 'e62a6425218d037e2aea10446f1f4ad1979291902623575a04b7e0ed46886f92',
-  size: 134_264_480,
-  binary: 'bifrost-http',
+/**
+ * pin 住的二进制，**按平台一份**（同版本、不同平台的二进制与校验和各不同）。
+ * URL 一律版本化（`/latest` 会漂）。ocrc 侧没有第二份 pin；本仓库里的第二份拷贝在
+ * `plugin/provision.json`（装配器读的工件表），两者由单测绑定防漂移。
+ */
+export const BIFROST_PINS = Object.freeze({
+  'linux-x64': Object.freeze({
+    version: '2.3.0',
+    url: 'https://downloads.getmaxim.ai/bifrost/v2.3.0/linux/amd64/bifrost-http',
+    sha256: 'e62a6425218d037e2aea10446f1f4ad1979291902623575a04b7e0ed46886f92',
+    size: 134_264_480,
+    binary: 'bifrost-http',
+  }),
+  'win32-x64': Object.freeze({
+    version: '2.3.0',
+    url: 'https://downloads.getmaxim.ai/bifrost/v2.3.0/windows/amd64/bifrost-http.exe',
+    // 2026-10-21 实测下载所得（HTTP 200，128,677,376 B），本机起过一次 `/api/version` → 200
+    sha256: '3f53213ca9e4696b5ce999f372e52a891492ab7b7bc2226ef923c64f02e1fed5',
+    size: 128_677_376,
+    binary: 'bifrost-http.exe',
+  }),
 })
+
+/** linux-x64 那一份（历史引用点，值逐字节未变）。 */
+export const BIFROST_PIN = BIFROST_PINS['linux-x64']
+
+/**
+ * 指定/当前平台该用哪份 pin。**未知平台显式抛** —— 宁可吵在这里，
+ * 也别拿别的平台的二进制去装（装上了也要等 spawn 才炸，更难查）。
+ */
+export function pinFor(platform = process.platform, arch = process.arch) {
+  const key = `${platform}-${arch}`
+  const pin = BIFROST_PINS[key]
+  if (!pin) throw new Error(`没有 ${key} 平台的 Bifrost pin（现有：${Object.keys(BIFROST_PINS).join('、')}）`)
+  return pin
+}
 
 export const PROXY_DEFAULTS = Object.freeze({
   port: 8080,
@@ -49,11 +77,11 @@ export const PROXY_DEFAULTS = Object.freeze({
   chainWatchMs: 5_000,
 })
 
-export function proxyPaths({ home = homedir(), dir = null } = {}) {
+export function proxyPaths({ home = homedir(), dir = null, pin = pinFor() } = {}) {
   const root = dir ?? join(home, '.reeve', 'proxy')
   return {
     root,
-    binary: join(root, BIFROST_PIN.binary),
+    binary: join(root, pin.binary),
     config: join(root, 'config.json'),
     token: join(root, 'setup-token'),
     log: join(root, 'bifrost.log'),
@@ -124,7 +152,7 @@ export function buildProxyConfig(chain, { noAuth = true } = {}) {
 }
 
 /** 二进制要不要重下：不存在 / 大小不符 / 校验和不对（后者只有读了才算，交给 verifyBinary）。 */
-export function needsDownload(fileStat, pin = BIFROST_PIN) {
+export function needsDownload(fileStat, pin = pinFor()) {
   if (!fileStat || !fileStat.isFile?.()) return true
   return Number(fileStat.size) !== pin.size
 }
@@ -181,7 +209,7 @@ async function sha256File(path) {
 }
 
 /** 幂等取件。返回 'ok' | 'installed'；失败抛（**吵**，不静默）。 */
-export async function ensureBinary({ paths, pin = BIFROST_PIN, fetchImpl = fetch, logger }) {
+export async function ensureBinary({ paths, pin = pinFor(), fetchImpl = fetch, logger }) {
   await mkdir(paths.root, { recursive: true })
   try {
     const st = await stat(paths.binary)
@@ -332,7 +360,18 @@ export async function startOwnedProxy({
 } = {}) {
   const port = Number(opts.port ?? PROXY_DEFAULTS.port)
   const host = opts.host ?? PROXY_DEFAULTS.host
-  const paths = proxyPaths({ dir: opts.dir ?? null })
+  // 平台 pin：不支持的平台在这里就降级返回（不抛）—— 代理层不可用是这一层的事，
+  // 不该把插件加载（agent/skill/台账）一起搞崩。
+  let pin
+  let paths
+  try {
+    pin = opts.pin ?? pinFor()
+    paths = proxyPaths({ dir: opts.dir ?? null, pin })
+  } catch (err) {
+    const detail = `代理自持不可用：${String(err).slice(0, 180)}`
+    logger?.debug?.(`[reeve] ${detail}`)
+    return { port, host, paths: null, chainFilePath: null, ready: false, detail, dispose: async () => {} }
+  }
   const readyTimeoutMs = Number(opts.readyTimeoutMs ?? PROXY_DEFAULTS.readyTimeoutMs)
   const superviseMs = Number(opts.superviseMs ?? PROXY_DEFAULTS.superviseMs)
   const chainWatchMs = Number(opts.chainWatchMs ?? PROXY_DEFAULTS.chainWatchMs)
@@ -343,7 +382,20 @@ export async function startOwnedProxy({
   const chainFilePath = opts.chainFilePath ?? opts.tiersPath ?? defaultChainPath({ home: opts.home ?? homedir() })
 
   const disposeFns = []
-  const result = { port, host, paths, chainFilePath, ready: false, detail: null, dispose: async () => { for (const f of disposeFns.reverse()) await f().catch(() => {}) } }
+  // dispose 尽力而为：`clearInterval` 返回 undefined（不是 promise），**不能** `.catch` 它；
+  // 一个清理项炸了也不该挡着其余清理项。
+  const result = {
+    port, host, paths, chainFilePath, ready: false, detail: null,
+    dispose: async () => {
+      for (const f of disposeFns.reverse()) {
+        try {
+          await f()
+        } catch {
+          /* 清理尽力而为 */
+        }
+      }
+    },
+  }
   /**
    * 链的状态（进快照 → 面板据此显示来源/是否已生效/还有没有差异）。
    * `appliedAt` 只在对运行时**复核过**之后才更新 —— 它表达的是"运行时真跟上了"，
@@ -407,7 +459,7 @@ export async function startOwnedProxy({
 
   /** 取件 → 派生配置 → 拉起/复用 → 等就绪 → 收敛。可重复调用（幂等）。 */
   const bootstrap = async () => {
-    const binaryState = await ensureBinary({ paths, fetchImpl, logger })
+    const binaryState = await ensureBinary({ paths, pin, fetchImpl, logger })
     const d = await deriveChain()
     // 启动路径上"坏文件"没有上一份好的可留 —— 用基座（它至少是能跑的）
     const effective = d.effective ?? d.base
@@ -518,7 +570,7 @@ export async function startOwnedProxy({
     // 慢路径：二进制不在 → 后台 bootstrap（不挡引擎启动）
     let present = false
     try {
-      present = !needsDownload(await stat(paths.binary))
+      present = !needsDownload(await stat(paths.binary), pin)
     } catch {
       present = false
     }
@@ -528,7 +580,7 @@ export async function startOwnedProxy({
         logger.debug(`[reeve] ${result.detail}`)
       })
     } else {
-      result.detail = `代理二进制首次取件中（${BIFROST_PIN.size} B）—— 后台下载，不挡引擎启动`
+      result.detail = `代理二进制首次取件中（${pin.size} B）—— 后台下载，不挡引擎启动`
       publish()
       logger.debug(`[reeve] ${result.detail}`)
       bootstrapping = bootstrap()

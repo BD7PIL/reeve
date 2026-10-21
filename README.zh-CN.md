@@ -133,6 +133,8 @@ v2 插件 API 的真实形态（钩子真名、**`codemode:false` 才是工具�
 插件 spec 与目录回退、Bifrost 工件（版本 + sha256 + 落点）、扩展 zip、发布后检查。
 手动安装的等价步骤就是上面两条命令，外加把 `bifrost-http`（2.3.0）放到
 `~/.reeve/proxy/` 并 `chmod 755` —— reeve 发现文件校验和匹配就不会再下载。
+二进制**按平台 pin**（`linux-x64` / `win32-x64`，Windows 上是 `bifrost-http.exe`）；
+没 pin 的平台这一层自报不可用，插件其余部分照常。
 
 ## 命名派生
 
