@@ -5,10 +5,12 @@
 //
 // 排版：一张事实卡（数 + 编排面证据）+ 一张列表卡（每行一条子任务，点行跳子会话）。
 
-import { empty, list, mutedLine, stat } from './kit.js'
+import { button, empty, list, mutedLine, stat } from './kit.js'
 import { STATE_LABEL, STATE_TONE, el, fmtClock, fmtDur } from './util.js'
 
 export function createLedgerTab({ host }) {
+  /** 列表过滤：全部 / 在飞 / 失败。默认全部。 */
+  const state = { filter: 'all' }
   function render(section, snapshot, read) {
     section.replaceChildren()
 
@@ -55,7 +57,29 @@ export function createLedgerTab({ host }) {
     }
     section.append(facts)
 
-    const items = tasks.map((task) => {
+    const filters = [
+      { id: 'all', label: '全部', n: tasks.length },
+      { id: 'running', label: '在飞', n: running.length },
+      { id: 'error', label: '失败', n: tasks.filter((t) => t.state === 'error').length },
+    ]
+    const shown = state.filter === 'all' ? tasks : tasks.filter((t) => t.state === state.filter)
+    const bar = el('div', { class: 'oc-row', 'data-act': 'ledger-filter' })
+    for (const f of filters) {
+      bar.append(
+        button({
+          label: `${f.label} ${f.n}`,
+          variant: state.filter === f.id ? 'secondary' : 'ghost',
+          size: 'sm',
+          data: { 'data-act': 'filter', 'data-filter': f.id },
+          onClick: () => {
+            state.filter = f.id
+            render(section, snapshot, read)
+          },
+        }).node,
+      )
+    }
+
+    const items = shown.map((task) => {
       const flags = []
       if (task.timedOut) flags.push('超时')
       if (task.statusUncertain) flags.push('状态不确定')
@@ -72,6 +96,7 @@ export function createLedgerTab({ host }) {
     })
 
     const card = el('div', { class: 'oc-card' })
+    card.append(bar)
     card.append(
       list({
         items,

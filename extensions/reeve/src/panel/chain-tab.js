@@ -20,6 +20,7 @@ const chainNames = (view) => Object.keys(view?.chains ?? {})
 
 export function createChainTab({ host, onNeedPoll }) {
   const state = {
+    live: '',
     view: null,
     text: null,
     path: null,
@@ -78,15 +79,76 @@ export function createChainTab({ host, onNeedPoll }) {
 
   const targetsOf = (chain) => [...(state.view.chains[chain]?.targets ?? [])]
 
+  /** 播报给读屏（aria-live）：动作完成后确认一次，别让键盘用户猜。 */
+  const announce = (text) => {
+    state.live = text
+  }
+
   function moveSelected(chain, ref, delta, section, snapshot) {
     const targets = targetsOf(chain)
     const at = targets.indexOf(ref)
     const to = at + delta
     if (at < 0 || to < 0 || to >= targets.length) return
     ;[targets[at], targets[to]] = [targets[to], targets[at]]
+    announce(`${ref} 移到第 ${to + 1} 位`)
     mutate(section, snapshot, () => {
       state.view.chains[chain] = { targets }
     })
+    focusRow(chain, to)
+  }
+
+  /** 重画之后把焦点放回被移动的那一行（W3C APG：移动后焦点跟着条目走）。 */
+  function focusRow(chain, index) {
+    queueMicrotask(() => {
+      const card = document.querySelector(`.oc-card[data-chain="${CSS.escape(chain)}"]`)
+      const row = card?.querySelectorAll('.oc-sdk-row')?.[index]
+      row?.focus?.()
+    })
+  }
+
+  /** 列表容器上的键盘处理（listbox 约定，键位对齐 W3C APG「可重排列表」）：
+   *  ↑/↓ 选 · Alt+↑/↓ 换位 · Enter 换模型 · Delete 删。 */
+  function onListKeydown(event, chain, section, snapshot) {
+    const sel = state.selected?.chain === chain ? state.selected.ref : null
+    const targets = targetsOf(chain)
+    if (event.key === 'ArrowUp' && !event.altKey) {
+      event.preventDefault()
+      const at = sel ? targets.indexOf(sel) : targets.length
+      const next = targets[Math.max(0, at - 1)]
+      if (next) {
+        state.selected = { chain, ref: next }
+        render(section, snapshot)
+        focusRow(chain, Math.max(0, at - 1))
+      }
+      return
+    }
+    if (event.key === 'ArrowDown' && !event.altKey) {
+      event.preventDefault()
+      const at = sel ? targets.indexOf(sel) : -1
+      const next = targets[Math.min(targets.length - 1, at + 1)]
+      if (next) {
+        state.selected = { chain, ref: next }
+        render(section, snapshot)
+        focusRow(chain, Math.min(targets.length - 1, at + 1))
+      }
+      return
+    }
+    if (!sel) return
+    if (event.altKey && event.key === 'ArrowUp') {
+      event.preventDefault()
+      moveSelected(chain, sel, -1, section, snapshot)
+    } else if (event.altKey && event.key === 'ArrowDown') {
+      event.preventDefault()
+      moveSelected(chain, sel, +1, section, snapshot)
+    } else if (event.key === 'Delete') {
+      event.preventDefault()
+      announce(`已删除 ${sel}`)
+      removeSelected(chain, sel, section, snapshot)
+    } else if (event.key === 'Enter') {
+      event.preventDefault()
+      state.picker = { chain, replaceRef: sel, query: '', manual: '' }
+      render(section, snapshot)
+    }
   }
 
   function removeSelected(chain, ref, section, snapshot) {
@@ -200,9 +262,9 @@ export function createChainTab({ host, onNeedPoll }) {
     left.append(el('strong', { text: chain }))
     if (state.view.default_chain === chain) left.append(badge({ label: '默认', tone: 'primary' }).node)
     left.append(el('span', { class: 'oc-xs oc-off', text: users.length ? `agent：${users.join(' · ')}` : '没有 agent 用它' }))
+    left.append(el('span', { class: 'oc-xs oc-off oc-num', text: `${targets.length} 个候选` }))
     head.append(left)
     const right = el('div', { class: 'oc-row' })
-    right.append(el('span', { class: 'oc-xs oc-off oc-nowrap', text: `${targets.length} 个候选` }))
     right.append(
       menu({
         label: '更多',
@@ -227,7 +289,21 @@ export function createChainTab({ host, onNeedPoll }) {
       card.append(mutedLine('还没有候选 —— 加一个，GATE 才有得试。'))
     } else {
       const sel = state.selected?.chain === chain ? state.selected.ref : null
-      const listWrap = el('div', { class: targets.length > 5 ? 'oc-list-scroll' : '' })
+      // kit 的行是 role=option / tabindex=-1（roving tabindex）→ 容器按 listbox 做，
+      // 焦点留在容器上，用 aria-activedescendant 指向当前行。
+      const listWrap = el('div', {
+        class: targets.length > 5 ? 'oc-list-scroll' : '',
+        'data-chain-list': chain,
+        role: 'listbox',
+        tabindex: '0',
+        'aria-label': `${chain} 的候选（↑/↓ 选 · Alt+↑/↓ 换位 · Enter 换模型 · Delete 删除）`,
+      })
+      listWrap.addEventListener('keydown', (event) => onListKeydown(event, chain, section, snapshot))
+      queueMicrotask(() => {
+        if (!sel) return
+        const row = [...listWrap.querySelectorAll('.oc-sdk-row')].find((r) => (r.textContent || '').includes(sel))
+        if (row?.id) listWrap.setAttribute('aria-activedescendant', row.id)
+      })
       listWrap.append(
         list({
           ariaLabel: `${chain} 的候选`,
@@ -254,23 +330,23 @@ export function createChainTab({ host, onNeedPoll }) {
       // 选中之后才出现的动作条（同权按钮不成群：这里最多四个，而且针对的是"这一个候选"）
       if (sel) {
         const at = targets.indexOf(sel)
-        const bar = el('div', { class: 'oc-row oc-row-between', 'data-act': 'row-actions' })
+        const bar = el('div', { class: 'oc-row oc-row-between', 'data-act': 'row-actions', 'data-ref': sel, role: 'group', 'aria-label': `已选 ${sel}` })
         bar.append(el('span', { class: 'oc-xs oc-off oc-truncate', text: `已选：${sel}` }))
         const acts = el('div', { class: 'oc-row' })
         acts.append(
-          button({ label: '上移', variant: 'ghost', size: 'sm', disabled: at <= 0, data: { 'data-act': 'up' }, onClick: () => moveSelected(chain, sel, -1, section, snapshot) }).node,
-          button({ label: '下移', variant: 'ghost', size: 'sm', disabled: at < 0 || at >= targets.length - 1, data: { 'data-act': 'down' }, onClick: () => moveSelected(chain, sel, +1, section, snapshot) }).node,
+          button({ label: '上移', variant: 'ghost', size: 'sm', disabled: at <= 0, data: { 'data-act': 'up', 'aria-keyshortcuts': 'Alt+ArrowUp' }, onClick: () => moveSelected(chain, sel, -1, section, snapshot) }).node,
+          button({ label: '下移', variant: 'ghost', size: 'sm', disabled: at < 0 || at >= targets.length - 1, data: { 'data-act': 'down', 'aria-keyshortcuts': 'Alt+ArrowDown' }, onClick: () => moveSelected(chain, sel, +1, section, snapshot) }).node,
           button({
             label: '换模型',
             variant: 'secondary',
             size: 'sm',
-            data: { 'data-act': 'swap' },
+            data: { 'data-act': 'swap', 'aria-keyshortcuts': 'Enter' },
             onClick: () => {
               state.picker = { chain, replaceRef: sel, query: '', manual: '' }
               render(section, snapshot)
             },
           }).node,
-          button({ label: '删除', variant: 'ghost', size: 'sm', data: { 'data-act': 'remove' }, onClick: () => removeSelected(chain, sel, section, snapshot) }).node,
+          button({ label: '删除', variant: 'ghost', size: 'sm', data: { 'data-act': 'remove', 'aria-keyshortcuts': 'Delete' }, onClick: () => removeSelected(chain, sel, section, snapshot) }).node,
         )
         bar.append(acts)
         card.append(bar)
@@ -494,6 +570,8 @@ export function createChainTab({ host, onNeedPoll }) {
       section.append(button({ label: '＋ 新增链', variant: 'ghost', size: 'sm', data: { 'data-act': 'add-chain' }, onClick: () => { state.addingChain = true; render(section, snapshot) } }).node)
     }
 
+    const live = el('div', { class: 'oc-sr', 'aria-live': 'polite', text: state.live })
+    section.append(live)
     section.append(renderAgents(section, snapshot))
     section.append(renderPolicy(section, snapshot))
     section.append(el('div', { class: 'oc-xs oc-off', text: `配置文件：${path}` }))
