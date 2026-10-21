@@ -124,7 +124,7 @@ All in `.github/workflows/`, all offline (no provider traffic):
 
 | Action | Trigger | What it does |
 |---|---|---|
-| CI | push `main` / PR | plugin tests (ubuntu node 22 + 24, windows node 24) · npm pack content assertions (license texts present, `docs/` and secrets absent) · extension gate + byte-identical rebuild · engine config sample · public-tree gate |
+| CI | push `main` / PR | plugin tests (ubuntu node 22 + 24, windows node 24) · coverage hard floor (`scripts/coverage-baseline.json`, only ratchets up) · npm pack content assertions (license texts present, `docs/` and secrets absent) · extension gate + byte-identical rebuild · engine config sample · public-tree gate |
 | Release (normal path) | `bash scripts/publish-repo.sh --tag` | export public tree → tag `v<plugin version>` on that commit → CI publishes with OIDC (SLSA provenance) |
 | Release (manual) | push tag `v<version>` or dispatch the workflow | tag↔version check → version not published → tests → pack assertions → `npm publish --access public --provenance` |
 
