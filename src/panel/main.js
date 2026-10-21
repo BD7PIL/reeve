@@ -1,10 +1,10 @@
-// REEVE 面板 —— 三个 tab：链（**唯一会写**的地方：~/.reeve/chain.json）/ 统计 / 台账。
+// REEVE 面板 —— 三个 tab：链（**唯一会写**的地方：GATE 的 fallback 配置）/ 统计 / 台账。
 //
 // 分工：
-//   ① 链：三个档位的回退链编辑（↑↓ 排序 · 换 · 增删），显式「保存并生效」→ 写链文件 →
-//      插件 5 秒内热更运行时的 routing_rules → 快照的 appliedAt 变化 = 真生效。
-//   ② 统计：Bifrost 归因（代理侧） + 编排台账（本机）—— 数字由**插件**聚合后写进快照，
-//      面板不自己算（面板在 iframe 里，没有网络能力，够不着 /api/logs）。
+//   ① 链：每条链的候选顺序编辑（↑↓ 排序 · 换 · 增删），显式「保存并生效」→ 写配置 →
+//      GATE 5 秒内热更 → 快照的 gate 段变化 = 真生效。
+//   ② 统计：GATE 归因（代理侧） + 编排台账（本机）—— 数字由**插件**聚合后写进快照，
+//      面板不自己算（面板在 iframe 里，没有网络/文件能力，够不着台账原文）。
 //   ③ 台账：子任务列表 + "前台只出现编排者"的落盘证据。
 //
 // 控制面不在这里 —— 派活 / 中断在模型侧（foreman）；面板既不 startSession 也不 prompt。
@@ -79,7 +79,7 @@ function main() {
     tabs.update({
       items: [
         { id: 'chain', label: '链', count: Object.keys(snapshot?.chain?.tiers ?? {}).length || undefined },
-        { id: 'stats', label: '统计', count: snapshot?.stats?.bifrost?.total ?? undefined },
+        { id: 'stats', label: '统计', count: snapshot?.stats?.gate?.requests ?? undefined },
         { id: 'ledger', label: '台账', count: ledgerTab.count(snapshot) || undefined },
       ],
       activeId: active,
