@@ -11,37 +11,50 @@ export * from '../node_modules/@openchamber/sdk/dist/index.js'
 
 const params = new URLSearchParams(location.search)
 
-const LIGHT = {
+// 宿主主题：**逐字抄自 app 自己的主题定义**（`@openchamber/web` 里 `openchamber-light` / `openchamber-dark`）。
+// 为什么必须抄：预览要是"另一个调色板"，看到的深浅就都不是宿主里的样子（上一版的深色就是这么错的）。
+// 字段名是宿主发给 guest 的那一套（HostThemeTokens）；映射关系照抄宿主自己的组装处：
+//   background=surface.background · elevated=surface.elevated · muted=surface.mutedForeground（注意是前景）
+//   subtle=surface.subtle · mutedSurface=surface.muted · border/hover/selection/active=interactive.*
+//   primary=primary.base · focus=interactive.focusRing · status.*=status.*
+// 派生文字色（primaryText / *Text）宿主用 OKLab 对比度算过；预览用 color-mix 近似（只影响文字淡色，不影响底色与控件）。
+const mix = (color, pct, bg) => `color-mix(in srgb, ${color} ${pct}%, ${bg})`
+
+const OPENCHAMBER_LIGHT = {
   mode: 'light',
   tokens: {
-    background: '#ffffff', elevated: '#ffffff', foreground: '#1b1b1f', muted: '#6a6a74',
-    subtle: '#ececef', border: '#e2e2e6', hover: '#f4f4f6', selection: '#fde8d5',
-    focus: '#e2761f', primary: '#e2761f', mutedSurface: '#f4f4f6', elevatedForeground: '#1b1b1f',
-    active: '#e8e8ec', selectionForeground: '#8a4a10', primaryForeground: '#ffffff',
-    primaryText: '#b35c12', successText: '#1a7f4b', warningText: '#8a6100', errorText: '#c0392b',
-    infoText: '#1f5fa8', success: '#1a7f4b', warning: '#b8860b', error: '#c0392b', info: '#2f6fb8',
+    background: '#fdfcfa', elevated: '#f3f2f0', foreground: '#44443d', muted: '#696960', subtle: '#f0efec',
+    border: '#e5e1debf', hover: '#0000000a', selection: '#a9998f2b', focus: '#b3501755', active: '#00000014',
+    primary: '#b35017', mutedSurface: '#f7f6f4', elevatedForeground: '#44443d',
+    selectionForeground: mix('#a9998f', 90, '#fdfcfa'), primaryForeground: '#ffffff',
+    primaryText: mix('#b35017', 78, '#fdfcfa'),
+    successText: mix('#517734', 85, '#fdfcfa'), warningText: mix('#886914', 85, '#fdfcfa'),
+    errorText: mix('#b7493f', 84, '#fdfcfa'), infoText: mix('#2c6ebd', 85, '#fdfcfa'),
+    success: '#517734', warning: '#886914', error: '#b7493f', info: '#2c6ebd',
     font: 'system-ui, -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif',
     mono: 'ui-monospace, SFMono-Regular, Consolas, monospace',
     radius: '9px',
   },
 }
 
-const DARK = {
+const OPENCHAMBER_DARK = {
   mode: 'dark',
   tokens: {
-    background: '#0e0e10', elevated: '#1c1c1f', foreground: '#e8e8e8', muted: '#9a9aa0',
-    subtle: '#2a2a2e', border: '#33333a', hover: '#26262b', selection: '#3a2a1c',
-    focus: '#fb8b3c', primary: '#fb8b3c', mutedSurface: '#16161a', elevatedForeground: '#e8e8e8',
-    active: '#2f2f35', selectionForeground: '#fb8b3c', primaryForeground: '#211307',
-    primaryText: '#fb8b3c', successText: '#6ee7a0', warningText: '#ffd479', errorText: '#f97066',
-    infoText: '#8ab4ff', success: '#6ee7a0', warning: '#ffd479', error: '#f97066', info: '#8ab4ff',
+    background: '#120f0e', elevated: '#1b1918', foreground: '#dbd7cc', muted: '#949187', subtle: '#171616',
+    border: '#242323bf', hover: '#ffffff0f', selection: '#c8c6c52b', focus: '#da7c4755', active: '#ffffff1a',
+    primary: '#da7c47', mutedSurface: '#0e0c0b', elevatedForeground: '#dbd7cc',
+    selectionForeground: mix('#c8c6c5', 70, '#120f0e'), primaryForeground: '#ffffff',
+    primaryText: mix('#da7c47', 70, '#120f0e'),
+    successText: mix('#76ad4f', 80, '#120f0e'), warningText: mix('#c67f13', 80, '#120f0e'),
+    errorText: mix('#da5b4a', 80, '#120f0e'), infoText: mix('#479fe6', 80, '#120f0e'),
+    success: '#76ad4f', warning: '#c67f13', error: '#da5b4a', info: '#479fe6',
     font: 'system-ui, -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif',
     mono: 'ui-monospace, SFMono-Regular, Consolas, monospace',
     radius: '9px',
   },
 }
 
-const theme = params.get('theme') === 'dark' ? DARK : LIGHT
+const theme = params.get('theme') === 'dark' ? OPENCHAMBER_DARK : OPENCHAMBER_LIGHT
 const readyListeners = new Set()
 const directoryListeners = new Set()
 const sessionListeners = new Set()

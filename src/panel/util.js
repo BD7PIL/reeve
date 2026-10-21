@@ -8,7 +8,12 @@ export const el = (tag, props = {}, children = []) => {
   for (const [k, v] of Object.entries(props)) {
     if (k === 'class') node.className = v
     else if (k === 'text') node.textContent = v
-    else if (k.startsWith('data-')) node.setAttribute(k, v)
+    // 带 `-` 的键（data-* / aria-*）必须写成**属性**：`node['aria-live'] = x` 只是加了个 JS 属性，
+    // DOM 上没有它 —— 读屏与 querySelector 都看不见（踩过：播报区"存在"却查不到）。
+    // `tabindex` 同理：属性名是小写，JS 属性叫 tabIndex —— 写 tabindex 只有 setAttribute 会生效。
+    else if (k.includes('-')) node.setAttribute(k, v)
+    // `tabindex` 单说：属性名小写、JS 属性叫 tabIndex —— 直接写 k 只有当 k 正好是 'tabindex' 才对
+    else if (k === 'tabIndex' || k === 'tabindex') node.setAttribute('tabindex', v)
     else node[k] = v
   }
   for (const c of children) node.append(c)

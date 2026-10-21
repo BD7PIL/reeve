@@ -55,6 +55,8 @@ const PLAN = [
   { id: '13-stats-light', tab: 'stats', note: '统计 tab：摘要数字格 + 每条链的进度条 + provider 列表' },
   { id: '14-stats-dark', tab: 'stats', theme: 'dark', note: '统计 tab · 深色' },
   { id: '15-ledger-light', tab: 'ledger', note: '台账 tab：事实卡 + 子任务列表（点行开子会话）' },
+  { id: '17-chain-keyboard', tab: 'chain', note: '键盘：选中后 Alt+↓ 换位（W3C APG 键位；链尾再按是空操作，有守卫）', steps: [clickSel('.oc-sdk-row', 1), { key: 'ArrowDown', alt: true }] },
+  { id: '18-chain-selected-dark', tab: 'chain', theme: 'dark', note: '深色下的选中行 + 动作条（选中色来自宿主 token）', steps: [clickSel('.oc-sdk-row', 1)] },
   { id: '16-chain-dirty-discard', tab: 'chain', note: '改动后「丢弃改动」→ 回到未保存前的样子', steps: [clickSel('.oc-sdk-row', 1), click('删除'), click('丢弃改动')] },
 ]
 
@@ -138,16 +140,29 @@ const CLICK_JS = (text, nth) => `(() => {
 const CLICK_SEL_JS = (selector, nth) => `(() => {
   const hit = [...document.querySelectorAll(${JSON.stringify(selector)})][${nth}];
   if (!hit) return false;
+  hit.focus?.();
   hit.click();
   return true;
 })()`
 
+/** 往当前可见输入框里打字（React 之外也要用原生 setter，否则框架不认）。 */
 const TYPE_JS = (text) => `(() => {
   const input = [...document.querySelectorAll('input')].find((i) => i.offsetParent !== null);
   if (!input) return false;
   const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
   setter.call(input, ${JSON.stringify(text)});
   input.dispatchEvent(new Event('input', { bubbles: true }));
+  return true;
+})()`
+
+/** 键盘：事件要**从容器内部**冒泡（真用户是点了行、焦点在行上）。
+ *  这里按 `data-ref` 找到那一行再派发 —— 比 activeElement 可靠（脚本 .click() 不一定会聚焦）。 */
+const KEY_JS = (key, alt) => `(() => {
+  const ref = document.querySelector('[data-act="row-actions"]')?.getAttribute('data-ref') ?? '';
+  const rows = [...document.querySelectorAll('.oc-sdk-row')];
+  const target = rows.find((r) => (r.textContent || '').includes(ref)) || document.activeElement || document.body;
+  target.focus?.();
+  target.dispatchEvent(new KeyboardEvent('keydown', { key: ${JSON.stringify(key)}, altKey: ${alt ? 'true' : 'false'}, bubbles: true, cancelable: true }));
   return true;
 })()`
 
@@ -170,7 +185,7 @@ for (const item of PLAN.filter((p) => !only || p.id.includes(only))) {
   const width = item.width ?? 660
   await send('Emulation.setDeviceMetricsOverride', { width, height: item.height ?? 1080, deviceScaleFactor: 2, mobile: false })
   await send('Page.navigate', { url: `${base}/?tab=${item.tab}&theme=${item.theme ?? 'light'}` })
-  await wait(item.settle ?? 1500)
+  await wait(item.settle ?? 2000)
   for (const step of item.steps ?? []) {
     let ok = true
     if (step.click) ok = await evaluate(CLICK_JS(step.click, step.nth ?? 0))
@@ -178,6 +193,7 @@ for (const item of PLAN.filter((p) => !only || p.id.includes(only))) {
     else if (step.type) ok = await evaluate(TYPE_JS(step.type))
     else if (step.scrollText) ok = await evaluate(SCROLL_TEXT_JS(step.scrollText))
     else if (step.scrollSel) ok = await evaluate(SCROLL_SEL_JS(step.scrollSel, step.block ?? 'start'))
+    else if (step.key) ok = await evaluate(KEY_JS(step.key, step.alt === true))
     if (!ok) results.push({ id: item.id, note: item.note, warn: `步骤没点/打进去：${JSON.stringify(step)}` })
     await wait(700)
   }

@@ -8,7 +8,7 @@
 // 排版：一张摘要卡（数字格）+ 每条链一张卡（一次尝试一行：进度条 + 供应商构成）+ 一张 provider 列表卡。
 // 口径解释压成卡头的一行灰字 —— 上一版把它们摊成了三行正文，视觉上跟数据抢位置。
 
-import { badge, empty, list, mutedLine, progress, stat } from './kit.js'
+import { badge, empty, mutedLine, progress, stat } from './kit.js'
 import { el, fmtAgo, fmtClock, fmtMs } from './util.js'
 
 const num = (v) => (v == null ? '—' : String(v))
@@ -64,34 +64,25 @@ export function createStatsTab() {
     section.append(summary)
 
     const max = Math.max(gate.requestLatency?.max ?? 0, ...(gate.byChain ?? []).map((c) => c.latency?.max ?? 0), 1)
+    const chainCard = el('div', { class: 'oc-card' })
+    const head2 = el('div', { class: 'oc-row oc-row-between' })
+    head2.append(el('strong', { text: '按链' }))
+    head2.append(el('span', { class: 'oc-xs oc-off', text: `条长按统一量程 0 → ${fmtMs(max)}（一次调用的总耗时）` }))
+    chainCard.append(head2)
     for (const c of gate.byChain ?? []) {
-      const card = el('div', { class: 'oc-card', 'data-chain': c.chain })
-      const top = el('div', { class: 'oc-row oc-row-between' })
-      const left = el('div', { class: 'oc-row' })
-      left.append(el('strong', { text: c.chain }))
-      if (c.agent) left.append(badge({ label: `agent：${c.agent}`, tone: 'neutral' }).node)
-      top.append(left)
-      top.append(
-        el('span', {
-          class: 'oc-xs oc-off oc-num',
-          text: `${num(c.n)} 次尝试 · ${num(c.ok)}/${num(c.error)}${c.hops ? ` · 换了 ${c.hops} 次` : ''}`,
-        }),
-      )
-      card.append(top)
-      card.append(
-        progress({
-          value: Math.round((Math.min(c.latency?.p95 ?? 0, max) / max) * 100),
-          tone: c.error ? 'warning' : 'success',
-          // 标签留空：p95 在下面那行灰字里说，这里再有就重复了（条右侧的 % 表示它在统一量程里的位置）
-          label: '',
-        }).node,
-      )
-      card.append(
-        mutedLine(`尝试 p50 ${fmtMs(c.latency?.p50)} · p95 ${fmtMs(c.latency?.p95)}（量程 0 → ${fmtMs(max)}）`),
-      )
-      if (c.providers?.length) card.append(mutedLine(c.providers.map((p) => `${p.ref} ×${p.n}`).join(' · ')))
-      section.append(card)
+      const row = el('div', { class: 'oc-stat-row', 'data-chain': c.chain })
+      const name = el('span', { class: 'oc-stat-name oc-truncate' })
+      name.append(el('span', { text: c.chain }))
+      if (c.agent) name.append(el('span', { class: 'oc-xs oc-off', text: ` · ${c.agent}` }))
+      row.append(name)
+      row.append(el('span', { class: 'oc-xs oc-off oc-num oc-nowrap', text: `${num(c.n)} 次 · ${num(c.ok)}/${num(c.error)}${c.hops ? ` · 换 ${c.hops}` : ''}` }))
+      const barHost = el('span', { class: 'oc-stat-bar' })
+      barHost.append(progress({ value: Math.round((Math.min(c.latency?.p95 ?? 0, max) / max) * 100), tone: c.error ? 'warning' : 'success', label: '' }).node)
+      row.append(barHost)
+      row.append(el('span', { class: 'oc-xs oc-off oc-num oc-nowrap oc-stat-lat', text: `p50 ${fmtMs(c.latency?.p50)} · p95 ${fmtMs(c.latency?.p95)}` }))
+      chainCard.append(row)
     }
+    section.append(chainCard)
 
     if (gate.byProvider?.length) {
       const card = el('div', { class: 'oc-card' })
@@ -99,20 +90,14 @@ export function createStatsTab() {
       top.append(el('strong', { text: '按 provider' }))
       top.append(el('span', { class: 'oc-xs oc-off', text: '单次上游往返' }))
       card.append(top)
-      card.append(
-        list({
-          ariaLabel: '按 provider',
-          selectedId: null,
-          items: gate.byProvider.slice(0, 8).map((p) => ({
-            id: p.provider,
-            leading: String(p.n),
-            title: p.provider,
-            meta: `p50 ${fmtMs(p.latency?.p50)} · p95 ${fmtMs(p.latency?.p95)}`,
-            ...(p.error ? { badge: { label: `${p.error} 失败`, tone: 'warning' } } : {}),
-          })),
-          onSelect: () => {},
-        }).node,
-      )
+      for (const p of gate.byProvider.slice(0, 8)) {
+        const row = el('div', { class: 'oc-stat-row' })
+        row.append(el('span', { class: 'oc-stat-name oc-truncate', text: p.provider }))
+        row.append(el('span', { class: 'oc-xs oc-off oc-num oc-nowrap', text: `${num(p.n)} 次 · ${num(p.ok)}/${num(p.error)}` }))
+        row.append(el('span', { class: 'oc-stat-bar' }))
+        row.append(el('span', { class: 'oc-xs oc-off oc-num oc-nowrap oc-stat-lat', text: `p50 ${fmtMs(p.latency?.p50)} · p95 ${fmtMs(p.latency?.p95)}` }))
+        card.append(row)
+      }
       section.append(card)
     }
   }
