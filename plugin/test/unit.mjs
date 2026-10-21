@@ -243,7 +243,7 @@ section('名册：subagent 工具描述补名 + 与 agents/*.md 不漂移')
   const e = (o) => resolveGateEndpoint(o)
   ok('显式 gate.port 最优先', JSON.stringify(e({ gate: { port: 1234 } })) === JSON.stringify({ port: 1234, host: '127.0.0.1' }))
   ok('旧 proxy.port 作回落（迁移期配置还写着它）', e({ proxy: { port: 18081 } }).port === 18081)
-  ok('再落到配置里的 providers.reeve 端点', JSON.stringify(e({ endpoint: { port: 18080, host: '10.0.0.5' } })) === JSON.stringify({ port: 18080, host: '10.0.0.5' }))
+  ok('再落到配置里的 providers.reeve 端点', JSON.stringify(e({ endpoint: { port: 18080, host: '203.0.113.5' } })) === JSON.stringify({ port: 18080, host: '203.0.113.5' }))
   ok('什么都没有 → 默认 8080', e({}).port === 8080 && e({}).host === '127.0.0.1')
   ok('gate 同时给 port 与 host', JSON.stringify(e({ gate: { port: 1, host: '0.0.0.0' }, proxy: { port: 2 }, endpoint: { port: 3 } })) === JSON.stringify({ port: 1, host: '0.0.0.0' }))
 }

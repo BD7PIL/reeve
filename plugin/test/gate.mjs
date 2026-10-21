@@ -26,7 +26,7 @@ const ok = (label) => {
   console.log(`  ✓ ${label}`)
 }
 
-const CANARY = 'sk-CANARY-abc123XYZdef456'
+const CANARY = 'canary-CANARY-abc123XYZdef456'
 const SESSION = 'ses_abc123def456gh'
 const silent = { debug: () => {} }
 
@@ -783,8 +783,8 @@ const postJson = (gate, path, body) =>
 
 // ---- 16. 集成：多键轮转（键值不上台账） ----
 {
-  const K1 = 'sk-KEY1-aaaaaaaaaaaaaaaaaaaa'
-  const K2 = 'sk-KEY2-bbbbbbbbbbbbbbbbbbbb'
+  const K1 = 'canary-KEY1-aaaaaaaaaaaaaaaaaaaa'
+  const K2 = 'canary-KEY2-bbbbbbbbbbbbbbbbbbbb'
   const h = await harness({
     stubs: { paid: (_req, res) => SSE_OK(res) },
     providers: { paid: { auth: ['paid1', 'paid2'] } },
