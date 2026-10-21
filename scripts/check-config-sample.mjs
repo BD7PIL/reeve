@@ -63,7 +63,7 @@ if (!Array.isArray(config.plugins) || config.plugins.length === 0) problems.push
 const proxy = config.plugins?.[0]?.options?.proxy
 // 代理默认开：只有显式关掉才算"启动器形态"
 if (proxy === false || proxy?.enabled === false) {
-  problems.push('若用启动器形态（自己管 Bifrost）就该同时写 "proxy": false 并手写 providers.reeve')
+  problems.push('若关掉插件自持（gate: false）就该手写 providers.reeve 端点块')
 }
 
 if (proxy?.port !== undefined &&

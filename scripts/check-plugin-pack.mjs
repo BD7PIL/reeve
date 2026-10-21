@@ -53,15 +53,15 @@ const required = [
   'README.md',
   'LICENSE',
   'THIRD-PARTY.md',
-  'default-chain.json',
+  'default-fallback.json',
   'licenses/oh-my-opencode-slim.LICENSE',
   'licenses/open-code-review.LICENSE',
   'agents/foreman.md',
   'skills/review/SKILL.md',
   'skills/review/default.md',
   'src/index.js',
-  'src/proxy.js',
-  'src/chain.js',
+  'src/gate/gate.js',
+  'src/gate/config.js',
   'src/stats.js',
 ]
 for (const rel of required) {

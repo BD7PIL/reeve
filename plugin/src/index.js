@@ -33,17 +33,16 @@ import { Supervisor } from './supervisor.js'
 import { reconcileParent } from './reconcile.js'
 import { SnapshotWriter, buildSnapshot, projectAgentTable } from './snapshot.js'
 import { SUBAGENT_ROSTER, withRoster } from './roster.js'
-import { readSetupToken, startOwnedProxy } from './proxy.js'
 import { startGate } from './gate/gate.js'
 import { defaultFallbackConfigPath } from './gate/config.js'
 import { REEVE_TIERS, BUILTINS_TO_HIDE, mergeTierModels, pickDefaultAgent, readEndpoint } from './models.js'
-import { STATS_DEFAULTS, aggregateBifrostRows, aggregateLedger, buildStats, fetchBifrostLogs, fetchBifrostModels, mergeModelCandidates } from './stats.js'
+import { STATS_DEFAULTS, aggregateGateRows, aggregateLedger, buildStats, fetchGateModels, mergeModelCandidates, readLedgerTail } from './stats.js'
 import { loadAgents, loadSkills } from './register.js'
 import { ensureProviderBlock, reeveProviderBlock } from './config-write.js'
 
 const SUBAGENT_TOOL = 'subagent'
-/** 自持代理的默认端口（与写进配置的端点一致）。 */
-const PROXY_DEFAULT_PORT = 8080
+/** GATE（唯一代理层）的默认端口（与写进配置的端点一致）。 */
+const GATE_DEFAULT_PORT = 8080
 
 export default {
   id: PLUGIN_ID,
@@ -75,12 +74,8 @@ export default {
     // 名册注入的证据：注入成功过一次就记下来（进快照）——"藏起来不削弱委派"这条设计
     // 靠它可核对，而不是靠"模型应该看得见"。
     let roster = null
-    /** 代理层自持的状态（进快照：面板可显示、上机可核对）。必须在快照块之前声明。 */
-    let proxyState = null
-    /** GATE 的运行态（进快照）。必须在快照块之前声明。 */
+    /** GATE 的运行态（进快照：面板可显示、上机可核对）。必须在快照块之前声明。 */
     let gateState = null
-    /** 链文件的状态（代理那边在维护，这里只留引用给快照）。必须在快照块之前声明。 */
-    let chainRef = null
     /** 性能统计（进快照）。必须在快照块之前声明。 */
     let statsState = null
     /** 模型候选（面板的链编辑选择器用）。必须在快照块之前声明。 */
@@ -134,8 +129,6 @@ export default {
           version: PLUGIN_VERSION,
           agents: agentTable,
           roster,
-          proxy: proxyState,
-          chain: chainRef,
           models: modelsState,
           registered: { agents: registeredAgents, skills: registeredSkills },
           endpoint: endpointState,
@@ -154,7 +147,7 @@ export default {
     // （只加不改 / 备份 / 写完自校验 / 保留注释）。
     let endpointWrite = null
     if (options.ownEndpoint !== false) {
-      const wantPort = Number(options.proxy?.port ?? PROXY_DEFAULT_PORT)
+      const wantPort = Number(options.gate?.port ?? options.proxy?.port ?? GATE_DEFAULT_PORT)
       endpointWrite = await ensureProviderBlock({
         configDir: options.engineConfigDir ?? null,
         block: reeveProviderBlock({ port: wantPort }),
@@ -164,19 +157,19 @@ export default {
       endpointState = { status: endpointWrite.status, path: endpointWrite.path, detail: endpointWrite.detail }
     }
 
-    // ---- GATE（代理层，opt-in：options.gate.enabled；缺省关）----
-    // 启用时 **GATE 占端点口**（引擎认的还是 providers.reeve 那个 baseURL），Bifrost 挪到 +1
-    // 当"下游执行器"（guard 期内先并存；退役 Bifrost 是下一步）。失败只记日志：引擎照常跑。
+    // ---- GATE（代理层 —— 唯一入口；opt-out：`gate: false`）----
+    // 引擎认的是 `providers.reeve` 那个 baseURL，GATE 就占那个端口；路由/回退/执行/台账都在
+    // 它里面（唯一代理层，见 docs/GATE.md）。失败只记日志：引擎照常跑，模型会吵地报错。
     let gateHandle = null
-    if (options.gate?.enabled === true) {
+    if (options.gate !== false && options.gate?.enabled !== false) {
       try {
         const endpoint = await readEndpoint({})
-        const gatePort = Number(options.gate.port ?? endpoint?.port ?? PROXY_DEFAULT_PORT)
+        const gatePort = Number(options.gate?.port ?? options.proxy?.port ?? endpoint?.port ?? GATE_DEFAULT_PORT)
         gateHandle = await startGate({
           port: gatePort,
-          host: options.gate.host ?? endpoint?.host ?? '127.0.0.1',
-          configPath: options.gate.configPath ?? options.fallbackConfigPath ?? defaultFallbackConfigPath(),
-          ledgerPath: options.gate.ledgerPath ?? undefined,
+          host: options.gate?.host ?? endpoint?.host ?? '127.0.0.1',
+          configPath: options.gate?.configPath ?? options.fallbackConfigPath ?? defaultFallbackConfigPath(),
+          ledgerPath: options.gate?.ledgerPath ?? undefined,
           logger,
         })
         gateState = gateHandle.snapshot()
@@ -185,66 +178,34 @@ export default {
         gateState = { error: String(err).slice(0, 200) }
         logger.debug(`[reeve] GATE 起不来（忽略，引擎照常）：${gateState.error}`)
       }
-    }
-
-    // ---- 代理层自持（opt-in：options.proxy.enabled）----
-    // 纯插件形态：取件 → 派生链 → 拉起/复用 → 等就绪 → 收敛 → 守护。
-    // 不需要任何外部脚本；失败只记日志（代理起不来时引擎照常跑，模型会吵地报错）。
-    let proxyHandle = null
-    // 两种写法都行：`proxy: true`（简写）或 `proxy: { enabled: true, ... }`
-    // 默认开：这样配置里可以真的只写一行插件（`proxy: false` 关闭；`proxy: true` 或对象都行）
-    if (options.proxy !== false && options.proxy?.enabled !== false) {
-      // 端口不用用户重复写：从配置里的 `providers.reeve.settings.baseURL` 推（读不到就用 options/默认）
-      let opts = options.proxy === true || options.proxy === undefined ? {} : options.proxy
-      if (opts.port == null) {
-        const endpoint = await readEndpoint({})
-        if (endpoint) {
-          // GATE 开着时 Bifrost 让位（端点是 GATE 的），挪 +1
-          const shift = gateHandle ? 1 : 0
-          opts = { ...opts, port: endpoint.port + shift, host: endpoint.host }
-          logger.debug(`[reeve] 代理端口取自配置：${endpoint.host}:${endpoint.port + shift}（来自 ${endpoint.from}）`)
-        }
-      } else if (gateHandle) {
-        opts = { ...opts, port: Number(opts.port) + 1 }
-      }
-      // 状态一变就刷新快照 —— 尤其"后台取件完成、代理起来了"那一刻（否则面板会一直显示未就绪）
-      const onState = (st) => {
-        proxyState = { ready: st.ready, detail: st.detail, port: st.port, host: st.host }
-        // 链的状态对象由代理那边持续更新（热更、收敛复核都会写它）—— 这里只留引用，快照时再取
-        if (st.chain) chainRef = st.chain
-        snapshotFlush()
-      }
-      proxyHandle = await startOwnedProxy({ opts, logger, onState })
-      onState(proxyHandle)
-      logger.debug(`[reeve] 代理层自持：${proxyHandle.ready ? '就绪' : '未就绪'} —— ${proxyHandle.detail ?? '?'}`)
+      // 状态一变就刷快照 —— 尤其"起来了"或"起不来（如实报错）"这一刻。
+      // 少了这一次，消费方只能等下一次台账变化才看到 gate 段（起不来时会一直显示 null）。
+      snapshotFlush()
     }
 
     const admission = acquireAdmissionRuntime(ctx.location?.directory, { limits })
 
-    // ---- ⑦ 性能统计（Bifrost 归因 + 台账聚合 → 快照）----
-    // 为什么在插件里做而不是面板里做：面板跑在 openchamber 的 iframe 里，**没有网络能力**，
-    // 只有宿主给的 readFile 与 writeFile。而 `/api/logs`、`/v1/models` 是本机回环的 HTTP ——
-    // 只有引擎进程里的插件够得着。所以插件取数 + 聚合，面板只读快照。
+    // ---- ⑦ 性能统计（GATE 台账聚合 + 编排台账聚合 → 快照）----
+    // 为什么在插件里做而不是面板里做：面板跑在 openchamber 的 iframe 里，**没有网络/文件能力**，
+    // 只有宿主给的 readFile 与 writeFile。台账是引擎进程能读到的本地文件；模型目录是本机回环
+    // 的 HTTP（GATE 的 `/v1/models`）—— 只有插件够得着。所以插件取数 + 聚合，面板只读快照。
     const statsOpts = typeof options.stats === 'object' && options.stats !== null ? options.stats : {}
     const statsIntervalMs = Number(statsOpts.intervalMs ?? STATS_DEFAULTS.intervalMs)
     const statsLimit = Number(statsOpts.limit ?? STATS_DEFAULTS.limit)
     const statsWindowMs = Number(statsOpts.windowMs ?? STATS_DEFAULTS.windowMs)
-    // 模型目录多久刷一次。**别跟统计同频**：`/v1/models` 是一次真去上游的探测，
-    // Bifrost 会为每个 provider 记一行日志（实测一次探测 = 7 行）—— 一分钟一次会把
-    // 用户自己的归因日志灌满探测噪声。模型目录本身变化很慢，半小时足够。
+    // 模型目录多久刷一次。**别跟统计同频**：`/v1/models` 会真去上游探测池（9router 那条），
+    // 一分钟一次没必要。模型目录本身变化很慢，半小时足够。
     const modelsIntervalMs = Number(statsOpts.modelsIntervalMs ?? STATS_DEFAULTS.modelsIntervalMs)
     let statsTimer = null
-    let statsSignature = null
     let statsInFlight = false
     let lastModelsAt = 0
 
     /** 链上已经在用的模型（面板选择器的候选之一：发现不全时至少这些能选）。 */
     const chainedRefs = () => {
       const out = []
-      for (const spec of Object.values(chainRef?.tiers ?? {})) {
-        for (const t of spec?.targets ?? []) if (t?.model) out.push(`${t.provider}/${t.model}`)
-        for (const f of spec?.fallbacks ?? []) {
-          const s = String(f ?? '')
+      for (const targets of Object.values(gateState?.chain_targets ?? {})) {
+        for (const ref of targets ?? []) {
+          const s = String(ref ?? '')
           if (s && !s.endsWith('/') && s.includes('/')) out.push(s)
         }
       }
@@ -253,53 +214,35 @@ export default {
     const engineModels = () => REEVE_TIERS.map((t) => `reeve/${t.id}`)
 
     const refreshStats = async () => {
-      if (!proxyHandle || statsInFlight) return
+      if (!gateHandle || statsInFlight) return
       statsInFlight = true
       const now = Date.now()
-      const { port, host, paths } = proxyHandle
+      const nowMs = now
       try {
-        const token = await readSetupToken(paths.token)
-        if (!token) {
-          statsState = buildStats({ now, windowMs: statsWindowMs, source: 'unavailable', error: '读不到代理的 setup token（统计接口要它）', checkedAt: now })
-          snapshotFlush()
-          return
-        }
-        // 先探一行：`total_count` + 最新 id 没变就说明没有新调用 —— 省掉一次上百行的抓取
-        const probe = await fetchBifrostLogs({ port, host, token, limit: 1 })
-        if (probe.error) {
-          statsState = buildStats({ now, windowMs: statsWindowMs, source: 'unavailable', error: `读 /api/logs 失败：${probe.error}`, checkedAt: now })
-          snapshotFlush()
-          return
-        }
-        if (probe.signature && probe.signature === statsSignature && statsState?.bifrost) {
-          statsState = { ...statsState, checkedAt: now }
-          snapshotFlush()
-          return
-        }
-        const full = await fetchBifrostLogs({ port, host, token, limit: statsLimit })
-        statsSignature = full.signature
-        const bifrost = full.error ? null : aggregateBifrostRows(full.rows, { now, windowMs: statsWindowMs })
-        const ledgerAgg = aggregateLedger(ledger.all(), { now })
+        const tail = await readLedgerTail({ path: gateHandle.ledgerPath, limit: statsLimit })
+        const gateAgg = tail.error ? null : aggregateGateRows(tail.rows, { now: nowMs, windowMs: statsWindowMs })
+        const ledgerAgg = aggregateLedger(ledger.all(), { now: nowMs })
         statsState = buildStats({
-          now,
-          checkedAt: now,
+          now: nowMs,
+          checkedAt: nowMs,
           windowMs: statsWindowMs,
-          source: bifrost ? 'bifrost.api' : 'unavailable',
-          error: full.error ? `读 /api/logs 失败：${full.error}` : null,
-          bifrost,
+          source: gateAgg ? 'gate.ledger' : 'unavailable',
+          error: tail.error ? `读台账失败：${tail.error}` : null,
+          gate: gateAgg,
           orchestrate: {
             ...ledgerAgg,
             queue: { active: admission.activeCount, waiting: admission.waitingCount },
           },
         })
+        gateState = gateHandle.snapshot()
         // 顺手把模型候选也刷一遍（半小时一次；链编辑器的选择器用它）
-        if (now - lastModelsAt >= modelsIntervalMs) {
-          const discovered = await fetchBifrostModels({ port, host })
-          lastModelsAt = now
+        if (nowMs - lastModelsAt >= modelsIntervalMs) {
+          const discovered = await fetchGateModels({ port: gateHandle.port, host: gateHandle.host })
+          lastModelsAt = nowMs
           const candidates = mergeModelCandidates({ discovered: discovered.models, chained: chainedRefs(), engine: engineModels() })
           modelsState = {
-            generatedAt: now,
-            source: discovered.error ? 'chain+engine' : 'bifrost',
+            generatedAt: nowMs,
+            source: discovered.error ? 'chain+engine' : 'gate',
             error: discovered.error,
             discovered: discovered.models.length,
             candidates,
@@ -313,11 +256,11 @@ export default {
       }
     }
 
-    if (statsIntervalMs > 0 && proxyHandle) {
+    if (statsIntervalMs > 0 && gateHandle) {
       void refreshStats()
       statsTimer = setInterval(() => void refreshStats(), statsIntervalMs)
       statsTimer.unref?.()
-      logger.debug(`[reeve] 性能统计：每 ${Math.round(statsIntervalMs / 1000)}s 刷一次（近 ${statsLimit} 行 / ${Math.round(statsWindowMs / 3600000)}h 窗口）`)
+      logger.debug(`[reeve] 性能统计：每 ${Math.round(statsIntervalMs / 1000)}s 刷一次（台账尾 ${statsLimit} 行 / ${Math.round(statsWindowMs / 3600000)}h 窗口）`)
     }
     const supervisor = new Supervisor({
       ledger,
@@ -603,7 +546,6 @@ export default {
         snapshot.cancel()
         void snapshot.flush().catch(() => {})
       }
-      if (proxyHandle) void proxyHandle.dispose().catch(() => {})
       if (gateHandle) void gateHandle.dispose().catch(() => {})
       logger.debug('[reeve] 已卸载')
     }

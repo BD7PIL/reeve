@@ -92,7 +92,7 @@ export class SnapshotWriter {
  */
 export function buildSnapshot(
   records,
-  { now = Date.now(), version = null, agents = null, roster = null, proxy = null, registered = null, endpoint = null, chain = null, models = null, stats = null, gate = null } = {},
+  { now = Date.now(), version = null, agents = null, roster = null, registered = null, endpoint = null, models = null, stats = null, gate = null } = {},
 ) {
   const tasks = records
     .map((r) => ({
@@ -123,36 +123,13 @@ export function buildSnapshot(
     version,
     agentTable: agents,
     roster,
-    proxy,
     gate,
-    chain: chain == null ? null : projectChain(chain),
     models,
     registered,
     endpoint,
     stats,
     counts,
     tasks,
-  }
-}
-
-/**
- * 链的状态 → 面板要的那一小块。
- * `tiers` 就是 `~/.reeve/chain.json` 里那份形状（面板编辑的就是它，写回也是它）。
- */
-export function projectChain(chain) {
-  if (!chain) return null
-  return {
-    tiersPath: chain.tiersPath ?? null,
-    source: chain.source ?? null,
-    from: chain.from ?? null,
-    derived: chain.derived === true,
-    tiers: chain.tiers ?? null,
-    problems: chain.problems ?? [],
-    error: chain.error ?? null,
-    changedAt: chain.changedAt ?? null,
-    appliedAt: chain.appliedAt ?? null,
-    drift: chain.drift ?? null,
-    lastError: chain.lastError ?? null,
   }
 }
 

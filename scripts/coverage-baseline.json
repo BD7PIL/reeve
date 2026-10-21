@@ -4,12 +4,29 @@
   "_history": [
     "2026-10-21 初版：entry.mjs（入口装配 4 项）+ ensureBinary 分支用例落地后首测。",
     "2026-10-21 棘轮：startOwnedProxy 此前在测试里从未被执行（v8 不计未执行函数的分支，分母只有 55 条，虚高）。加平台 pin 与 22 项冒烟后它真执行了，分母涨到 131——一并把收敛/链热更/守护自愈/退化路径覆盖到 89%（proxy.js 39→95 语句、87→89 分支）。基线随改进一起抬。",
-    "2026-10-22 GATE 落地（代理层第一步）：新增 plugin/src/gate/（config/classify/state/lanes/gate + 21 项离线验收）与全局棘轮 91/79/91。**与计划（88/85/90）的偏差如实记**：语句/函数超（97/97），分支 80 没到 85——未覆盖的臂主要是管理面非环回 403、dispose 的 catch 臂、上游异常形状的分支；下一片（面板/日志）继续抬。"
+    "2026-10-22 GATE 落地（代理层第一步）：新增 plugin/src/gate/（config/classify/state/lanes/gate + 21 项离线验收）与全局棘轮 91/79/91。**与计划（88/85/90）的偏差如实记**：语句/函数超（97/97），分支 80 没到 85——未覆盖的臂主要是管理面非环回 403、dispose 的 catch 臂、上游异常形状的分支；下一片（面板/日志）继续抬。",
+    "2026-10-22 Bifrost 退役（拆）：删 src/proxy.js + src/chain.js（曾把全局抬到 91/79/91 的高覆盖代码），全局分母与构成同时变了。删完先掉到 87.6/76.7/88.9 —— **不降基线**，改为补测把三项都顶回来并更高：新增 test/wiring.mjs（GATE 真起服务/快照 gate 段/统计读台账/端口被占如实报错/热更）、test/runtime.mjs（事件流认终态含墙钟 timedOut 归因/工具体三条路径/端点自举四形状/hydrate 截断）、test/guard.mjs（Bifrost 不许回流的静态守门）、stats.mjs 重写（GATE 台账聚合请求/尝试两级口径）、gate.mjs 补 classify/lanes 边角。全局 95.6/79.3/96.5，index.js 96.9/67.6/93.8，src/gate/ 97.5/84.7/96.9，新增 src/stats.js 路径 99.4/85.3/100。"
   ],
-  "global": { "statements": 91, "branches": 79, "functions": 91 },
+  "global": {
+    "statements": 95,
+    "branches": 79,
+    "functions": 96
+  },
   "paths": {
-    "src/index.js": { "statements": 66, "branches": 46, "functions": 52 },
-    "src/proxy.js": { "statements": 95, "branches": 89, "functions": 93 },
-    "src/gate/": { "statements": 96, "branches": 80, "functions": 96 }
+    "src/index.js": {
+      "statements": 96,
+      "branches": 67,
+      "functions": 93
+    },
+    "src/stats.js": {
+      "statements": 99,
+      "branches": 85,
+      "functions": 100
+    },
+    "src/gate/": {
+      "statements": 97,
+      "branches": 84,
+      "functions": 96
+    }
   }
 }

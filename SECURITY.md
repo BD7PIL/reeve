@@ -2,21 +2,20 @@
 
 ## Scope
 
-REEVE has three parts with different trust boundaries:
+REEVE has two parts with different trust boundaries:
 
 - **`plugin/`** runs inside the opencode v2 engine process. It registers tools
-  and hooks, reads the engine config and `~/.reeve/`, writes the ledger and
-  `~/.reeve/chain.json`, and may start the Bifrost proxy binary that sits next
-  to it. It does not open a network listener and does not store provider API
-  keys — provider credentials stay in the engine's own `auth.json` and are
-  never copied by REEVE.
-- **`proxy/`** configures [Bifrost](https://github.com/maximhq/bifrost), an
-  upstream Apache-2.0 project. Bifrost itself is a local routing proxy; report
-  vulnerabilities in Bifrost to its upstream project.
+  and hooks, reads the engine config, `~/.reeve/`, and the GATE config
+  (`~/.config/opencode/reeve/fallback.jsonc`), writes the orchestration ledger
+  and the GATE request ledger (`~/.reeve/gate.jsonl` — which holds key *names*,
+  never key values), and opens exactly one listener: the loopback GATE endpoint
+  the engine talks to. Its admin routes (`/gate/session*`) are loopback-only.
+  Provider API keys stay in the engine's own `auth.json`; REEVE reads them for
+  the configured providers and never copies them anywhere.
 - **`extensions/reeve/`** is an openchamber guest panel. It runs in a sandboxed
   frame with the host's `readFile` / `writeFile` bridge and writes exactly one
-  path, `~/.reeve/chain.json`. It never starts sessions, prompts, or edits the
-  engine config.
+  path, the GATE fallback config. It never starts sessions, prompts, or edits
+  the engine config.
 
 ## Reporting a vulnerability
 
@@ -27,7 +26,7 @@ contact the maintainer (`@BD7PIL`) directly. Include:
 - affected version (`plugin/package.json` or the extension tag),
 - the smallest configuration and steps that reproduce it,
 - what an attacker gains (config write, tool execution, credential exposure),
-- whether the engine config, the ledger, or the chain file is affected.
+- whether the engine config, the ledger, or the GATE config is affected.
 
 You can expect an acknowledgement within a few days. Confirmed issues are
 fixed in a patch release and credited unless you ask otherwise.

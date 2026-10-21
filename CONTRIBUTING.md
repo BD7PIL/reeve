@@ -1,7 +1,7 @@
 # Contributing to REEVE
 
 REEVE is an orchestration layer for opencode v2: agent definitions, a ledger
-plugin that fills the gaps v2 leaves, a Bifrost proxy chain, and an openchamber
+plugin that fills the gaps v2 leaves, the in-process GATE proxy layer, and an openchamber
 console. Contributions that fit those boundaries are welcome.
 
 ## Before you start

@@ -3,9 +3,10 @@
   "name": "reeve",
   "version": "0.1.4",
   "license": "MIT",
+  "//": "REEVE 在 ocrc 实例里的装配说明。**没有二进制工件** —— 代理层是插件内的 GATE（纯 JS），不需要任何本地服务（Bifrost 时代已结束）。",
   "host": {
     "node": ">=22",
-    "os": ["linux"],
+    "os": ["linux", "win32"],
     "arch": ["x64"]
   },
   "enginePlugin": {
@@ -14,17 +15,6 @@
     "entry": "~/.ocrc/components/reeve/node_modules/@bd7pil/reeve",
     "requiresPeer": []
   },
-  "artifacts": [
-    {
-      "id": "bifrost",
-      "version": "2.3.0",
-      "url": "https://downloads.getmaxim.ai/bifrost/v2.3.0/linux/amd64/bifrost-http",
-      "sha256": "e62a6425218d037e2aea10446f1f4ad1979291902623575a04b7e0ed46886f92",
-      "size": 134264480,
-      "dest": "~/.reeve/proxy/bifrost-http",
-      "mode": "0755"
-    }
-  ],
   "extension": {
     "apiVersion": 1,
     "id": "reeve",
@@ -35,16 +25,14 @@
       "~/.reeve-staging/.reeve/**",
       "~/.reeve/**",
       "~/.local/share/opencode/reeve/**",
-      "~/.reeve-staging/.local/share/opencode/reeve/**"
+      "~/.reeve-staging/.local/share/opencode/reeve/**",
+      "~/.config/opencode/reeve/**",
+      "~/.config/opencode/reeve-staging/**"
     ]
   },
-  "configSync": ["reeve.jsonc", "agents"],
+  "//configSync": "GATE 的 fallback 配置（链/策略）由 ocrc 的 sync 推；reeve.jsonc 与 agents 是插件自身的配置面。",
+  "configSync": ["reeve.jsonc", "agents", ".config/opencode/reeve"],
   "verify": [
-    {
-      "kind": "file",
-      "path": "~/.reeve/proxy/bifrost-http",
-      "mode": "0755"
-    },
     { "kind": "engine-plugin-loaded", "spec": "@bd7pil/reeve" },
     { "kind": "guest-installed", "id": "reeve" }
   ]

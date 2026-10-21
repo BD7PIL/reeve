@@ -1,6 +1,6 @@
 # GATE —— reeve 的代理层（已实施：立 1–4）
 
-> 状态（2026-10-22）：**核心已落地并通过离线验收**；Bifrost 退役/面板/9router/发布是后续步骤（见 §6）。
+> 状态（2026-10-22）：**核心落地 + 开发机真机验收全过 + Bifrost 已退役**；面板/9router 两端/发布是后续步骤（见 §6）。
 > 需求来源：v1 时代那套 fallback（per-agent 候选链 + 错误分类触发 + 冷却/粘性）在 v2 没有等价物 → 由 GATE 复现。
 
 ## 1. 交付物（本次）
@@ -27,12 +27,12 @@
 
 ## 3. 验收（已跑）
 
-- 离线：`node plugin/test/gate.mjs` → 21 项全过（快乐路径、429/500/额度文案/503+retry-after/连不上、流已开始不换、不可重试透传、上限与 502 体、冷却与粘性（两种 restore）、流式不缓冲（握手）、客户端断开传播、provider 重试、多键轮转、目录 TTL 与降级、会话桥与 next、热更（好/坏文件）、dispose 幂等、端口冲突、边界 400/413/404/502、零出网）。
+- 离线：`node plugin/test/gate.mjs` → 23 项全过（快乐路径、429/500/额度文案/503+retry-after/连不上、流已开始不换、不可重试透传、上限与 502 体、冷却与粘性（两种 restore）、流式不缓冲（握手）、客户端断开传播、provider 重试、多键轮转、目录 TTL 与降级、会话桥与 next、热更（好/坏文件）、dispose 幂等、端口冲突、边界 400/413/404/502、零出网）。
 - 门槛：lint 干净（新文件 0 警告）；全量 plugin 测试绿；覆盖率 global 91/79/91 + `src/gate/` 96/80/96（分支 80 未到计划写的 85，差距如实记在 `scripts/coverage-baseline.json` 的 `_history`）。
 
 ## 4. 与邻居的关系（本轮之后）
 
-- **Bifrost**：仍在跑（18080），但职责将由 GATE 接管后**退役**（下一步："拆"）；`providers.reeve` 端点值不变（仍 18080）。
+- **Bifrost**：**已退役**（自持/pin/链派生/工件全部删除，`plugin/test/guard.mjs` 静态守门禁止回流）。引擎只认 `providers.reeve`（18080）→ GATE。
 - **9router**：作为免费车道 provider（`127.0.0.1:20128`，`key: 'none'`）；候选写 `9router/oc/<model>` 单模型目标（不用它的 combo）。
 - **omo**：只做行为规格来源；不引入其代码或 prompt 字面。
 - **ocrc**：只负责把 `~/.config/opencode/reeve/` 同步到对端（`INSTANCE_SYNC_ENTRIES` 加条目）——下一步做。
@@ -45,8 +45,8 @@
 
 ## 6. 后续步骤（按计划）
 
-1. **验**：插件里以 `options.gate.enabled` 接线（默认关），开发机跑 `scripts/accept-gate.sh` ②–⑨。
-2. **拆**：删 Bifrost 自持/pin/配置派生 + provision 工件 + ocrc 步骤 + tiers 并入 + `stats.js` 改读 GATE 台账 + 静态守门（禁止 Bifrost 回流）。
+1. ~~**验**~~：已完成 —— `scripts/accept-gate.sh` 开发机全过（引擎经 GATE 拿免费链、停 9router 顺位切付费、粘性、冷却、热更 ≤5s、付费直连不回归）。
+2. ~~**拆**~~：已完成 —— 删 Bifrost 自持/pin/链派生 + provision 工件 + `stats.js` 改读 GATE 台账 + `test/guard.mjs` 静态守门。
 3. **面板**：链编辑器（每 agent 一条）+ 策略 + 台账视图；manifest/`check.mjs` 调整；产物重建。
 4. **9router**：两端常驻（pin + `scripts/setup-9router.mjs`）。
 5. **发布**：reeve 0.1.5 → ocrc pin + sync → 对端升级 → 两端验收 + 回滚文档 + 记忆。

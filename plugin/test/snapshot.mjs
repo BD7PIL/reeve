@@ -138,43 +138,40 @@ const dir = await mkdtemp(join(tmpdir(), 'reeve-snap-'))
   ok('agent 表投影进快照（前台可见 / 隐藏 / subagent）')
 }
 
-// ---- 9. 链 / 模型候选 / 统计三节进快照（面板编辑与展示全靠它们） ----
+// ---- 9. GATE / 模型候选 / 统计三节进快照（面板编辑与展示全靠它们） ----
 {
-  const chainState = {
-    tiersPath: '/home/x/.reeve/chain.json',
-    source: '/home/x/.reeve/chain.json',
-    from: '/repo/default-chain.json',
-    derived: true,
-    tiers: { pro: { targets: [{ provider: 'a', model: 'm' }], fallbacks: ['b/n'] } },
-    problems: ['flash: 没写 targets，把第一个 fallback 提为首选'],
-    error: null,
-    changedAt: 11,
-    appliedAt: 12,
-    drift: { drifted: false, missing: [], changed: [], extra: [] },
-    lastError: null,
-    base: { huge: '不该进快照' },
+  const gateState = {
+    port: 18080,
+    version: '0.1.0',
+    from: '/home/x/.config/opencode/reeve/fallback.jsonc',
+    chains: ['tier1', 'free-first', 'default'],
+    chain_targets: { tier1: ['a/m', 'b/n'], 'free-first': ['9router/oc/free'] },
+    providers: ['9router', 'zhipuai-coding-plan'],
+    policy: { max_fallback_attempts: 3, cooldown_seconds: 60, restore_primary_after_cooldown: false },
+    ledger: '/home/x/.reeve/gate.jsonl',
+    problems: ['tier1: 认不出的 target "x"'],
+    sessions: { sessions: 2, cooling: 1 },
   }
   const snap = buildSnapshot([], {
-    chain: chainState,
-    models: { source: 'bifrost', discovered: 20, candidates: [{ ref: 'a/m', provider: 'a', model: 'm', context: null, sources: ['chain'] }] },
-    stats: { generatedAt: 5, source: 'bifrost.api', windowMs: 1000, bifrost: { total: 1 }, orchestrate: { totals: { n: 0 }, queue: { active: 1, waiting: 2 } } },
+    gate: gateState,
+    models: { source: 'gate', discovered: 20, candidates: [{ ref: 'a/m', provider: 'a', model: 'm', context: null, sources: ['chain'] }] },
+    stats: { generatedAt: 5, source: 'gate.ledger', windowMs: 1000, gate: { requests: 1 }, orchestrate: { totals: { n: 0 }, queue: { active: 1, waiting: 2 } } },
   })
-  assert.equal(snap.chain.tiersPath, '/home/x/.reeve/chain.json')
-  assert.equal(snap.chain.derived, true)
-  assert.deepEqual(snap.chain.tiers.pro.fallbacks, ['b/n'], '档位形状原样进快照（面板编辑的就是它）')
-  assert.equal(snap.chain.appliedAt, 12, '已生效的时刻要在（面板靠它判断"保存并生效"成功）')
-  assert.equal(snap.chain.drift.drifted, false)
-  assert.equal(snap.chain.problems.length, 1)
-  assert.ok(!('base' in snap.chain), '链基座不整份塞进快照（它是几 KB 的部署配置）')
+  assert.equal(snap.gate.port, 18080)
+  assert.equal(snap.gate.from, '/home/x/.config/opencode/reeve/fallback.jsonc')
+  assert.deepEqual(snap.gate.chain_targets.tier1, ['a/m', 'b/n'], '链的候选原样进快照（面板选择器的候选来源）')
+  assert.equal(snap.gate.policy.max_fallback_attempts, 3)
+  assert.equal(snap.gate.sessions.cooling, 1)
+  assert.equal(snap.gate.problems.length, 1)
   assert.equal(snap.models.candidates[0].ref, 'a/m')
   assert.equal(snap.stats.orchestrate.queue.waiting, 2)
 
-  // 没有链/没有统计时是 null，不假装有
+  // 没有 GATE/没有统计时是 null，不假装有
   const bare = buildSnapshot([])
-  assert.equal(bare.chain, null)
+  assert.equal(bare.gate, null)
   assert.equal(bare.models, null)
   assert.equal(bare.stats, null)
-  ok('快照三节：chain（投影+已生效）/ models / stats，缺席即 null')
+  ok('快照三节：gate（运行态+链候选）/ models / stats，缺席即 null')
 }
 
 console.log(`\n快照测试：${passed} 项全过`)

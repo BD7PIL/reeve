@@ -2,15 +2,16 @@
 
 > **In English:** this package is the whole REEVE system for opencode v2: eight
 > agent definitions, the review skill, the task ledger with concurrency gates,
-> wall-clock supervision and cross-restart reconciliation, the self-hosted
-> Bifrost proxy with chain hot-reload, and performance stats. It fills the
+> wall-clock supervision and cross-restart reconciliation, the in-process
+> GATE proxy layer (routing, fallback chains, ledger, model catalog), and
+> performance stats. It fills the
 > gaps v2 leaves open (`task_status`, silent child death, concurrency limits,
 > timeouts) without ever writing `agents.*.model` — that key belongs to
 > openchamber. Install with `{ "model": "reeve/pro", "plugins":
 > ["@bd7pil/reeve"] }` and nothing else needs to live in the config directory.
 > The rest of this document is the detailed Chinese reference.
 
-包里就是**整个系统**：8 个 agent + review skill + 记账/闸门/墙钟/对账 + 代理自持（Bifrost 链热更）+ 性能统计。
+包里就是**整个系统**：8 个 agent + review skill + 记账/闸门/墙钟/对账 + GATE 代理层（路由/回退/台账/目录，热更 ≤5s）+ 性能统计。
 配置目录里不需要放任何 REEVE 文件——装插件、写两行配置即可（见下「安装」）。
 
 v2 原生缺的那几条，全靠这个插件补齐：

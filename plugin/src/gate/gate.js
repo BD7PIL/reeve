@@ -178,7 +178,9 @@ export async function startGate({
     return data
   }
 
+  let reqSeq = 0
   const doChat = async (req, res) => {
+    const reqId = ++reqSeq
     let bodyText
     try {
       bodyText = await readBody(req, maxBodyBytes)
@@ -241,14 +243,14 @@ export async function startGate({
 
       if (netError) {
         const detail = String(netError?.message ?? netError).slice(0, 160)
-        note(attemptRow({ ts: new Date(t0).toISOString(), chainName: plan.chainName, agent: plan.agent, attempt, status: 'error', code: null, latencyMs: now() - t0, retries, detail }))
+        note(attemptRow({ ts: new Date(t0).toISOString(), chainName: plan.chainName, agent: plan.agent, attempt, status: 'error', code: null, latencyMs: now() - t0, retries, detail, req: reqId, n: i + 1 }))
         attemptsSeen.push({ provider: attempt.provider.id, model: attempt.model, code: null, reason: 'network' })
         sessions.noteFailure(sessionID ?? '(anon)', plan.chainName, attemptKey(attempt))
         continue
       }
 
       if (upstream.ok) {
-        note(attemptRow({ ts: new Date(t0).toISOString(), chainName: plan.chainName, agent: plan.agent, attempt, status: 'ok', code: upstream.status, latencyMs: now() - t0, retries }))
+        note(attemptRow({ ts: new Date(t0).toISOString(), chainName: plan.chainName, agent: plan.agent, attempt, status: 'ok', code: upstream.status, latencyMs: now() - t0, retries, req: reqId, n: i + 1 }))
         sessions.noteSuccess(sessionID ?? '(anon)', plan.chainName, attemptKey(attempt), plan.keys)
         res.writeHead(upstream.status, {
           'content-type': upstream.headers?.get?.('content-type') ?? 'application/json',
@@ -261,7 +263,7 @@ export async function startGate({
 
       const text = (await upstream.text().catch(() => '')).slice(0, errorTextBytes)
       const cls = classifyFailure({ status: upstream.status, text, headers: upstream.headers, policy: config.policy })
-      note(attemptRow({ ts: new Date(t0).toISOString(), chainName: plan.chainName, agent: plan.agent, attempt, status: 'error', code: upstream.status, latencyMs: now() - t0, retries, detail: cls.reason }))
+      note(attemptRow({ ts: new Date(t0).toISOString(), chainName: plan.chainName, agent: plan.agent, attempt, status: 'error', code: upstream.status, latencyMs: now() - t0, retries, detail: cls.reason, req: reqId, n: i + 1 }))
       attemptsSeen.push({ provider: attempt.provider.id, model: attempt.model, code: upstream.status, reason: cls.reason })
       if (!cls.retryable) {
         // 不换：把上游的应答原样交给调用方（这是它的错，不是链的错）
@@ -275,7 +277,7 @@ export async function startGate({
       sessions.noteFailure(sessionID ?? '(anon)', plan.chainName, attemptKey(attempt))
     }
 
-    sendJson(res, 502, { error: { message: '所有候选都失败', chain: plan.chainName, attempts: attemptsSeen } })
+    sendJson(res, 502, { error: { message: '所有候选都失败', chain: plan.chainName, req: reqId, attempts: attemptsSeen } })
   }
 
   const server = createServer((req, res) => {
@@ -367,8 +369,17 @@ export async function startGate({
     flushLedger: () => ledger.flush(),
     snapshot: () => ({
       port: server.address()?.port ?? port,
+      version: GATE_VERSION,
       from: configFrom,
       chains: Object.keys(config.chains),
+      chain_targets: Object.fromEntries(Object.entries(config.chains).map(([name, spec]) => [name, [...(spec?.targets ?? [])]])),
+      providers: Object.keys(config.providers),
+      policy: {
+        max_fallback_attempts: config.policy.max_fallback_attempts,
+        cooldown_seconds: config.policy.cooldown_seconds,
+        restore_primary_after_cooldown: config.policy.restore_primary_after_cooldown,
+      },
+      ledger: ledger.path,
       problems,
       sessions: sessions.snapshot(),
     }),

@@ -278,6 +278,61 @@ const postJson = (gate, path, body) =>
   ok('尝试计划：顺序/跳过三类原因/上限/冷却顺延/全冷保留首试/多键轮转与降级')
 }
 
+// ---- 2b. lanes 的边角：解析/取键/路径/路由/转发头/构造（纯函数逐条钉） ----
+{
+  // parseTarget：空、无斜杠、半引用（provider/）、多斜杠模型名
+  assert.equal(parseTarget(null), null, 'null 不炸')
+  assert.equal(parseTarget(undefined), null, 'undefined 不炸')
+  assert.equal(parseTarget(''), null, '空串 → null')
+  assert.equal(parseTarget('noslash'), null, '没有斜杠 → null')
+  assert.equal(parseTarget('p/'), null, 'provider/ 不算合法候选（GATE 不做"同模型换 provider"的 wildcard；写进配置会被归到 problems）')
+  assert.deepEqual(parseTarget(' 9r/oc/x '), { provider: '9r', model: 'oc/x' }, '两侧空白剥掉、只在第一个斜杠切')
+  assert.equal(modelsPathOf({ path: '/api/coding/paas/v4/chat/completions' }), '/api/coding/paas/v4/models', 'chat/completions → models')
+  assert.equal(modelsPathOf({}), '/v1/models', '没写 path → 默认 /v1/models')
+  assert.equal(modelsPathOf({ path: '/x/v1' }), '/x/v1', '不该动的路径原样（只有 chat/completions 才换）')
+
+  // resolveKeyFor：env 有值/空串、auth 里非字符串、字面量、none
+  assert.deepEqual(resolveKeyFor({ key: 'none', id: 'p' }), { key: null, name: null }, 'none = 明确不需要键')
+  assert.deepEqual(resolveKeyFor({ id: 'p', key: 'env.K' }, { env: { K: 'kv' } }), { key: 'kv', name: 'env.K' })
+  assert.equal(resolveKeyFor({ id: 'p', key: 'env.K' }, { env: { K: '' } }), null, 'env 是空串 = 没有')
+  assert.equal(resolveKeyFor({ id: 'p', auth: [123, 'a'] }, { auth: { a: { key: 42 } } }), null, 'auth 里的非字符串键值不认')
+  assert.equal(resolveKeyFor({ id: 'p', auth: ['a'] }, { auth: { a: { key: 'k' } } }).name, 'auth:a')
+
+  // routeFor：空 model / 空链 / 未知 provider-model
+  const config = cfg({
+    providers: { p: { base_url: 'http://p.test', key: 'none' } },
+    chains: { c: { targets: ['p/m1'] }, empty: { targets: [] } },
+    default_chain: 'c',
+  })
+  config.env = {}
+  config.auth = {}
+  const sessions = createSessionStore({ now: () => 0, policy: { cooldown_seconds: 60 } })
+  assert.equal(routeFor({ model: '' }, { config, sessions }), null, '空 model → 没有路由')
+  assert.equal(routeFor({ model: 42 }, { config, sessions }), null, '非字符串 model → 没有路由')
+  assert.ok(config.problems.some((p) => p.includes('chains.empty')), '空链在配置加载期就被丢掉并进 problems（如实报）')
+  assert.equal(routeFor({ model: 'empty' }, { config, sessions }).chain, 'c', '裸名兜底走 default_chain（不会静默停在空链上）')
+  assert.equal(routeFor({ model: 'p/m1' }, { config, sessions }).kind, 'direct', '直投 provider/model')
+  assert.equal(routeFor({ model: 'c' }, { config, sessions }).kind, 'chain', '链名命中')
+
+  // planAttempts：直投（非链）不读 session 指针；forwardedHeaders 跳过 undefined；构造非 JSON 体
+  const directPlan = planAttempts(routeFor({ model: 'p/m1' }, { config, sessions }), { config, sessions, sessionID: 'ses_x' })
+  assert.equal(directPlan.chainName, 'direct:p/m1', '直投的 chainName = direct:<ref>')
+  assert.equal(directPlan.ordered[0].key, null, 'key:none → 没有 authorization')
+
+  const fh = forwardedHeaders({ a: undefined, b: 'x', Host: 'h', 'content-length': '1', 'x-opencode-session-id': 'ses_1' }, { authorization: 'Bearer k' })
+  assert.deepEqual(fh, { b: 'x', 'x-opencode-session-id': 'ses_1', authorization: 'Bearer k' }, '剥逐跳/长度头、跳过 undefined、authorization 由车道替换')
+
+  const attempt = { provider: config.providers.p, model: 'm1', key: null, authorization: null }
+  const raw = buildUpstreamRequest({ attempt, inHeaders: { 'content-type': 'text/plain' }, bodyText: 'not json', version: '0.1.0' })
+  assert.equal(raw.body, 'not json', '非 JSON 体原样透传（不去猜）')
+  assert.equal(raw.headers['content-type'], 'text/plain', 'native 车道保留调用方的 content-type')
+  assert.equal(raw.headers.accept, '*/*', 'accept 缺省 */*')
+  assert.equal(raw.headers['user-agent'], 'reeve-gate/0.1.0')
+  const row = attemptRow({ ts: 'T', chainName: 'c', agent: null, attempt, status: 'error', code: 500, latencyMs: Number.NaN })
+  assert.equal(row.latency_ms, null, '非有限延迟 → null（不写 NaN）')
+  ok('lanes 边角：解析/取键/路径/路由/转发头/构造（逐条）')
+}
+
 // ---- 3. 错误分类 ----
 {
   const policy = { retry_on_errors: [401, 402, 403, 429, 500, 503, 529] }
@@ -302,6 +357,41 @@ const postJson = (gate, path, body) =>
   assert.equal(c({ status: 200, text: 'ok' }).retryable, false, '正常响应不换')
   assert.equal(statusOf({ text: 'HTTP 503 from upstream', policy }), 503, 'statusOf 从文本提取白名单数字')
   ok('错误分类：永不换/必换/白名单/嵌套码/文本兜底/安全阀/retry-after')
+}
+
+// ---- 3b. 错误分类的边角（嵌套形状 / 各语义臂 / statusOf 的兜底） ----
+{
+  const policy = { retry_on_errors: [401, 402, 403, 429, 500, 503, 529] }
+  const c = (o) => classifyFailure({ ...o, policy })
+  // statusOf：嵌套五处 + 文本兜底 + 一个都不是 → null
+  assert.equal(statusOf({ error: { status: 502 } }), 502, 'error.status')
+  assert.equal(statusOf({ error: { data: { status: 500 } } }), 500, 'error.data.status')
+  assert.equal(statusOf({ error: { error: { statusCode: 529 } } }), 529, 'error.error.statusCode')
+  assert.equal(statusOf({ error: { error: { status: 429 } } }), 429, 'error.error.status')
+  assert.equal(statusOf({ error: { cause: { statusCode: 503 } } }), 503, 'error.cause.statusCode')
+  assert.equal(statusOf({ error: { cause: { status: 500 } } }), 500, 'error.cause.status')
+  assert.equal(statusOf({ error: { message: 'boom 503 now' }, policy }), 503, 'error.message 里的白名单数字')
+  assert.equal(statusOf({ policy }), null, '一处都没有 → null')
+  assert.equal(statusOf({ status: 42 }), null, '两位状态码不算（<100）')
+  // NEVER：上下文超限的其它写法
+  assert.equal(c({ text: 'too many tokens for this model' }).reason, 'never:context', 'too many tokens 永不换')
+  assert.equal(c({ text: '上下文长度超出限制' }).reason, 'never:context', '中文上下文超限')
+  // ALWAYS：quota 家族 / 模型不存在 / 缺键
+  assert.equal(c({ text: 'resource exhausted' }).reason, 'always:quota')
+  assert.equal(c({ text: 'out of credits' }).reason, 'always:quota')
+  assert.equal(c({ text: 'Payment Required' }).reason, 'always:quota')
+  assert.equal(c({ text: '模型不存在' }).reason, 'always:model', '中文模型不存在')
+  assert.equal(c({ text: 'model not supported here' }).reason, 'always:model')
+  assert.equal(c({ text: 'missing api key' }).reason, 'always:key')
+  assert.equal(c({ text: 'api key not set' }).reason, 'always:key')
+  // 显式信号：data.isRetryable + 安全阀（408/425 也算安全）
+  assert.equal(c({ status: 408, error: { data: { isRetryable: true } } }).reason, 'explicit', 'data.isRetryable + 408')
+  assert.equal(c({ status: 400, error: { data: { isRetryable: true } } }).reason, 'explicit-unsafe-status', 'data.isRetryable + 400 → 拒绝')
+  // 文本兜底：中英文各一 + 白名单数字（文本里）
+  assert.equal(c({ status: 502, text: '请求过于频繁' }).retryable, true, '中文限流文案')
+  assert.equal(c({ status: 502, text: 'service unavailable' }).retryable, true, 'service unavailable')
+  assert.equal(c({ status: 502, text: 'HTTP 529 overloaded' }).reason.startsWith('text'), true, '裸数字 / 文案都算文本兜底')
+  ok('错误分类边角：statusOf 八处形状 / NEVER 与 ALWAYS 各臂 / 显式信号安全阀 / 文本兜底')
 }
 
 // ---- 4. 会话状态机（假时钟） ----
@@ -385,7 +475,7 @@ const postJson = (gate, path, body) =>
   const rotated = await readFile(`${path}.1`, 'utf8')
   const current = await readFile(path, 'utf8')
   const row = JSON.parse(current.trim().split('\n')[0])
-  assert.deepEqual(Object.keys(row).sort(), ['agent', 'chain', 'code', 'detail', 'key', 'lane', 'latency_ms', 'model', 'provider', 'retries', 'status', 'ts'].sort(), '台账字段齐全')
+  assert.deepEqual(Object.keys(row).sort(), ['agent', 'chain', 'code', 'detail', 'key', 'lane', 'latency_ms', 'model', 'n', 'provider', 'req', 'retries', 'status', 'ts'].sort(), '台账字段齐全')
   assert.ok(rotated.length > 0, '超上限轮转到 .1')
   assert.ok(!`${rotated}${current}`.includes(CANARY), '台账里没有密钥材料')
   const bad = createLedger({ path: join(dir, 'nope', '\u0000bad'), logger: silent })

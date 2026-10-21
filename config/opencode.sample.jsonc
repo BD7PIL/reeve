@@ -5,23 +5,23 @@
 //     写完自校验，校验不过就还原；你的注释与其它键一个都不动）
 //   · 注册三个档位模型；把内置 build/plan/general/explore 藏起来；默认 agent = foreman
 //   · 注册 8 个 agent 与 review skill（都在插件包里，配置目录不用放文件）
-//   · 起代理（取件 128MB → 拉起/复用 → 守护/收敛 + **链热更**），链来自 ~/.reeve/chain.json
-//     （面板可编辑）→ ~/.config/opencode/reeve.jsonc → 插件自带的 default-chain.json
-//   · 台账、链文件与快照落在 ~/.reeve/
+//   · 起 GATE（插件内的代理层：路由/回退/执行/台账/目录；**热更 ≤5s**，
+//     配置在 ~/.config/opencode/reeve/fallback.jsonc（面板可编辑）→ 插件自带的 default-fallback.json）
+//   · 台账、快照落在 ~/.reeve/；GATE 台账 = ~/.reeve/gate.jsonl
 //
 // ⚠️ `"model"` 这一行**别删**（实测，见 PROGRESS §6.11）：
 //   裸 `opencode run`（不带 --model/--agent）用的是**客户端自带的默认模型**，
 //   服务端会照用 —— 哪怕 agent 上注册了 reeve/pro。实测症状：消息里 agent=foreman 但
 //   model=opencode/minimax-…，代理侧一条日志都没有（静默旁路，很难发现）。
-//   写上 `"model": "reeve/pro"` 之后，裸 run 也走档位（Bifrost 里能看到 rule=reeve/pro）。
+//   写上 `"model": "reeve/pro"` 之后，裸 run 也走档位（GATE 台账里 chain=tier1）。
 //   openchamber 的 composer 默认模型同理 —— 想"模型面只剩 3 个"，就得让默认落在 reeve/*。
 //
 // 想关掉其中任何一项，就在 options 里写：
-//   proxy: false            —— 不要插件自持代理（自己用启动器形态管 Bifrost）
+//   gate: false             —— 不要代理层（自己手写 providers.reeve 指到别处）
 //   ownEndpoint: false      —— 不要插件写 providers.reeve（自己手写那三行）
-//   stats: false            —— 不轮询代理的 /api/logs（面板的统计 tab 会显示"拿不到"）
-//   chainFilePath: '<路径>'  —— 链文件不在 <HOME>/.reeve/chain.json 时指路
-//   engineConfigDir/decrease —— 引擎配置目录不是 <HOME>/.config/opencode 时指路
+//   stats: { intervalMs: 0 } —— 不轮询 GATE 台账（面板的统计 tab 会一直空着）
+//   gate: { configPath }    —— 链/策略配置不在默认位置时指路
+//   engineConfigDir         —— 引擎配置目录不是 <HOME>/.config/opencode 时指路
 //
 // 手写那三行长这样（想自己掌控端点时就写）：
 //   "providers": { "reeve": { "package": "@ai-sdk/openai-compatible",

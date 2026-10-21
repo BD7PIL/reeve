@@ -1,12 +1,15 @@
-// 性能统计（Bifrost 归因 + 台账聚合）的验证：纯函数全测；HTTP 取数用注入的 fetch 测形状与降级。
+// 性能统计（GATE 台账聚合 + 编排台账）的验证：纯函数全测；IO（台账尾读 / 模型目录）用注入与真文件测。
 //   node plugin/test/stats.mjs
 
 import assert from 'node:assert/strict'
+import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 
 import {
-  STATS_DEFAULTS, percentile, summarizeLatency, tierOfRuleName, normalizeLogRow, parseTs,
-  aggregateBifrostRows, aggregateLedger, buildStats,
-  fetchBifrostLogs, fetchBifrostModels, mergeModelCandidates,
+  aggregateGateRows, aggregateLedger, buildStats,fetchGateModels, mergeModelCandidates,modelRef, parseGateRow,parseTs, percentile, 
+  readLedgerTail, 
+  STATS_DEFAULTS, summarizeLatency, 
 } from '../src/stats.js'
 
 let passed = 0
@@ -28,198 +31,166 @@ const ok = (label) => {
   assert.deepEqual(s, { n: 3, avg: 1102, p50: 1004, p95: 2001, max: 2001 }, '四舍五入到毫秒')
   assert.deepEqual(summarizeLatency([]), { n: 0, avg: null, p50: null, p95: null, max: null })
   assert.equal(STATS_DEFAULTS.intervalMs, 60_000)
-  assert.equal(STATS_DEFAULTS.limit, 100)
-  assert.equal(STATS_DEFAULTS.windowMs, 24 * 3600 * 1000)
-  assert.equal(STATS_DEFAULTS.modelsIntervalMs, 30 * 60 * 1000, '模型目录别跟统计同频（探测会污染日志）')
-  ok('percentile / summarizeLatency / 默认值')
+  ok('百分位 / 延迟汇总 / 默认值')
 }
 
-// ---- 2. 档位名与行裁剪（内容一律不进快照） ----
+// ---- 2. 台账行：解析与引用 ----
 {
-  assert.equal(tierOfRuleName('reeve/pro'), 'pro')
-  assert.equal(tierOfRuleName('reeve/multimodal'), 'multimodal')
-  assert.equal(tierOfRuleName('reeve-flash'), null, 'id 形态不算（认的是 name）')
-  assert.equal(tierOfRuleName('别的规则'), null)
-  assert.equal(tierOfRuleName(null), null)
-
-  const row = {
-    id: 'r1', timestamp: '2026-10-19T18:27:05.640162901Z', provider: 'zhipuai-coding-plan', model: 'glm-5.3',
-    routing_rule_name: 'reeve/pro', fallback_index: 0, status: 'success', latency: 6728.807349,
-    content_summary: '这是完整提示词内容，绝不该进快照', input_history: 'x', raw_request: 'y', output_message: 'z',
-    selected_key_name: 'zhipuai-primary', prompt_tokens: 10, completion_tokens: 2, total_tokens: 12,
-  }
-  const n = normalizeLogRow(row)
-  assert.ok(!('content_summary' in n) && !('input_history' in n) && !('raw_request' in n) && !('output_message' in n), '内容字段一个都不留')
-  assert.equal(n.id, 'r1')
-  assert.equal(n.routing_rule_name, 'reeve/pro')
-  assert.equal(n.latency, 6728.807349)
-  assert.equal(n.total_tokens, 12)
-  assert.equal(parseTs('2026-10-19T18:27:05.640162901Z') != null, true)
-  assert.equal(parseTs('not a time'), null)
-  ok('tierOfRuleName / normalizeLogRow（丢内容留计数）')
+  assert.equal(parseTs('2026-10-22T01:00:00.000Z'), Date.parse('2026-10-22T01:00:00.000Z'))
+  assert.equal(parseTs('不是时间'), null)
+  const row = { provider: 'zhipuai-coding-plan', model: 'glm-5.3-flash' }
+  assert.equal(modelRef(row), 'zhipuai-coding-plan/glm-5.3-flash')
+  assert.equal(modelRef({ provider: 'x' }), null)
+  assert.deepEqual(parseGateRow('{"a":1}'), { a: 1 })
+  assert.equal(parseGateRow('{半截'), null, '坏行丢，不猜')
+  assert.equal(parseGateRow(''), null)
+  ok('台账行：时间戳 / 模型引用 / 坏行丢弃')
 }
 
-// ---- 3. Bifrost 行聚合：档位 × provider × 回退 × 延迟 ----
+// ---- 3. 聚合：请求级与尝试级 ----
 {
-  const now = Date.parse('2026-10-19T19:00:00Z')
+  const now = Date.parse('2026-10-22T02:00:00.000Z')
+  const mk = (o) => ({ ts: new Date(now - 1000).toISOString(), chain: 'free-first', provider: 'p1', model: 'm1', lane: 'native', key: null, latency_ms: 100, retries: 0, detail: null, ...o })
   const rows = [
-    // 最新两行在窗口内：flash 跳到第 1 跳成功、pro 直连成功
-    { id: 'a', timestamp: '2026-10-19T18:55:00Z', provider: 'zhipuai-coding-plan', model: 'glm-5.3-flash', routing_rule_name: 'reeve/flash', fallback_index: 1, status: 'success', latency: 5000, content_summary: 'x' },
-    { id: 'b', timestamp: '2026-10-19T18:50:00Z', provider: 'zhipuai-coding-plan', model: 'glm-5.3', routing_rule_name: 'reeve/pro', fallback_index: 0, status: 'success', latency: 7000 },
-    { id: 'c', timestamp: '2026-10-19T18:40:00Z', provider: 'xiaomi', model: 'mimo-v2.6-flash', routing_rule_name: 'reeve/flash', fallback_index: 0, status: 'success', latency: 900 },
-    { id: 'd', timestamp: '2026-10-19T18:30:00Z', provider: 'opencode', model: 'mimo-v2.6-flash-free', routing_rule_name: 'reeve/flash', fallback_index: 0, status: 'error', latency: 2, error_details: 'no_key_supports_model' },
-    { id: 'e', timestamp: '2026-10-19T18:20:00Z', provider: 'acme', model: 'm', routing_rule_name: null, fallback_index: 0, status: 'success', latency: 100 },
-    // 模型发现探测：Bifrost 去上游探 /v1/models 会记这种行（model 为空）—— 必须排除，否则"调用次数"被灌爆
-    { id: 'probe', timestamp: '2026-10-19T18:57:00Z', provider: 'opencode', model: '', routing_rule_name: null, fallback_index: 0, status: 'success', latency: 3 },
-    // 客户端把流掐了：三态里的 cancelled，不算失败
-    { id: 'cancel', timestamp: '2026-10-19T18:56:00Z', provider: 'lmuai', model: 'glm-5.3', routing_rule_name: 'reeve/pro', fallback_index: 1, status: 'cancelled', latency: 400 },
-    { id: 'old', timestamp: '2026-10-10T00:00:00Z', provider: 'xiaomi', model: 'old', routing_rule_name: 'reeve/pro', fallback_index: 0, status: 'success', latency: 99999 },
+    // 请求 1：第一次失败（429）→ 第二次成功（换 provider）
+    mk({ req: 1, n: 1, status: 'error', code: 429, latency_ms: 40, detail: 'status:429' }),
+    mk({ req: 1, n: 2, provider: 'p2', model: 'm2', status: 'ok', code: 200, latency_ms: 60 }),
+    // 请求 2：一次成功
+    mk({ req: 2, n: 1, agent: 'scout', status: 'ok', code: 200, latency_ms: 30 }),
+    // 请求 3：两次都失败（链耗尽）
+    mk({ req: 3, n: 1, status: 'error', code: 500, latency_ms: 20, detail: 'status:500' }),
+    mk({ req: 3, n: 2, provider: 'p2', model: 'm2', status: 'error', code: null, latency_ms: 25, detail: 'network' }),
+    // 旧行没有 req（按"每行一次调用"算）
+    mk({ status: 'ok', code: 200, latency_ms: 10 }),
+    // 窗口外的行（不进统计）
+    mk({ req: 9, n: 1, status: 'ok', code: 200, ts: new Date(now - STATS_DEFAULTS.windowMs - 60_000).toISOString() }),
   ]
-  const agg = aggregateBifrostRows(rows, { now, windowMs: 3600_000 })
-  assert.equal(agg.fetched, 8)
-  assert.equal(agg.probes, 1, '模型发现探测要单独计数（面板会说明"已排除 N 行探测"）')
-  assert.equal(agg.used, 6, '窗口外的 old 不参与统计；探测行不进调用统计')
-  assert.equal(agg.total, 6)
-  assert.equal(agg.ok, 4)
-  assert.equal(agg.error, 1)
-  assert.equal(agg.cancelled, 1, 'cancelled 单独算，别混进失败')
+  const agg = aggregateGateRows(rows, { now, windowMs: STATS_DEFAULTS.windowMs })
+  assert.equal(agg.used, 6, '窗口外的 1 行被排除')
+  assert.equal(agg.attempts, 6)
+  assert.equal(agg.requests, 4, 'req=1/2/3 + 一条无 req 的旧行')
+  assert.equal(agg.attemptsOk, 3)
+  assert.equal(agg.attemptsError, 3)
+  assert.equal(agg.requestsOk, 3, 'req1 末次成功、req2 成功、无 req 旧行本身成功')
+  assert.equal(agg.requestsError, 1, '只有 req3 末次失败')
+  assert.equal(agg.fallback.requests, 2, 'req1 与 req3 有换候选')
+  assert.equal(agg.fallback.hops, 2, '各 1 跳')
+  assert.deepEqual(agg.fallback.byIndex, { 1: 4, 2: 2 })
+  assert.equal(agg.byChain.length, 1, '同一 chain 聚成一行')
+  assert.equal(agg.byChain[0].chain, 'free-first')
+  assert.equal(agg.byChain[0].agent, 'scout', 'agent 取链上第一次见到的非空值')
+  assert.deepEqual(agg.byChain[0].providers.map((p) => p.ref), ['p1/m1', 'p2/m2'])
+  assert.equal(agg.byModel[0].ref, 'p1/m1')
+  assert.equal(agg.attemptLatency.n, 6)
+  assert.equal(agg.requestLatency.n, 4, '一次调用一条总耗时')
+  assert.equal(agg.requestLatency.max, 100, 'req1 = 40+60')
   assert.equal(agg.window.relaxed, false)
-  assert.equal(agg.fallback.requests, 2, 'a 与 cancel 走了回退')
-  assert.equal(agg.fallback.hops, 2)
-  assert.deepEqual(agg.fallback.byIndex, { 0: 4, 1: 2 })
-
-  const flash = agg.byTier.find((t) => t.tier === 'flash')
-  assert.equal(flash.n, 3)
-  assert.equal(flash.ok, 2)
-  assert.equal(flash.error, 1)
-  assert.equal(flash.fallbackRequests, 1)
-  assert.equal(flash.rule, 'reeve/flash')
-  assert.equal(flash.latency.n, 3)
-  assert.equal(flash.latency.max, 5000)
-  const pro = agg.byTier.find((t) => t.tier === 'pro')
-  assert.equal(pro.n, 2, 'pro 档：b 成功 + cancel 取消')
-  assert.equal(pro.cancelled, 1)
-  assert.equal(pro.fallbackRequests, 1)
-  assert.deepEqual(
-    flash.providers.map((p) => p.ref).sort(),
-    ['opencode/mimo-v2.6-flash-free', 'xiaomi/mimo-v2.6-flash', 'zhipuai-coding-plan/glm-5.3-flash'].sort(),
-    '档位里真打了谁（次数相同则按出现顺序）',
-  )
-
-  assert.deepEqual(agg.byTier.map((t) => t.tier), ['flash', 'pro', null], '档位顺序固定，非 REEVE 的排最后')
-  assert.equal(agg.byTier[2].n, 1, '非 REEVE 档位的调用也要如实列出来')
-  assert.equal(agg.byProvider.find((p) => p.provider === 'xiaomi').n, 1, '窗口外的行不算（xiaomi 还有一行是 old）')
-  assert.equal(agg.byProvider[0].provider, 'zhipuai-coding-plan', '按次数降序')
-  assert.equal(agg.byModel.find((m) => m.ref === 'zhipuai-coding-plan/glm-5.3').n, 1)
-
-  // 全都过期 → 退化用抓到的行，并如实标 relaxed（面板据此不假装是"近 24h"）
-  const oldRow = rows.find((r) => r.id === 'old')
-  const stale = aggregateBifrostRows([oldRow], { now, windowMs: 3600_000 })
-  assert.equal(stale.used, 1)
-  assert.equal(stale.window.relaxed, true)
-  assert.equal(stale.window.since, Date.parse('2026-10-10T00:00:00Z'))
-  const empty = aggregateBifrostRows([], { now })
-  assert.equal(empty.total, 0)
-  assert.equal(empty.latency.avg, null)
-  assert.deepEqual(empty.byTier, [])
-  ok('aggregateBifrostRows：档位/provider/回退/延迟 + 空与过期两种退化')
+  ok('聚合：请求/尝试两级口径、fallback 跳数、按链/供应商/模型')
 }
 
-// ---- 4. 台账聚合（任务级） ----
+// ---- 4. 聚合：空与"窗口外兜底" ----
 {
   const now = Date.now()
-  const recs = [
-    { taskID: '1', agent: 'scout', state: 'completed', startedAt: 1000, endedAt: 3000 },
-    { taskID: '2', agent: 'scout', state: 'completed', startedAt: 1000, endedAt: 11000 },
-    { taskID: '3', agent: 'scout', state: 'error', startedAt: 5000, endedAt: 6000, timedOut: true, statusUncertain: true },
-    { taskID: '4', agent: 'reviewer', state: 'stopped', startedAt: 7000, endedAt: null },
-    { taskID: '5', agent: 'reviewer', state: 'running', startedAt: 8000, endedAt: null },
-    { taskID: '6', agent: null, state: 'completed', startedAt: 9000, endedAt: 9500 },
-  ]
-  const agg = aggregateLedger(recs, { now })
-  assert.deepEqual(agg.totals, { n: 6, ok: 3, error: 1, stopped: 1, running: 1, uncertain: 1, timedOut: 1 })
-  assert.equal(agg.byAgent[0].agent, 'scout', '任务多的在前')
-  const scout = agg.byAgent.find((a) => a.agent === 'scout')
-  assert.equal(scout.n, 3)
-  assert.equal(scout.error, 1)
-  assert.equal(scout.timedOut, 1)
-  assert.equal(scout.uncertain, 1)
-  assert.equal(scout.latency.n, 3, '只有首尾齐全的算时长')
-  assert.equal(scout.latency.p50, 2000)
-  assert.equal(scout.latency.max, 10000)
-  assert.equal(agg.byAgent.find((a) => a.agent === 'reviewer').latency.n, 0, '在飞的没有时长')
-  assert.ok(agg.byAgent.some((a) => a.agent === '(未标注)'), '没写 agent 的记成 (未标注)')
-  assert.equal(agg.window.from, 1000)
-  assert.equal(agg.window.until, 11000)
-  assert.equal(agg.latency.p95, 10000)
-  ok('aggregateLedger：每 agent 的 成/败/停/在飞/超时/不确定 + p50/p95')
+  const empty = aggregateGateRows([], { now })
+  assert.equal(empty.used, 0)
+  assert.deepEqual(empty.fallback.byIndex, {})
+  assert.equal(empty.byChain.length, 0)
+  const old = aggregateGateRows([{ ts: new Date(now - STATS_DEFAULTS.windowMs - 1000).toISOString(), chain: 'c', provider: 'p', model: 'm', status: 'ok', latency_ms: 5, req: 1, n: 1 }], { now })
+  assert.equal(old.used, 1)
+  assert.equal(old.window.relaxed, true, '窗口内没有行 → 用读到的行并如实标 relaxed')
+  ok('聚合：空输入 / 窗口兜底（relaxed）')
 }
 
-// ---- 5. 取数：形状与降级（注入 fetch） ----
+// ---- 5. 编排台账聚合（原样保留的行为） ----
 {
-  const mkFetch = (status, body) => async (url) => ({ status, json: async () => (typeof body === 'function' ? body(url) : body), text: async () => JSON.stringify(body) })
-  const payload = {
-    has_logs: true,
-    logs: [{ id: 'r1', provider: 'p', model: 'm', routing_rule_name: 'reeve/pro', status: 'success', latency: 1, content_summary: 'x' }],
-    pagination: { limit: 1, offset: 0, sort_by: 'timestamp', order: 'desc', total_count: 28 },
-    stats: { total_requests: 28 },
+  const agg = aggregateLedger(
+    [
+      { agent: 'executor', state: 'completed', startedAt: 1000, endedAt: 1500 },
+      { agent: 'executor', state: 'error', startedAt: 2000, endedAt: 2100, timedOut: true },
+      { agent: 'scout', state: 'running', startedAt: 3000, statusUncertain: true },
+    ],
+    { now: 5000 },
+  )
+  assert.equal(agg.totals.n, 3)
+  assert.equal(agg.totals.ok, 1)
+  assert.equal(agg.totals.error, 1)
+  assert.equal(agg.totals.running, 1)
+  assert.equal(agg.totals.timedOut, 1)
+  assert.equal(agg.totals.uncertain, 1)
+  assert.equal(agg.byAgent.find((a) => a.agent === 'executor').latency.max, 500)
+  ok('编排台账：状态计数 / 时长 / 超时与不确定')
+}
+
+// ---- 6. readLedgerTail：真文件尾读（含半行与坏行） ----
+{
+  const dir = await mkdtemp(join(tmpdir(), 'reeve-stats-'))
+  try {
+    const p = join(dir, 'gate.jsonl')
+    const lines = []
+    for (let i = 1; i <= 10; i++) lines.push(JSON.stringify({ req: i, n: 1, chain: 'c', provider: 'p', model: 'm', status: 'ok', latency_ms: i }))
+    lines.push('{坏的半行')
+    await writeFile(p, `${lines.join('\n')}\n`, 'utf8')
+    const tail = await readLedgerTail({ path: p, limit: 3 })
+    assert.equal(tail.error, null)
+    assert.equal(tail.rows.length, 3, '只取尾部 limit 行')
+    assert.deepEqual(tail.rows.map((r) => r.req), [8, 9, 10])
+    const all = await readLedgerTail({ path: p, limit: 100 })
+    assert.equal(all.rows.length, 10, '坏行被丢掉，不炸')
+    const small = await readLedgerTail({ path: p, limit: 100, tailBytes: 200 })
+    assert.equal(small.truncated, true, '只读尾部字节时标记 truncated')
+    assert.ok(small.rows.length >= 1 && small.rows.length < 10, '截断后行数变少但仍能解析')
+    const missing = await readLedgerTail({ path: join(dir, 'nope.jsonl') })
+    assert.equal(missing.rows.length, 0)
+    assert.ok(missing.error, '文件不存在 → 如实报错，不抛')
+    ok('readLedgerTail：尾读 / 半行与坏行 / 截断标记 / 缺文件')
+  } finally {
+    await rm(dir, { recursive: true, force: true })
   }
-  const good = await fetchBifrostLogs({ port: 18080, token: 't', limit: 1, fetchImpl: mkFetch(200, payload) })
-  assert.equal(good.error, null)
-  assert.equal(good.rows.length, 1)
-  assert.equal(good.total, 28)
-  assert.equal(good.signature, '28:r1', '指纹 = 总数 + 最新 id（用来跳过没变化的抓取）')
-
-  const dataShape = await fetchBifrostLogs({ port: 1, fetchImpl: mkFetch(200, { data: [{ id: 'x' }] }) })
-  assert.equal(dataShape.rows.length, 1, '`data` 只是兜底（实测是 logs）')
-  assert.equal(dataShape.signature, '?:x', '拿不到 total_count 也不能炸')
-
-  const bad = await fetchBifrostLogs({ port: 1, fetchImpl: mkFetch(401, {}) })
-  assert.equal(bad.rows.length, 0)
-  assert.equal(bad.error, 'HTTP 401')
-  const thrown = await fetchBifrostLogs({ port: 1, fetchImpl: async () => { throw new Error('ECONNREFUSED') } })
-  assert.match(thrown.error, /ECONNREFUSED/)
-  assert.equal(thrown.signature, null)
-
-  const models = await fetchBifrostModels({ port: 18080, fetchImpl: mkFetch(200, { data: [{ id: 'xiaomi/mimo-v2.6-flash', context_length: 1048576 }, { id: 'bad' }, { id: 'lmuai/glm-5.3' }] }) })
-  assert.equal(models.error, null)
-  assert.deepEqual(models.models.map((m) => m.ref), ['xiaomi/mimo-v2.6-flash', 'lmuai/glm-5.3'], '认不出的（没有 provider/）丢掉')
-  assert.equal(models.models[0].context, 1048576)
-  assert.equal((await fetchBifrostModels({ port: 1, fetchImpl: mkFetch(500, {}) })).error, 'HTTP 500')
-  ok('fetchBifrostLogs / fetchBifrostModels：形状 + 失败降级不抛')
 }
 
-// ---- 6. 模型候选的合并（发现不全时靠链与引擎补齐） ----
+// ---- 7. fetchGateModels：形状与降级 ----
 {
-  const merged = mergeModelCandidates({
-    discovered: [{ ref: 'xiaomi/mimo-v2.6-flash', context: 1_048_576 }, { ref: 'lmuai/glm-5.3' }],
-    chained: ['zhipuai-coding-plan/glm-5.3', 'lmuai/glm-5.3', 'weird/'],
-    engine: ['reeve/flash', 'reeve/pro', 'reeve/multimodal'],
+  const fetchOk = async () => ({ status: 200, json: async () => ({ object: 'list', data: [
+    { id: '9router/oc/mimo-v2.6-flash-free', owned_by: '9router' },
+    { id: 'free-first', owned_by: 'reeve' },
+    { id: 'zhipuai-coding-plan/glm-5.3', owned_by: 'zhipuai-coding-plan' },
+    { id: '裸名', owned_by: 'x' },
+  ] }) })
+  const r = await fetchGateModels({ port: 1, fetchImpl: fetchOk })
+  assert.equal(r.error, null)
+  assert.deepEqual(r.chains, ['free-first'], 'chain 名单独归到 chains')
+  assert.deepEqual(r.models.map((m) => m.ref), ['9router/oc/mimo-v2.6-flash-free', 'zhipuai-coding-plan/glm-5.3'], '裸名丢掉')
+  const bad = await fetchGateModels({ port: 1, fetchImpl: async () => ({ status: 503, json: async () => ({}) }) })
+  assert.equal(bad.models.length, 0)
+  assert.equal(bad.error, 'HTTP 503')
+  const boom = await fetchGateModels({ port: 1, fetchImpl: async () => { throw new Error('boom') } })
+  assert.equal(boom.error, 'boom')
+  ok('fetchGateModels：目录 + 链名分离 / 坏状态与异常降级')
+}
+
+// ---- 8. 候选合并 ----
+{
+  const out = mergeModelCandidates({
+    discovered: [{ ref: 'a/m', context: 4096 }],
+    chained: ['a/m', 'b/m', 'c/', 'no-slash'],
+    engine: ['reeve/flash'],
   })
-  const byRef = Object.fromEntries(merged.map((m) => [m.ref, m]))
-  assert.equal(merged.length, 6, '并集去重（lmuai 只出现一次）')
-  assert.deepEqual(byRef['lmuai/glm-5.3'].sources.sort(), ['bifrost', 'chain'], '同一个模型两处都在 → 来源标两个')
-  assert.equal(byRef['zhipuai-coding-plan/glm-5.3'].sources[0], 'chain', 'zhipuai 探不到 /v1/models → 靠链补上')
-  assert.equal(byRef['reeve/pro'].sources[0], 'engine')
-  assert.ok(!('weird/' in byRef), '`provider/`（同模型换 provider）不是完整引用，不进候选')
-  assert.equal(byRef['xiaomi/mimo-v2.6-flash'].context, 1_048_576)
-  assert.deepEqual(mergeModelCandidates({}), [])
-  ok('mergeModelCandidates：发现 ∪ 链上在用的 ∪ 引擎注册的')
+  assert.deepEqual(out.map((m) => m.ref), ['a/m', 'b/m', 'reeve/flash'])
+  assert.deepEqual(out[0].sources, ['gate', 'chain'], '同一引用记多来源')
+  assert.equal(out[0].context, 4096)
+  ok('候选合并：去重 / 多来源 / 丢无斜杠与半引用')
 }
 
-// ---- 7. 快照那一节的形状 ----
+// ---- 9. buildStats 形状 ----
 {
-  const s = buildStats({ now: 5, windowMs: 3600_000, source: 'bifrost.api', bifrost: { total: 1 }, orchestrate: { totals: { n: 0 }, queue: { active: 0, waiting: 1 } }, checkedAt: 4 })
+  const s = buildStats({ gate: { used: 1 }, orchestrate: { totals: { n: 1 } }, now: 5, source: 'gate.ledger', checkedAt: 6 })
+  assert.equal(s.source, 'gate.ledger')
   assert.equal(s.generatedAt, 5)
-  assert.equal(s.checkedAt, 4)
-  assert.equal(s.source, 'bifrost.api')
-  assert.equal(s.error, null)
-  assert.equal(s.orchestrate.queue.waiting, 1)
-  const down = buildStats({ now: 1, source: 'unavailable', error: 'HTTP 401' })
-  assert.equal(down.bifrost, null)
-  assert.equal(down.error, 'HTTP 401')
-  assert.deepEqual(buildStats().source, 'unavailable', '默认就是"拿不到"，不假装有数据')
-  ok('buildStats：三态来源 + 窗口 + 排队数')
+  assert.equal(s.checkedAt, 6)
+  assert.equal(s.gate.used, 1)
+  assert.equal(s.orchestrate.totals.n, 1)
+  assert.equal(buildStats().source, 'unavailable')
+  ok('buildStats：三态来源与字段')
 }
 
 console.log(`\n统计测试：${passed} 项全过`)

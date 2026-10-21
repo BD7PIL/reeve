@@ -172,10 +172,13 @@ export function buildUpstreamRequest({ attempt, inHeaders, bodyText, version = '
   return { url, headers, body }
 }
 
-/** 台账一行（**不带任何密钥**：只记 provider id、模型、键的"名字"）。 */
-export function attemptRow({ ts, chainName, agent, attempt, status, code, latencyMs, retries = 0, detail = null }) {
+/** 台账一行（**不带任何密钥**：只记 provider id、模型、键的"名字"）。
+ *  `req` = 本次调用在本进程内的序号（把同一请求的多次尝试串起来）；`n` = 第几次尝试（1 起）。 */
+export function attemptRow({ ts, chainName, agent, attempt, status, code, latencyMs, retries = 0, detail = null, req = null, n = null }) {
   return {
     ts,
+    req,
+    n,
     chain: chainName,
     agent: agent ?? null,
     provider: attempt.provider.id,

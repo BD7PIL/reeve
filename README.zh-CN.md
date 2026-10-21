@@ -22,7 +22,7 @@ omo 在 v2 上拿到的全部支持是"加载 + 每次启动弹一个指向 OmO 
 于是**不 fork**，改为把四件事拆成四层，各用各的许可：
 
 ```
-代理层   跨 provider 回退        Bifrost（Apache-2.0）      与引擎版本无关，永不腐烂
+代理层   跨 provider 回退        GATE（插件内，自己写的）     没有二进制、没有独立服务；与引擎版本无关
 编排层   调度纪律 / 四阶段流程    prompt + agent 定义（自写）  机制 v2 原生给足，这层是文本
 记账层   台账 / 静默死亡 / 并发    本仓库的 opencode plugin     v2 只缺这八条
 审查层   代码 diff 独立审查       吸收 OCR 的规则（Apache-2.0） 不装工具，抄 rubric
@@ -60,7 +60,7 @@ omo 在 v2 上拿到的全部支持是"加载 + 每次启动弹一个指向 OmO 
 | 1 | `agents/*.md` 8 个 agent（7 个 subagent 标 `hidden`） | ✅ 权限闸门、验收独立性、多轮评审；**前台只可见 `foreman`** |
 | 2 | `plugin/` 记账层（**135** 项测试） | ✅ 并发排队 / 墙钟中断 / 跨重启对账 / 台账落账与读回 / **名册补进 `subagent` 工具描述** / **代理自持（纯插件形态）** / **链热更（≤4 s）** / **性能统计与代理侧互校** |
 | 3 | `skills/review/` 审查层 | ✅ 真 diff 抓到、带行号、结构化输出 |
-| 4 | `proxy/` Bifrost 链 + 部署脚本 + **收敛脚本** | ✅ 档位分流 / 回退 / 视觉档 / 归因（**12 处配置级问题按实测修正**） |
+| 4 | ~~`proxy/` Bifrost 链 + 部署脚本~~（**已被 GATE 取代**：插件内路由/回退/台账，无二进制） | ✅ 历史记录；现态见上文「代理层」与 [docs/GATE.md](docs/GATE.md) |
 | 5 | `extensions/reeve/` 控制台面板（**链编辑 + 统计 + 台账**） | ✅ 真装进 openchamber 2.3.3、真渲染、台账经宿主文件桥读到；**面板里改链 → 保存 → 运行时规则热更 → 显示"已生效"** |
 | 6.7 | **整个系统搬进插件包** | ✅ agent 与 skill 由插件注册；**配置目录里只剩 `opencode.jsonc`**；EL7 实测（配置目录清空后委派照常） |
 | 6.8 | **端点自举** | ✅ 配置里**只剩插件一行**：插件首次启动自己写 `providers.reeve`（只加不改/备份/自校验/保留注释）；EL7 实测 |
@@ -89,8 +89,8 @@ v2 插件 API 的真实形态（钩子真名、**`codemode:false` 才是工具�
 
 **下一步的活（都在别的仓库）**：
 1. 配置目录隔离（杠杆 = **`HOME`**，两端已实测）落进 ocrc 的实例启动行；
-2. **Bifrost 的取件/启动/守护**已在 ocrc 工作区写好并实测（[PROGRESS.md](docs/PROGRESS.md) §6.4），**待你提交**；
-3. 引擎侧的 `REEVE_VK` 注入（setup token → VK 建/轮换 → 注入 serve 行）是 §6.4 记的下一片。
+2. GATE 的配置同步（`~/.config/opencode/reeve/`）进 ocrc 的 sync 清单；
+3. 9router（免费车道）在两端的常驻安装与 pin。
 
 > 上机踩到的坑（**各自都是静默失败**：配置合法、能加载、只是必然出错）与逐条证据：
 > [docs/PROGRESS.md](docs/PROGRESS.md) §4.4（12 条）+ §5.3。
@@ -130,11 +130,8 @@ v2 插件 API 的真实形态（钩子真名、**`codemode:false` 才是工具�
   （`https://github.com/BD7PIL/reeve#reeve`，可自更新）
 
 **`provision.json`（插件包根，随 npm tarball 发布）** 是给装配器（ocrc）读的安装契约：
-插件 spec 与目录回退、Bifrost 工件（版本 + sha256 + 落点）、扩展 zip、发布后检查。
-手动安装的等价步骤就是上面两条命令，外加把 `bifrost-http`（2.3.0）放到
-`~/.reeve/proxy/` 并 `chmod 755` —— reeve 发现文件校验和匹配就不会再下载。
-二进制**按平台 pin**（`linux-x64` / `win32-x64`，Windows 上是 `bifrost-http.exe`）；
-没 pin 的平台这一层自报不可用，插件其余部分照常。
+插件 spec 与目录回退、扩展 zip、要同步的配置路径、发布后检查。
+**没有二进制工件** —— GATE 代理层是插件里的纯 JS，手动安装就是上面两条命令。
 
 ## 命名派生
 

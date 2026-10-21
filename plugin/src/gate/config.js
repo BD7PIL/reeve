@@ -2,7 +2,7 @@
 //
 // 配置来源（按序）：options.fallbackConfigPath → ~/.config/opencode/reeve-fallback.jsonc → 打包的 default-fallback.json。
 // 规则与仓库其它组件同一条：**坏文件当作"未变更"**（保留上一份好配置、如实报问题），缺文件回落打包默认。
-// jsonc 支持整行 `//` 注释（与 proxy/config.json、chain.json 同风格）。
+// jsonc 支持整行 `//` 注释（与引擎侧 opencode.jsonc 同风格）。
 import { readFile, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'

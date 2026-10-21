@@ -1,6 +1,6 @@
 // 探针 v4：可行性两测
 //  A. http.request 里整体替换 Request（把 body.model 从 reeve/pro 改成 reeve/flash）
-//     → 判据：Bifrost 日志里这条请求的 routing_rule_name 变成 reeve/flash
+//     → 判据：GATE 台账里这条请求的 chain 变成 reeve/flash
 //  B. retry 里把 decision 换成 {retry:false} → 判据：attempt 停在 2（不再往上）
 export default {
   id: 'probe-http-hooks',

@@ -3,7 +3,7 @@
 // 为什么值得钉：这里的每一条都是"引擎里到底装上了什么"的契约 ——
 // 工具注册进哪个命名空间、哪些 hook 挂上了、编排者是不是默认 agent。
 // setup() 全是 IO 编排（起代理、写快照、读配置目录），测试用 disable 开关
-// 把这些关掉（proxy:false / ownEndpoint:false / snapshotPath:null），
+// 把这些关掉（gate:false / ownEndpoint:false / snapshotPath:false），
 // 只留装配面。ctx 是捕获式 fake —— 注册了什么、hook 挂在哪，实测不符就红。
 //   node plugin/test/entry.mjs
 
@@ -55,7 +55,7 @@ function makeCtx({ storageSeed = new Map() } = {}) {
     options: {
       // 装配测试必须把重 IO 全关掉：代理取件、写引擎配置、写快照文件。
       // snapshotPath 要 false（''）而不是 null —— null 会被 `?? 默认路径` 接住。
-      proxy: false,
+      gate: false,
       ownEndpoint: false,
       snapshotPath: false,
       stats: { intervalMs: 0 },
