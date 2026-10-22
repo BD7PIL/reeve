@@ -91,6 +91,10 @@
     #root .oc-sdk-row { align-items: flex-start; }
     #root .oc-sdk-row-title { white-space: normal; overflow: visible; overflow-wrap: anywhere; }
   }
+  /* 宿主侧栏默认 ~306px：用量/说明这类次要信息让位，否则 @free 行的标题会被挤成一字一行 */
+  @media (max-width: 360px) {
+    #root .oc-sdk-row-meta { display: none; }
+  }
 
   /* 需要分组的 inset（宿主：rounded-md border border-border bg-surface-elevated/50） */
   .oc-inset {

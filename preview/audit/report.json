@@ -1,8 +1,8 @@
 {
-  "generatedAt": "2026-10-22T06:12:33.390Z",
+  "generatedAt": "2026-10-22T07:49:54.987Z",
   "fixture": true,
   "strictContrast": false,
-  "total": 39,
+  "total": 40,
   "failed": 0,
   "warned": 0,
   "items": [
@@ -344,6 +344,15 @@
       "note": "读取中的加载态",
       "file": "38-chain-loading.png",
       "scenario": "slow-config",
+      "failures": [],
+      "warnings": [],
+      "consoleErrors": []
+    },
+    {
+      "id": "40-chain-narrow-306",
+      "note": "宿主侧栏 306px：不溢出、徽标与更多可见、免费行仍可读",
+      "file": "40-chain-narrow-306.png",
+      "scenario": null,
       "failures": [],
       "warnings": [],
       "consoleErrors": []

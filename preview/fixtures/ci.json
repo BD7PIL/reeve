@@ -148,8 +148,8 @@
     },
     "providers": {
       "opencode": { "base_url": "https://opencode.ai/inference/openai/v1", "path": "/chat/completions", "key": "public", "lane": "passthrough", "models": ["*"] },
-      "openrouter": { "base_url": "https://openrouter.ai/api/v1", "auth": ["openrouter"], "models": [] },
-      "nvidia": { "base_url": "https://integrate.api.nvidia.com/v1", "auth": ["nvidia"], "models": [] },
+      "openrouter": { "base_url": "https://openrouter.ai/api/v1", "path": "/chat/completions", "auth": ["openrouter"], "models": [] },
+      "nvidia": { "base_url": "https://integrate.api.nvidia.com/v1", "path": "/chat/completions", "auth": ["nvidia"], "models": [] },
       "zhipuai-coding-plan": { "base_url": "https://open.bigmodel.cn", "path": "/api/coding/paas/v4/chat/completions", "auth": ["zhipuai-coding-plan"] },
       "deepseek": { "base_url": "https://api.deepseek.com", "auth": ["deepseek", "deepseek-api"] }
     },
