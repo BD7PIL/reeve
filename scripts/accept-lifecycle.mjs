@@ -2,7 +2,7 @@
 // 引擎生命周期验收：证明"插件实例卸载（工作区被驱逐）≠ GATE 关端口"。
 //
 //   node scripts/accept-lifecycle.mjs                 # 开发机（默认引擎路径）
-//   OC2=/path/to/opencode node scripts/accept-lifecycle.mjs   # 对端/其他引擎
+//   OC2=/path/to/opencode PLUGIN_DIR=/path/to/plugin node scripts/accept-lifecycle.mjs   # 对端/其他引擎
 //   node scripts/accept-lifecycle.mjs --keep          # 失败时留下临时目录（取证）
 //
 // 做法：起一台**隔离引擎**（serve --stdio --port 0 + 临时 XDG/配置/DB + 随机密码），
@@ -25,6 +25,7 @@ import { fileURLToPath } from 'node:url'
 const here = dirname(fileURLToPath(import.meta.url))
 const repo = resolve(here, '..')
 const keep = process.argv.includes('--keep')
+const pluginDir = process.env.PLUGIN_DIR ?? join(repo, 'plugin')
 const engine = process.env.OC2 ?? (process.platform === 'win32' ? join(homedir(), '.local', 'share', 'ocrc', 'opencode2', 'opencode2.exe') : join(homedir(), '.ocrc', 'remote', 'engine', 'opencode'))
 
 let passed = 0
@@ -76,7 +77,7 @@ writeFileSync(
     $schema: 'https://opencode.ai/config.json',
     plugins: [
       {
-        package: join(repo, 'plugin'),
+        package: pluginDir,
         options: { ownEndpoint: false, snapshotPath: join(dir, 'snapshot.json'), retentionDays: 0, stats: { intervalMs: 0 }, gate: { enabled: true, port: gatePort, configPath: fallbackPath, ledgerPath: join(dir, 'gate.jsonl') } },
       },
     ],
