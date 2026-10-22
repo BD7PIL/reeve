@@ -17,7 +17,7 @@
 | `plugin/src/gate/gate.js` | HTTP 服务：`/v1/chat/completions`、`/v1/models`、`/gate/session`、`/gate/session/:id/next`、`/gate/version`、**`/gate/free`**；台账 JSONL（不带密钥、超限轮转） |
 | `plugin/default-fallback.json` | 打包兜底配置（付费候选；免费车道由用户配置决定） |
 | `plugin/test/gate.mjs` | 29 项离线验收（单元 + 集成 + 图片路由 + 并发 + detach） |
-| `plugin/test/free.mjs` | 17 项免费车道验收（发现/TTL/展开/预算/冷却/热更/并发/无键/空目录/image 过滤） |
+| `plugin/test/free.mjs` | 18 项免费车道验收（发现/TTL/展开/预算/冷却/热更/并发/无键/空目录/动态 image 过滤） |
 | `~/.config/opencode/reeve/fallback.jsonc` | 机器上的用户配置（三端共享；开发机是 junction，对端由 ocrc sync） |
 
 ## 2. 语义（实现即规格）
@@ -31,8 +31,9 @@
   `IMAGE_CHAINS = { reasoning: 'vision' }`。文本档位收到图片时只把本次请求改走 `vision`，会话模型不变。
   standard/manual/flash 的普通链目标本身都是 image-capable，不需要改道。GATE 关闭时图片会按原模型能力被剥。
 - **免费车道**：链里 `@free` 在请求时展开成当前可发现、未冷却、有键的候选；免费最多占
-  `max_fallback_attempts - 1` 跳；`free.require_image=true` 时只保留 `free.image_models` 白名单里的
-  image-capable 模型（纯文本免费模型不进池，白名单为空则直接付费）；全部冷却/不可用 → 直接付费；
+  `max_fallback_attempts - 1` 跳；`free.require_image=true` 时按 `free.modality_url`（默认
+  `https://models.dev/api.json`）的 `modalities.input` 动态过滤，只保留 image-capable 模型
+  （纯文本免费模型不进池；元数据拉不到就用上一份好数据，从未拿到则直接付费）；全部冷却/不可用 → 直接付费；
   失败按模型全局冷却（阈值/时长可配）；动态链不使用按索引的粘性指针。详见 `docs/FREE-LANE.md`。
 - 车道：`passthrough`（头逐字转发，含 UA 与 `x-opencode-session*`）｜`native`（最小头集）。
 - 密钥：`key:'none'` / `env.X` / 公开字面量 / `auth` 列表（auth.json，按序取第一个有键的）；
@@ -59,7 +60,7 @@
 
 ## 3. 验收
 
-- 离线：`plugin/test/gate.mjs` 29 项、`plugin/test/free.mjs` 17 项；插件全量（unit 79 / reconcile 30 /
+- 离线：`plugin/test/gate.mjs` 29 项、`plugin/test/free.mjs` 18 项；插件全量（unit 79 / reconcile 30 /
   snapshot 9 / stats 9 / entry 4 / wiring 6 / runtime 6 / guard 2）。
 - 覆盖率门槛：global 95/79/95 + `src/index.js` 97/67/93 + `src/gate/` 97/84/96（只升不降）。
 - 真机：`scripts/accept-gate.sh` ①–⑨（①/② 免费车道、④ 关闭免费→付费、④b 死免费候选→付费、

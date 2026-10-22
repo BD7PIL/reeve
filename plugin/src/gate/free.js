@@ -37,6 +37,8 @@ export function createFreeLane({ getConfig, getAuth = () => ({}), now = Date.now
   /** ref -> { fails: number, until: number }（全局，跨 session：坏模型对所有人都坏） */
   const cooldowns = new Map()
   const inflight = new Map()
+  /** models.dev 的 modalities：{ at, map: Map<ref, boolean>|null, error, inflight } */
+  const modalityCache = { at: 0, map: null, error: null, inflight: null }
 
   const freeCfg = () => {
     const f = getConfig()?.free
@@ -107,6 +109,52 @@ export function createFreeLane({ getConfig, getAuth = () => ({}), now = Date.now
     return inflight.get(id)
   }
 
+  /**
+   * 免费池的模态元数据（models.dev）：只拉一次，TTL 6h；失败保留上一份好数据。
+   * 不能用 Zen 的 `/models`：它只有 id/object/created/owned_by，没有 modalities。
+   */
+  const loadModalities = async () => {
+    const free = freeCfg()
+    if (free.require_image !== true) return modalityCache
+    const ttlMs = Math.max(60, Number(free.modality_ttl_seconds ?? 21_600)) * 1000
+    if (modalityCache.map && now() - modalityCache.at < ttlMs) return modalityCache
+    if (modalityCache.inflight) return modalityCache.inflight
+    const url = typeof free.modality_url === 'string' && free.modality_url.length > 0 ? free.modality_url : 'https://models.dev/api.json'
+    modalityCache.inflight = (async () => {
+      try {
+        const res = await fetchImpl(url, {
+          headers: { accept: 'application/json' },
+          signal: AbortSignal.timeout(Math.max(timeoutMs, 15_000)),
+        })
+        if (!res.ok) throw new Error(`HTTP ${res.status}`)
+        const body = await res.json()
+        const map = new Map()
+        for (const [pid, provider] of Object.entries(body ?? {})) {
+          const models = provider?.models
+          if (!models || typeof models !== 'object') continue
+          for (const [mid, model] of Object.entries(models)) {
+            const input = Array.isArray(model?.modalities?.input)
+              ? model.modalities.input
+              : Array.isArray(model?.input)
+                ? model.input
+                : null
+            map.set(`${pid}/${mid}`, input ? input.includes('image') : model?.attachment === true)
+          }
+        }
+        modalityCache.map = map
+        modalityCache.at = now()
+        modalityCache.error = null
+      } catch (err) {
+        modalityCache.error = String(err?.message ?? err).slice(0, 140)
+        logger?.debug?.(`[gate] 免费池模态元数据拉取失败（保留上一份）：${modalityCache.error}`)
+      } finally {
+        modalityCache.inflight = null
+      }
+      return modalityCache
+    })()
+    return modalityCache.inflight
+  }
+
   const isCooling = (ref) => {
     const c = cooldowns.get(ref)
     if (!c) return false
@@ -127,17 +175,22 @@ export function createFreeLane({ getConfig, getAuth = () => ({}), now = Date.now
     const free = freeCfg()
     if (!free.enabled) return []
     const requireImage = free.require_image === true
-    const imageModels = new Set(asList(free.image_models))
+    let modalities = null
+    if (requireImage) {
+      const m = await loadModalities()
+      modalities = m.map
+      // 元数据从未成功拿到 → 没有可靠证据证明哪个免费模型能吃图；宁可走付费，也不退回纯文本。
+      if (!modalities) return []
+    }
     const out = []
     for (const id of asList(free.providers)) {
       const provider = providers()[id]
       if (!provider?.base_url || !hasKey(provider)) continue
       const st = await load(id)
       for (const model of st.models ?? []) {
-        // 只要多模态免费模型：纯文本的 big-pickle/minimax 等不进池。
-        // 白名单为空时按“没有可用免费候选”处理（降级到付费），绝不退回纯文本。
-        if (requireImage && !imageModels.has(model) && !imageModels.has(`${id}/${model}`)) continue
-        out.push({ provider: id, model, ref: `${id}/${model}` })
+        const ref = `${id}/${model}`
+        if (requireImage && modalities.get(ref) !== true) continue
+        out.push({ provider: id, model, ref })
       }
     }
     return out
@@ -244,6 +297,9 @@ export function createFreeLane({ getConfig, getAuth = () => ({}), now = Date.now
       cooling,
       prefer: asList(free.prefer),
       deny: asList(free.deny),
+      require_image: free.require_image === true,
+      modality_ready: Boolean(modalityCache.map),
+      modality_error: modalityCache.error,
     }
   }
 
@@ -269,6 +325,7 @@ export function createFreeLane({ getConfig, getAuth = () => ({}), now = Date.now
   const warm = () => {
     const free = freeCfg()
     if (free.enabled === false) return
+    if (free.require_image === true) void loadModalities().catch(() => {})
     for (const id of asList(free.providers)) {
       if (providers()[id]?.base_url && hasKey(providers()[id])) void load(id).catch(() => {})
     }

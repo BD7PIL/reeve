@@ -19,6 +19,11 @@
 > 对端 `reeve/fallback.jsonc` 与本地相同（config-diff：文件面 0 漂移）。
 > 发布被 2026-10-22T02:33Z 起的 npm registry 故障挡住约 70 分钟（先 E503、后 OIDC 交换失败报 ENEEDAUTH），恢复后重跑同一 job 成功。
 >
+> **0.1.14（已发，两端已升）**：免费池模态过滤改为动态 —— `free.require_image` 从
+> `free.modality_url`（默认 models.dev）读 `modalities.input`，按 `modality_ttl_seconds`（6h）缓存；
+> 失败保留上一份，从未拿到则直接付费。移除 0.1.13 的静态 `free.image_models` 白名单。
+> 回滚：package/provision 回 0.1.13；两端 fallback 恢复 `.ocrc-bak`（会重新带上静态白名单）。
+>
 > **0.1.13（已发，两端已升）**：五档位 + GATE 图片路由 + 免费池只留 image 模型。
 > 档位 `reeve/flash|standard|pro|manual|multimodal`（全部声明 image）；链 `reasoning`（3 付费 +
 > 3 免费）/ `standard`（2 付费 + 3 免费 + deepseek 兜底）/ `free-first`（3 免费 + 3 付费）/

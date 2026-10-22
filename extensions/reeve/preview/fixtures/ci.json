@@ -3,7 +3,7 @@
   "snapshot": {
     "generatedAt": 1792646400000,
     "plugin": "reeve",
-    "version": "0.1.13",
+    "version": "0.1.14",
     "agentTable": {
       "total": 9,
       "visible": [{ "id": "planner", "mode": "primary" }, { "id": "foreman", "mode": "primary" }, { "id": "scout", "mode": "subagent" }],
@@ -39,7 +39,8 @@
         "prefer": ["glm-5.3-flash-free", "mimo-v2.6-flash-free"],
         "deny": [],
         "require_image": true,
-        "image_models": ["glm-5.3-flash-free", "deepseek-v4.1-flash-free", "mimo-v2.6-flash-free"],
+        "modality_url": "https://models.dev/api.json",
+        "modality_ttl_seconds": 21600,
         "static": {}
       },
       "sessions": { "sessions": 2, "cooling": 0 },
@@ -179,7 +180,8 @@
       "prefer": ["glm-5.3-flash-free", "mimo-v2.6-flash-free"],
       "deny": [],
       "require_image": true,
-      "image_models": ["glm-5.3-flash-free", "deepseek-v4.1-flash-free", "mimo-v2.6-flash-free"],
+      "modality_url": "https://models.dev/api.json",
+      "modality_ttl_seconds": 21600,
       "static": {}
     }
   }

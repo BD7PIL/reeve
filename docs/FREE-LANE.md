@@ -17,8 +17,9 @@
   "failure_cooldown_seconds": 600,
   "prefer": ["glm-5.3-flash-free", "mimo-v2.6-flash-free", "deepseek-v4.1-flash-free"],
   "deny": [],
-  "require_image": true,           // 只选多模态免费模型
-  "image_models": ["glm-5.3-flash-free", "deepseek-v4.1-flash-free", "mimo-v2.6-flash-free", "nemotron-3.5-super-vl-free"],
+  "require_image": true,           // 只选多模态免费模型（按 models.dev modalities 动态过滤）
+  "modality_url": "https://models.dev/api.json",
+  "modality_ttl_seconds": 21600,   // 模态元数据 6h 缓存；失败保留上一份好数据
   "static": {}
 }
 ```
@@ -34,9 +35,11 @@
 `max=3` 且 `max_fallback_attempts=6` 时，standard 实际是 2 付费 + 3 免费 + 1 付费兜底；
 free-first 是 3 免费 + 3 付费。面板的「免费尝试次数」下面会直接显示这条关系。
 
-**免费池只留 image-capable**：`require_image=true` 时，`discover` 只保留 `image_models`
-白名单里的模型（可按 full ref 或裸模型名匹配）；纯文本的 `big-pickle`/`minimax` 不进池。
-白名单为空或发现源没有 image 模型 → 没有免费候选，直接走付费，**绝不退回纯文本免费模型**。
+**免费池只留 image-capable**：`require_image=true` 时，`discover` 从 `free.modality_url`
+（默认 `https://models.dev/api.json`）读 `modalities.input`，只保留含 `image` 的模型；纯文本的
+`big-pickle`/`minimax` 不进池。元数据按 `modality_ttl_seconds`（默认 6h）缓存，拉取失败保留上一份
+好数据；从未成功拿到元数据时直接走付费，**绝不猜/退回纯文本免费模型**。OpenCode Zen 的 `/models`
+本身只有 id，没有 modalities，所以必须用 models.dev 或 OpenRouter 的 `architecture.input_modalities`。
 
 免费车道挂在 `free-first` 和 `standard`/`vision` 的尾部，默认给 `reeve/flash`（scout /
 librarian）和 `reeve/standard`（executor / reviewer）用；`reeve/pro`（planner / advisor /

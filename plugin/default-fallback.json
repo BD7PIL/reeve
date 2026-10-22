@@ -30,7 +30,8 @@
     "prefer": ["glm-5.3-flash-free", "mimo-v2.6-flash-free", "deepseek-v4.1-flash-free"],
     "deny": [],
     "require_image": true,
-    "image_models": ["glm-5.3-flash-free", "deepseek-v4.1-flash-free", "mimo-v2.6-flash-free", "nemotron-3.5-super-vl-free"],
+    "modality_url": "https://models.dev/api.json",
+    "modality_ttl_seconds": 21600,
     "static": {}
   },
   "chains": {

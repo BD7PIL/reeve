@@ -60,9 +60,9 @@ async function makeUpstream() {
 
 const discoveryResponse = (ids) => new Response(JSON.stringify({ data: ids.map((id) => ({ id })) }), { status: 200, headers: { 'content-type': 'application/json' } })
 
-/** 发现源 stub + 零出网闸门（只允许回环 stub 与两个发现源）。 */
-function makeFetch({ opencode = [], openrouter = [], fail = null } = {}) {
-  const counts = { opencode: 0, openrouter: 0 }
+/** 发现源 stub + 零出网闸门（只允许回环 stub、两个发现源与 models.dev）。 */
+function makeFetch({ opencode = [], openrouter = [], fail = null, modalities = null } = {}) {
+  const counts = { opencode: 0, openrouter: 0, modalities: 0 }
   const fn = (url, opts) => {
     const u = String(url)
     if (u.startsWith('https://opencode.ai/zen/v1/models')) {
@@ -74,6 +74,11 @@ function makeFetch({ opencode = [], openrouter = [], fail = null } = {}) {
       counts.openrouter += 1
       if (fail === 'openrouter') return Promise.reject(new Error('discovery down'))
       return Promise.resolve(discoveryResponse(openrouter))
+    }
+    if (u.startsWith('https://models.dev/api.json')) {
+      counts.modalities += 1
+      if (fail === 'modalities') return Promise.reject(new Error('modalities down'))
+      return Promise.resolve(new Response(JSON.stringify(modalities ?? {}), { status: 200, headers: { 'content-type': 'application/json' } }))
     }
     if (/^http:\/\/127\.0\.0\.1:/.test(u)) return fetch(u, opts)
     throw new Error(`测试里禁止出网：${u}`)
@@ -196,41 +201,79 @@ const OPENROUTER_FREE = ['vendor/a:free', 'vendor/b', 'vendor/c:free']
   }
 }
 
-// ---- 1b. 免费池只留 image-capable ----
+// ---- 1b. 免费池只留 image-capable（模态来自 models.dev，动态过滤） ----
 {
   const h = await harness({
-    discovery: { opencode: ['mimo-v2.6-flash-free', 'big-pickle', 'deepseek-v4.1-flash-free'] },
-    free: {
-      require_image: true,
-      image_models: ['mimo-v2.6-flash-free', 'deepseek-v4.1-flash-free'],
+    discovery: {
+      opencode: ['mimo-v2.6-flash-free', 'big-pickle', 'deepseek-v4.1-flash-free'],
+      modalities: {
+        opencode: {
+          models: {
+            'mimo-v2.6-flash-free': { modalities: { input: ['text', 'image'] }, attachment: true },
+            'big-pickle': { modalities: { input: ['text'] }, attachment: false },
+            'deepseek-v4.1-flash-free': { modalities: { input: ['text', 'image'] }, attachment: true },
+          },
+        },
+      },
     },
+    free: { require_image: true },
   })
   try {
     const snap = await getJson(h.gate, '/gate/free')
     assert.deepEqual(
       snap.expand,
       ['opencode/mimo-v2.6-flash-free', 'opencode/deepseek-v4.1-flash-free'],
-      '纯文本 big-pickle 不进免费池',
+      '纯文本 big-pickle 被 models.dev modalities 过滤掉',
     )
-    ok('免费过滤：require_image + image_models 排除纯文本模型')
+    assert.equal(snap.modality_ready, true)
+    assert.equal(h.counts.modalities, 1, '模态元数据只拉一次（TTL 内复用）')
+    ok('免费过滤：require_image 按 models.dev modalities 动态排除纯文本模型')
   } finally {
     await h.close()
   }
 }
 
-// ---- 1c. require_image 但白名单为空 → 没有免费候选，直接付费 ----
+// ---- 1c. 元数据里没有 image 模型 → 没有免费候选，直接付费 ----
 {
   const h = await harness({
-    discovery: { opencode: ['big-pickle', 'mimo-v2.6-flash-free'] },
-    free: { require_image: true, image_models: [] },
+    discovery: {
+      opencode: ['big-pickle', 'mimo-v2.6-flash-free'],
+      modalities: {
+        opencode: {
+          models: {
+            'big-pickle': { modalities: { input: ['text'] }, attachment: false },
+            'mimo-v2.6-flash-free': { modalities: { input: ['text'] }, attachment: false },
+          },
+        },
+      },
+    },
+    free: { require_image: true },
   })
   try {
     const snap = await getJson(h.gate, '/gate/free')
-    assert.deepEqual(snap.expand, [], '白名单为空 → 一个免费都不展开')
+    assert.deepEqual(snap.expand, [], '没有 image 模型 → 一个免费都不展开')
     const r = await post(h.gate, { model: 'reeve/flash', stream: false, messages: [{ role: 'user', content: 'hi' }] })
     assert.equal(r.status, 200)
     assert.equal(r.fallback, '1/paid/paid-ok', '没有可用免费候选 → 顺位付费')
-    ok('免费过滤：白名单为空不退回纯文本，直接付费')
+    ok('免费过滤：没有 image 免费模型时直接付费，不退回纯文本')
+  } finally {
+    await h.close()
+  }
+}
+
+// ---- 1d. models.dev 拉不到 → 不用没有证据的免费模型，直接付费 ----
+{
+  const h = await harness({
+    discovery: { opencode: ['mimo-v2.6-flash-free'], fail: 'modalities' },
+    free: { require_image: true },
+  })
+  try {
+    const snap = await getJson(h.gate, '/gate/free')
+    assert.deepEqual(snap.expand, [], '模态元数据不可用 → 不展开免费')
+    assert.equal(snap.modality_error !== null, true)
+    const r = await post(h.gate, { model: 'reeve/flash', stream: false, messages: [{ role: 'user', content: 'hi' }] })
+    assert.equal(r.fallback, '1/paid/paid-ok')
+    ok('免费过滤：模态元数据不可用时降级付费，不猜纯文本')
   } finally {
     await h.close()
   }

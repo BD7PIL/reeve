@@ -3,6 +3,18 @@
 Newest first. Versions follow the plugin package (`plugin/package.json`); the
 panel extension has its own tags (`reeve-<version>`).
 
+## 0.1.14 — 2026-10-23
+
+**Free image filtering is dynamic now, not a static allowlist.** `free.require_image`
+uses `free.modality_url` (default `https://models.dev/api.json`) to read each
+candidate's `modalities.input`; only image-capable free models are expanded.
+The metadata is cached for `modality_ttl_seconds` (default 6h), a failed refresh
+keeps the last good map, and if no map was ever fetched the free lane falls back
+to paid instead of guessing. This removes the hand-maintained `free.image_models`
+list from 0.1.13. OpenCode Zen's `/models` only returns IDs (no modalities), which
+is why the previous implementation needed a static list; models.dev and
+OpenRouter have the metadata.
+
 ## 0.1.13 — 2026-10-22
 
 **Five tiers, image routing, image-only free pool.** The plugin now registers

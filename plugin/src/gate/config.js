@@ -45,9 +45,10 @@ export const FREE_DEFAULTS = Object.freeze({
   failure_cooldown_seconds: 600,
   prefer: Object.freeze([]),
   deny: Object.freeze([]),
-  // 免费池只要多模态模型：开启后只保留 image_models 里的 ID（纯文本免费模型不进池）
+  // 免费池只保留 image-capable 模型：模态从 models.dev 动态读取（不再维护静态白名单）
   require_image: false,
-  image_models: Object.freeze([]),
+  modality_url: 'https://models.dev/api.json',
+  modality_ttl_seconds: 21_600,
   static: Object.freeze({}),
   sources: Object.freeze({
     // 公开模型列表（不需要键；拉不到只影响该 provider，请求照常降级到付费）
@@ -125,7 +126,8 @@ export function normalizeGateConfig(raw) {
     prefer: asStrings(fSrc.prefer),
     deny: asStrings(fSrc.deny),
     require_image: fSrc.require_image === true,
-    image_models: asStrings(fSrc.image_models),
+    modality_url: typeof fSrc.modality_url === 'string' && fSrc.modality_url.length > 0 ? fSrc.modality_url : FREE_DEFAULTS.modality_url,
+    modality_ttl_seconds: asInt(fSrc.modality_ttl_seconds, 60, 604_800, FREE_DEFAULTS.modality_ttl_seconds),
     static: {},
     sources: { ...FREE_DEFAULTS.sources },
   }
