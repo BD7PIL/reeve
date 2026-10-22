@@ -19,6 +19,18 @@
 > 对端 `reeve/fallback.jsonc` 与本地相同（config-diff：文件面 0 漂移）。
 > 发布被 2026-10-22T02:33Z 起的 npm registry 故障挡住约 70 分钟（先 E503、后 OIDC 交换失败报 ENEEDAUTH），恢复后重跑同一 job 成功。
 >
+> **0.1.9（已发，两端已升）**：两处修正 —— ① OpenRouter/NVIDIA 的 `base_url` 已带 `/v1` 但 provider 没写
+> `path`，GATE 打到 `/v1/v1/...` 404；用户配置与打包默认都补 `"path": "/chat/completions"`。
+> ② 面板扩展 0.1.4：宿主侧栏 306px 下 `@free` 行标题被挤成一字一行 → ≤360px 隐藏次要 meta，审计加 40 号专项。
+> 提交 `4036c72`；公开树 `b09a008`（v0.1.9，CI 绿）；npm `@bd7pil/reeve@0.1.9`；扩展 `reeve-0.1.4`/`reeve-latest`；
+> ocrc pin `e2c8867d`。对端 apply + down/up → 组件 0.1.9/扩展 0.1.4，`accept-gate.sh` ①–⑨ 全过；开发机同版本。
+> 真宿主图 `preview/host-audit/dev-3001.png` 与 `peer-4610.png` 经 multimodal **均 PASS**（对端 306px 修复后）。
+> **OpenRouter key 现状**：只在对端 `~/.local/share/opencode/auth.json`（18 个 `:free` 模型被发现；
+> `openrouter/recursive/flint-v1.0:free` 经 GATE 直调 200，台账 `key=auth:openrouter`）；开发机 auth.json 仍无该 key，
+> 开发机免费车道只有 OpenCode 一档 —— 要在开发机启用，把 key 写进 `~/.local/share/opencode/auth.json`（或
+> `opencode auth login`），GATE 会在 `/v1/models` 或重启时重读 auth。
+> 0.1.9 发布后 tarball 也有约 9 分钟复制延迟（同 0.1.8）。
+>
 > **0.1.8（本次交付，已发，两端已升）**：GATE 原生免费车道（链里 `@free`，请求时展开）+ **9router 退役** +
 > 面板 0.1.3（免费车道卡 + 39 项 UI 断言门）。0.1.8 只补一条分类：zen 对未知模型返回 400 +
 > `Model is unavailable.`，按模型错误换候选（0.1.7 会把它当调用方的错、直接 400）。

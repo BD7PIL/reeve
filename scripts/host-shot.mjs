@@ -100,16 +100,25 @@ if (!clicked) {
 if (!clicked) throw new Error('找不到 REEVE 入口')
 await sleep(1200)
 await send('Page.bringToFront')
-// 关掉宿主的提示条（"OpenCode 更新" 之类），别让它盖住面板右下角
-const dismiss = () =>
-  send('Runtime.evaluate', {
+// 关掉宿主的提示条（"OpenCode 更新" 之类），别让它盖住面板右下角。
+// 注意：这类 toast 的 Dismiss 只认真实鼠标事件（程序化 .click() 无效）。
+const dismiss = async () => {
+  const r = await send('Runtime.evaluate', {
     expression: `(() => {
-      const bs = [...document.querySelectorAll('button')].filter((b) => /^(忽略|Dismiss)$/.test((b.textContent || '').trim()) || /dismiss/i.test(b.getAttribute('aria-label') || ''))
-      bs.forEach((b) => b.click())
-      return bs.length
+      const b = [...document.querySelectorAll('button')].find((b) => /^(忽略|Dismiss)$/.test((b.textContent || '').trim()) || /dismiss/i.test(b.getAttribute('aria-label') || ''))
+      if (!b) return null
+      const q = b.getBoundingClientRect()
+      return { x: q.x + q.width / 2, y: q.y + q.height / 2 }
     })()`,
     returnByValue: true,
   })
+  const pt = r.result?.result?.value
+  if (!pt) return false
+  await send('Input.dispatchMouseEvent', { type: 'mousePressed', x: pt.x, y: pt.y, button: 'left', clickCount: 1 })
+  await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: pt.x, y: pt.y, button: 'left', clickCount: 1 })
+  await sleep(300)
+  return true
+}
 await dismiss()
 await sleep(400)
 await dismiss()
@@ -132,6 +141,8 @@ for (let i = 0; i < 24; i++) {
   await sleep(500)
 }
 
+await dismiss()
+await sleep(400)
 // 先试面板本体（OOPIF）的 screencast；拿不到帧退回顶层页面
 await send('Page.startScreencast', { format: 'png', everyNthFrame: 1 }, sid)
 for (let i = 0; i < 16 && !frames.has(sid); i++) await sleep(500)

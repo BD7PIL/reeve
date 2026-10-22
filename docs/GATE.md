@@ -39,7 +39,8 @@
   snapshot 9 / stats 9 / entry 4 / wiring 6 / runtime 6 / guard 2）。
 - 覆盖率门槛：global 95/79/95 + `src/index.js` 97/67/93 + `src/gate/` 97/84/96（只升不降）。
 - 真机：`scripts/accept-gate.sh` ①–⑨（①/② 免费车道、④ 关闭免费→付费、④b 死免费候选→付费、
-  ⑤ 粘性、⑥ 冷却、⑦ 热更、⑧ 付费直连、⑨ Bifrost=0）；`scripts/accept-lifecycle.mjs`（工作区驱逐后 GATE 仍在）。
+  ⑤ 粘性、⑥ 冷却、⑦ 热更、⑧ 付费直连、⑨ Bifrost=0）；`scripts/accept-lifecycle.mjs`（DELETE 驱逐）+
+  `--idle`（真 60 分钟 TTL：日志见到驱逐后再断言 GATE 仍在）。
 - 面板：`extensions/reeve/scripts/audit.mjs --fixture` 39 项（断言 + 截图 + report.json）；
   截图经多模态复审（结论表在 `extensions/reeve/preview/audit/README.md`）。
 
@@ -56,6 +57,14 @@
 - 用户配置：`~/.config/opencode/reeve/fallback.jsonc`（三端共享面）；台账 `~/.reeve/gate.jsonl`（超 5MB 轮转）。
 - **生命周期**：GATE 是**引擎级**服务 —— 插件实例卸载（工作区被闲置驱逐）**不关端口**；`detach()` 只清空闲连接、
   监听口 unref；一次性进程（`opencode run`）卸载后立刻退出；真正关端口只发生在进程退出或显式 `dispose()`。
+- **引擎的工作区驱逐机制（实测 2.0.32）**：`LocationActivity` 默认 **60 分钟空闲 TTL**（`timeToLive`），
+  每 **1 分钟 sweep 一次**；只有 durable session event 会刷新 TTL，**HTTP 读（`GET /api/location`）不续命**。
+  所以一个不再有会话事件的工作区会在最后一次活动后约 60–61 分钟被 `location services evicted` 并走
+  invalidate → lifecycle shutdown → 插件 cleanup。2.0.32 **没有** TTL/sweep 开关；2.1.2 起有
+  `experimental.location_idle_timeout`（可设短值或 `false` 关闭驱逐）。
+  验证：`node scripts/accept-lifecycle.mjs`（`DELETE /api/debug/location`，确定性的同一条卸载路径）或
+  `node scripts/accept-lifecycle.mjs --idle`（真等 60 分钟 + 1 分钟 sweep，在隔离引擎日志里看到
+  `location services evicted` 后再断言 GATE 仍在；`IDLE_MINUTES` 可调等待上限）。
 - 开发机上 `ln -s` 与 `mklink` 都需要提权 → 用 `cmd //c mklink //J`（junction）。
 
 ## 6. 交付步骤（全部完成）

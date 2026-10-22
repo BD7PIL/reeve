@@ -71,7 +71,10 @@
 2. **OpenRouter 免费模型**：把 key 放进 `auth.json` 的 `openrouter`（两台机器各一份；对端用
    `ocrc remote sync-auth` 或手工写入），并在 provider 块里保持 `auth: ["openrouter"]`。
    之后 `:free` 模型自动进发现列表。
-3. **NVIDIA**：key 放 `auth.json` 的 `nvidia`，把想用的模型写进 `free.static.nvidia`。
+   **provider 块必须写 `"path": "/chat/completions"`**：`base_url` 是 `https://openrouter.ai/api/v1`
+   （已带 `/v1`），GATE 的默认 path 也是 `/v1/chat/completions`，漏写就打到 `/api/v1/v1/...`（404；0.1.9 修）。
+3. **NVIDIA**：key 放 `auth.json` 的 `nvidia`，把想用的模型写进 `free.static.nvidia`；
+   同样要写 `"path": "/chat/completions"`（base 是 `https://integrate.api.nvidia.com/v1`）。
 4. **其它 keyed provider（如 Gemini/Groq）**：加一个 OpenAI 兼容的 provider 块（`base_url` + `auth`），
    再给它一个 `free.sources` 或 `free.static` 条目；免费额度用完后由 GATE 的错误分类顺位切付费。
 
