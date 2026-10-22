@@ -23,8 +23,7 @@ SKIP_ENGINE=0
 for a in "$@"; do [ "$a" = "--skip-engine" ] && SKIP_ENGINE=1; done
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-PLUGIN_DIR="$(cd "$SCRIPT_DIR/../plugin" && pwd)"
-PLUGIN_DIR_WIN="$(cygpath -w "$PLUGIN_DIR" 2>/dev/null | tr -d '' || echo "$PLUGIN_DIR")"
+# 验收包自带剥注释，不需要插件树（拷 scripts/ 到对端即可）
 USER_CFG="${USER_CFG:-$HOME/.config/opencode/reeve/fallback.jsonc}"
 TMP="${TMP:-${TEMP:-/tmp}}"
 WORK="$TMP/accept-gate.$$"
@@ -127,15 +126,14 @@ else
   cp -f "$USER_CFG" "$WORK/cfg.bak"
   node --input-type=module -e "
     import { readFileSync, writeFileSync } from 'node:fs'
-    import { join } from 'node:path'
-    import { pathToFileURL } from 'node:url'
-    const { stripLineComments } = await import(pathToFileURL(join(process.argv[2], 'src', 'gate', 'config.js')).href)
+    // 自带剥注释（与插件同一套规则）—— 验收包因此**不依赖插件树**：拷 scripts/ 两个文件到对端就能跑
+    const stripLineComments = (t) => String(t).split(String.fromCharCode(10)).filter((l) => !l.trim().startsWith('//')).join(String.fromCharCode(10))
     const p = process.argv[1]
     const j = JSON.parse(stripLineComments(readFileSync(p, 'utf8')))
     j.providers['accept-dead'] = { base_url: 'http://127.0.0.1:1', key: 'none', models: ['*'] }
     j.chains['accept-sticky'] = { targets: ['accept-dead/x', 'zhipuai-coding-plan/glm-5.3-flash'] }
     writeFileSync(p, JSON.stringify(j, null, 2))
-  " "$USER_CFG" "$PLUGIN_DIR_WIN"
+  " "$USER_CFG"
   sleep 6   # 热更窗口（≤5s）+ 余量
   gate_call "accept-sticky" "$A" "$WORK/sticky1" >/dev/null
   b=$(ledger_lines)
@@ -167,14 +165,12 @@ fi
 cp -f "$USER_CFG" "$WORK/cfg7.bak"
 node --input-type=module -e "
   import { readFileSync, writeFileSync } from 'node:fs'
-  import { join } from 'node:path'
-  import { pathToFileURL } from 'node:url'
-  const { stripLineComments } = await import(pathToFileURL(join(process.argv[2], 'src', 'gate', 'config.js')).href)
+  const stripLineComments = (t) => String(t).split(String.fromCharCode(10)).filter((l) => !l.trim().startsWith('//')).join(String.fromCharCode(10))
   const p = process.argv[1]
   const j = JSON.parse(stripLineComments(readFileSync(p, 'utf8')))
   j.chains['accept-order'] = { targets: ['zhipuai-coding-plan/glm-5.3-flash', '9router/oc/mimo-v2.6-flash-free'] }
   writeFileSync(p, JSON.stringify(j, null, 2))
-" "$USER_CFG" "$PLUGIN_DIR_WIN"
+" "$USER_CFG"
 t0=$(date +%s)
 seen=0
 for i in $(seq 1 10); do
