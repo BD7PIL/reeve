@@ -64,7 +64,7 @@ curl -b <会话 cookie> -X PUT -H 'Content-Type: application/json' \
 
 ## 真宿主验证（CDP）
 
-`scripts/cdp-open-panel.mjs`（可 `--app/--cdp` 重定向）会打开宿主、点侧栏入口、在 guest iframe 里
+`cdp-open-panel.mjs`（可 `--app/--cdp` 重定向）会打开宿主、点侧栏入口、在 guest iframe 里
 执行断言（控制台 0 错、无横向溢出、badge/banner 文本）、切深浅主题并截图；钩子用
 `data-act`（`refresh/add/swap/remove/save/add-chain/chain-menu/free-refresh` 等）、`.oc-savebar`、
 `button[data-loading]`。其余 `cdp-panel*.mjs` 是早期探索脚本，按需改参数。

@@ -34,10 +34,7 @@ jobs:
           TITLE='上游免费模型目录形状变了'
           OPEN=$(gh issue list --state open --search "$TITLE in:title" --json number --jq 'length')
           if [ "$OPEN" = "0" ]; then
-            gh issue create --title "$TITLE" \
-              --body "每日契约哨兵失败：${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-
-检查 \`scripts/check-upstream-models.mjs\` 的输出，以及 GATE \`free.sources\` 的 URL/filter（opencode 的 \`-free\`/big-pickle、openrouter 的 \`:free\`）。"
+            gh issue create --title "$TITLE" --body "每日契约哨兵失败：${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\n\n检查 scripts/check-upstream-models.mjs 的输出，以及 GATE free.sources 的 URL/filter（opencode 的 -free/big-pickle、openrouter 的 :free）。"
           else
             echo "已有未关闭的同类 issue（$OPEN 个），不再重复创建"
           fi

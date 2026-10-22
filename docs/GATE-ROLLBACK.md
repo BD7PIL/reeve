@@ -19,16 +19,30 @@
 > 对端 `reeve/fallback.jsonc` 与本地相同（config-diff：文件面 0 漂移）。
 > 发布被 2026-10-22T02:33Z 起的 npm registry 故障挡住约 70 分钟（先 E503、后 OIDC 交换失败报 ENEEDAUTH），恢复后重跑同一 job 成功。
 >
-> **0.1.7（本次交付）**：GATE 原生免费车道（链里 `@free`，请求时展开）+ **9router 退役** + 面板 0.1.3（免费车道卡 + 39 项 UI 断言门）。
-> 免费车道语义见 `docs/FREE-LANE.md`。回滚边界：
+> **0.1.8（本次交付，已发，两端已升）**：GATE 原生免费车道（链里 `@free`，请求时展开）+ **9router 退役** +
+> 面板 0.1.3（免费车道卡 + 39 项 UI 断言门）。0.1.8 只补一条分类：zen 对未知模型返回 400 +
+> `Model is unavailable.`，按模型错误换候选（0.1.7 会把它当调用方的错、直接 400）。
+> 免费车道语义见 `docs/FREE-LANE.md`。发布记录：
+> · reeve 本仓：`4f57587`（0.1.7 主体）、`30872b6`（CI Chrome 沙箱/产物）、`26aa8e9`（0.1.8 分类）
+> · 公开树：`47e55cb`（v0.1.7）、`f4d0855`（v0.1.8）；npm `@bd7pil/reeve@0.1.7`（run 39733303421）、
+>   `@bd7pil/reeve@0.1.8`（run 39734669467）均 `Publish plugin` 绿；扩展 `reeve-0.1.3` + `reeve-latest`（run 39733326573）
+> · ocrc：pin `0.1.7` → `90f9d4bc`、`0.1.8` → `6242da8b`（均已推送）
+> · 开发机：引擎 0.1.8（`opencode2 service restart`）、`accept-gate.sh` ①–⑨ 全过、`accept-lifecycle.mjs` 全过、
+>   真宿主 `scripts/host-audit.mjs` PASS（报告 `preview/host-audit/3001.json`：1834 字、console 0、无溢出、宿主 token 在位）；
+>   9router 已 `npm rm -g`（数据目录保留）
+> · 对端（demo@192.168.26.101）：组件 0.1.8（`remote apply --with-components` + `down`/`up`）、`sync-config` 已对齐、
+>   `accept-gate.sh` ①–⑨ 全过、`accept-lifecycle.mjs` 全过、扩展 0.1.3、9router 已卸载（`~/.9router` 数据保留）。
+>   真宿主的可视化复核没做成：对端 9222 上的 headless Chrome 停在 Unlock 页（会话已失效，我们没有也不该去拿密码）；
+>   该宿主的面板安装/授权由 apply 验证，渲染由开发机真宿主 + 预览 39 项覆盖。
+> · 回滚边界：
 > · **只想关掉免费**：`fallback.jsonc` 里 `free.enabled=false`（`@free` 展开为空，链直接走付费），或把 `free.max=0`；不用回滚代码。
 > · **想回到 9router 时代**：把 `9router` provider 与 `9router/oc/<model>` 候选加回配置；两台机器重装
 >   `npm i -g 9router@0.5.104`、恢复 `requireApiKey=false`、自启（Windows 启动文件夹 VBS / EL7 `@reboot` cron 指向
 >   `setup-9router.mjs ensure` —— 该脚本已从仓库删除，从 0.1.6 的 tag 取回）；然后 `ocrc remote config-diff` 对齐。
-> · **代码回滚**：本仓 `git reset --hard <0.1.6 的提交>`；公开树用 `scripts/publish-repo.sh <ref>`；扩展回 `reeve-0.1.2`。
-> · 发布记录（提交/公开树/npm/扩展 tag）在发布后补：本次 npm `@bd7pil/reeve@0.1.7`、扩展 `reeve-0.1.3`/`reeve-latest`。
+> · **代码回滚**：本仓 `git reset --hard 26aa8e9^`（回 0.1.7 主体）；公开树 `scripts/publish-repo.sh <ref>`；
+>   扩展回 `reeve-0.1.2`；ocrc pin 回 `aa0426a4`。
 > · 新增的验收：`accept-gate.sh` ①–⑨（免费车道/关闭/死候选）、`accept-lifecycle.mjs`（驱逐后 GATE 仍在）、
->   `audit.mjs --fixture` 39 项（CI 作业 `ui-audit`）、每日 `upstream-models.yml` 契约哨兵。
+>   `audit.mjs --fixture` 39 项（CI 作业 `ui-audit`）、`host-audit.mjs`（真宿主断言）、每日 `upstream-models.yml` 契约哨兵。
 
 ## 1. 这次交付改了什么（回滚的边界）
 
