@@ -65,6 +65,8 @@
   验证：`node scripts/accept-lifecycle.mjs`（`DELETE /api/debug/location`，确定性的同一条卸载路径）或
   `node scripts/accept-lifecycle.mjs --idle`（真等 60 分钟 + 1 分钟 sweep，在隔离引擎日志里看到
   `location services evicted` 后再断言 GATE 仍在；`IDLE_MINUTES` 可调等待上限）。
+  **实测（2026-10-22，隔离引擎）**：61 分钟后日志出现 `location services evicted`，GATE 仍在服务、
+  重新拉起复用同一台、杀引擎后端口释放 —— `--idle` 6 项全过。
 - 开发机上 `ln -s` 与 `mklink` 都需要提权 → 用 `cmd //c mklink //J`（junction）。
 
 ## 6. 交付步骤（全部完成）
