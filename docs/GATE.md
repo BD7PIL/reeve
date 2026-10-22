@@ -1,6 +1,9 @@
-# GATE —— reeve 的代理层（已实施：立 1–4）
+# GATE —— reeve 的代理层（已交付）
 
-> 状态（2026-10-22）：**核心落地 + 开发机真机验收全过 + Bifrost 已退役**；面板/9router 两端/发布是后续步骤（见 §6）。
+> 状态（2026-10-22）：**全部交付** —— 核心落地、Bifrost 退役、面板（链/策略/台账）、9router 两端常驻、
+> `@bd7pil/reeve@0.1.5` 已发布、两端真机验收 ①–⑨ 全过（发布记录见 `docs/GATE-ROLLBACK.md`）。
+> 0.1.6（仅"快照/面板版本号读 0.1.4"的修正）已提交并打标签，npm 发布被 2026-10-22T02:33Z 起的
+> registry 故障挡住 —— 恢复后 `gh run rerun <run> -R BD7PIL/reeve --failed` 即可，两台机器先留在 0.1.5。
 > 需求来源：v1 时代那套 fallback（per-agent 候选链 + 错误分类触发 + 冷却/粘性）在 v2 没有等价物 → 由 GATE 复现。
 
 ## 1. 交付物（本次）
@@ -27,7 +30,7 @@
 
 ## 3. 验收（已跑）
 
-- 离线：`node plugin/test/gate.mjs` → 23 项全过（快乐路径、429/500/额度文案/503+retry-after/连不上、流已开始不换、不可重试透传、上限与 502 体、冷却与粘性（两种 restore）、流式不缓冲（握手）、客户端断开传播、provider 重试、多键轮转、目录 TTL 与降级、会话桥与 next、热更（好/坏文件）、dispose 幂等、端口冲突、边界 400/413/404/502、零出网）。
+- 离线：`node plugin/test/gate.mjs` → 24 项全过（快乐路径、429/500/额度文案/503+retry-after/连不上、流已开始不换、不可重试透传、上限与 502 体、冷却与粘性（两种 restore）、流式不缓冲（握手）、客户端断开传播、provider 重试、多键轮转、目录 TTL 与降级、会话桥与 next、热更（好/坏文件）、dispose 幂等、端口冲突、边界 400/413/404/502、`probeGate` 复用探针、零出网）。
 - 门槛：lint 干净（新文件 0 警告）；全量 plugin 测试绿；覆盖率 global 91/79/91 + `src/gate/` 96/80/96（分支 80 未到计划写的 85，差距如实记在 `scripts/coverage-baseline.json` 的 `_history`）。
 
 ## 4. 与邻居的关系（本轮之后）
@@ -35,18 +38,21 @@
 - **Bifrost**：**已退役**（自持/pin/链派生/工件全部删除，`plugin/test/guard.mjs` 静态守门禁止回流）。引擎只认 `providers.reeve`（18080）→ GATE。
 - **9router**：作为免费车道 provider（`127.0.0.1:20128`，`key: 'none'`）；候选写 `9router/oc/<model>` 单模型目标（不用它的 combo）。
 - **omo**：只做行为规格来源；不引入其代码或 prompt 字面。
-- **ocrc**：只负责把 `~/.config/opencode/reeve/` 同步到对端（`INSTANCE_SYNC_ENTRIES` 加条目）——下一步做。
+- **ocrc**：只负责把 `~/.config/opencode/reeve/` 同步到对端（`INSTANCE_SYNC_ENTRIES` 已含 `reeve`；暂存 `cpSync` 带 `dereference`，junction 不会把链接本身带过去）。
 
 ## 5. 端口与配置路径（别踩）
 
 - 用户配置：`~/.config/opencode/reeve/fallback.jsonc`（目录是共享面；开发机是 junction，对端是实体目录）。
 - 台账：`~/.reeve/gate.jsonl`（超 5MB 轮转到 `.1`）。
 - 开发机上 `ln -s` 与 `mklink` 都需要提权 → 用 `cmd //c mklink //J`（junction 不需要权限、可跨盘）。
+- **生命周期（已知边界）**：GATE 是**插件实例**起的进程内服务 —— 引擎按工作区加载插件，第一个实例绑定 18080，其余实例 `probeGate` 复用；自己起的才自己关。因此"起 GATE 的那个工作区被引擎驱逐（`location services evicted`）时 GATE 随之关闭"，下一个插件实例加载时会重建。单工作区无感；**两个工作区并开时**，若宿主在活跃工作区发请求前先驱逐了起服务的工作区，那一次请求会遇到连接拒绝。修法方向（未做）：每个实例加低频重探 watchdog，或 `server.unref()` 后让 GATE 活到引擎进程退出。
+- 排查现况：`~/.reeve/ledger.json` 是插件快照（含 `gate` 段与版本号），停止更新即说明插件实例已卸载；`~/.reeve/gate.jsonl` 才是台账。
 
-## 6. 后续步骤（按计划）
+## 6. 交付步骤（全部完成）
 
 1. ~~**验**~~：已完成 —— `scripts/accept-gate.sh` 开发机全过（引擎经 GATE 拿免费链、停 9router 顺位切付费、粘性、冷却、热更 ≤5s、付费直连不回归）。
 2. ~~**拆**~~：已完成 —— 删 Bifrost 自持/pin/链派生 + provision 工件 + `stats.js` 改读 GATE 台账 + `test/guard.mjs` 静态守门。
-3. **面板**：链编辑器（每 agent 一条）+ 策略 + 台账视图；manifest/`check.mjs` 调整；产物重建。
-4. **9router**：两端常驻（pin + `scripts/setup-9router.mjs`）。
-5. **发布**：reeve 0.1.5 → ocrc pin + sync → 对端升级 → 两端验收 + 回滚文档 + 记忆。
+3. ~~**面板**~~：已完成 —— 链编辑器（每 agent 一条）+ 策略 + 台账/统计；manifest/`check.mjs` 调整；18 项交互审计截图逐张看过（`extensions/reeve/preview/audit/`）。
+4. ~~**9router**~~：已完成 —— 两端常驻（pin 0.5.104、`requireApiKey=false`、Windows 启动文件夹隐藏 VBS / EL7 `@reboot` cron、`scripts/setup-9router.mjs` 幂等管理）。
+5. ~~**发布**~~：已完成 —— reeve 0.1.5 → npm + 扩展 `reeve-0.1.2`/`reeve-latest` → ocrc pin/sync → 对端升级 + 两端验收 + 回滚文档。
+   0.1.6（版本号漂移修正）等 npm registry 恢复后补发（见文首状态）。

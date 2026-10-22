@@ -9,6 +9,12 @@
 > · 对端（demo@192.168.26.101）：组件 `~/.ocrc/components/reeve/package` = 0.1.5、扩展已装并授权、`~/.config/opencode/reeve/fallback.jsonc` 已同步、
 >   9router 0.5.104（`requireApiKey=false` + `@reboot` cron）、旧 Bifrost 进程已清、`accept-gate.sh` ①–⑨ 全过
 > · 两端 `config-diff`：`reeve/fallback.jsonc` 相同、一次同步写 0 个文件
+>
+> **0.1.6（待发）**：仅修"快照/面板版本号读成 0.1.4"的漂移（`PLUGIN_VERSION` 改为从 package.json 派生 + 漂移测试）。
+> 提交 `40eeea5`、标签 `v0.1.6`、CI 绿；npm registry 自 2026-10-22T02:33Z 起 `Package publishing` 部分故障
+> （先 E503、后 OIDC 交换失败报 ENEEDAUTH），三次发布均失败。恢复后：
+> `gh run rerun 39710645018 -R BD7PIL/reeve --failed`，再 `npm view @bd7pil/reeve@0.1.6 version` 确认。
+> 在它发出之前：ocrc pin 与两台机器**都留在 0.1.5**（不会自动漂移）。
 
 ## 1. 这次交付改了什么（回滚的边界）
 
