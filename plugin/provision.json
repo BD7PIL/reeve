@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "name": "reeve",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "license": "MIT",
   "//": "REEVE 在 ocrc 实例里的装配说明。**没有二进制工件** —— 代理层是插件内的 GATE（纯 JS），不需要任何本地服务（Bifrost 时代已结束）。",
   "host": {
@@ -15,7 +15,7 @@
     ]
   },
   "enginePlugin": {
-    "spec": "@bd7pil/reeve@0.1.7",
+    "spec": "@bd7pil/reeve@0.1.8",
     "kind": "package",
     "entry": "~/.ocrc/components/reeve/node_modules/@bd7pil/reeve",
     "requiresPeer": []

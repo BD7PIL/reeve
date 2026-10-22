@@ -383,6 +383,9 @@ const postJson = (gate, path, body) =>
   assert.equal(c({ text: 'Payment Required' }).reason, 'always:quota')
   assert.equal(c({ text: '模型不存在' }).reason, 'always:model', '中文模型不存在')
   assert.equal(c({ text: 'model not supported here' }).reason, 'always:model')
+  // zen 对未知模型返回 400 + "Upstream request failed: Model is unavailable." —— 必须当模型错误换候选
+  assert.equal(c({ status: 400, text: '{"error":{"type":"server_error","message":"Upstream request failed: Model is unavailable."}}' }).reason, 'always:model', 'Model is unavailable → 必换')
+  assert.equal(c({ text: 'The model `x` does not exist' }).reason, 'always:model')
   assert.equal(c({ text: 'missing api key' }).reason, 'always:key')
   assert.equal(c({ text: 'api key not set' }).reason, 'always:key')
   // 显式信号：data.isRetryable + 安全阀（408/425 也算安全）

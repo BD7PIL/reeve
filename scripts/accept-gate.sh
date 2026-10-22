@@ -71,11 +71,14 @@ b=$(ledger_lines)
 c=$(gate_call "reeve/flash" "ses_accept_free_$$" "$WORK/free")
 fb=$(fallback_header "$WORK/free.head")
 tail -n "+$((b + 1))" "$LEDGER" >"$WORK/rows2.jsonl" 2>/dev/null || true
-auto_ok=$(grep -c '"auto":true.*"status":"ok"' "$WORK/rows2.jsonl" || true)
-if [ "$c" = 200 ] && [ -n "$fb" ] && [ "${auto_ok:-0}" -ge 1 ]; then
-  pass ② "直投免费链" "HTTP $c，x-reeve-fallback: $fb ｜ 台账自动免费成功 ${auto_ok} 行"
+auto_try=$(grep -c '"auto":true' "$WORK/rows2.jsonl" || true)
+paid_ok=$(grep -c '"provider":"zhipuai-coding-plan".*"status":"ok"' "$WORK/rows2.jsonl" || true)
+# 非引擎调用没有引擎的客户端形状（UA + session 头 + 官方 tools），zen 的免费档会 403 形状门 ——
+# 所以这一条验的是"免费车道被真正尝试过 + 链顺位到付费仍成功"；免费成功本身由 ③f（真引擎）证明。
+if [ "$c" = 200 ] && [ -n "$fb" ] && [ "${auto_try:-0}" -ge 1 ] && [ "${paid_ok:-0}" -ge 1 ]; then
+  pass ② "直投链：免费被形状门拒 → 顺位付费" "HTTP $c；auto 尝试 ${auto_try} 行；付费成功；引擎侧免费成功见 ③f"
 else
-  fail ② "直投免费链" "HTTP $c，头：$(head -c 120 "$WORK/free.head" | tr -d '\r\n') ｜ 台账：$(head -c 200 "$WORK/rows2.jsonl")"
+  fail ② "直投链：免费被形状门拒 → 顺位付费" "HTTP $c auto=${auto_try:-0} paid=${paid_ok:-0} ｜ $(head -c 240 "$WORK/rows2.jsonl")"
 fi
 
 # ── ③ GATE 面 ──

@@ -10,17 +10,21 @@
 // 只做判断，不做 IO——纯函数，测试逐条钉。
 
 const NEVER = [/abort/i, /context[\s_-]{0,12}overflow/i, /context\s+length/i, /too\s+many\s+tokens/i, /上下文.{0,6}超/i, /超出.{0,8}上[下]文/i]
+// `[正则, reason]` 成对：以前用"下标 → reason"的平行数组，插入一条就整段错位（中文模型不存在被判成 always:key）。
 const ALWAYS = [
-  /quota[\s_-]*exceeded/i,
-  /resource[\s_-]*exhausted/i,
-  /out\s+of\s+credits/i,
-  /payment\s+required/i,
-  /insufficient[\s_-]*(quota|credits?|balance)/i,
-  /使用上限|额度不足|余额不足|已耗尽|达到.{0,6}限制/i,
-  /model[^\n]{0,24}not[^\n]{0,12}(found|supported)/i,
-  /模型.{0,6}(不存在|不支持)/i,
-  /missing[\s_-]*api[\s_-]*key/i,
-  /api[\s_-]*key[^\n]{0,16}(missing|not\s+set|required)/i,
+  [/quota[\s_-]*exceeded/i, 'always:quota'],
+  [/resource[\s_-]*exhausted/i, 'always:quota'],
+  [/out\s+of\s+credits/i, 'always:quota'],
+  [/payment\s+required/i, 'always:quota'],
+  [/insufficient[\s_-]*(quota|credits?|balance)/i, 'always:quota'],
+  [/使用上限|额度不足|余额不足|已耗尽|达到.{0,6}限制/i, 'always:quota'],
+  [/model[^\n]{0,24}not[^\n]{0,12}(found|supported)/i, 'always:model'],
+  // zen 对未知模型返回 400 + "Upstream request failed: Model is unavailable." / "does not exist"
+  [/model[^\n]{0,24}unavailable/i, 'always:model'],
+  [/model[^\n]{0,40}(does\s+not\s+exist|not\s+exist|unknown|invalid)/i, 'always:model'],
+  [/模型.{0,6}(不存在|不支持)/i, 'always:model'],
+  [/missing[\s_-]*api[\s_-]*key/i, 'always:key'],
+  [/api[\s_-]*key[^\n]{0,16}(missing|not\s+set|required)/i, 'always:key'],
 ]
 const TEXT_HINTS = [
   /rate[\s_-]*limit/i,
@@ -54,7 +58,7 @@ export function statusOf({ status, text, error, policy } = {}) {
 export function classifyFailure({ status, text, error, headers, policy } = {}) {
   const hay = `${asString(text)} ${asString(error?.message)} ${asString(error?.name)} ${asString(error?.error?.message)}`
   for (const re of NEVER) if (re.test(hay)) return { retryable: false, reason: re === NEVER[0] ? 'never:abort' : 'never:context', status: statusOf({ status, text, error, policy }) }
-  for (const [i, re] of ALWAYS.entries()) if (re.test(hay)) return { retryable: true, reason: ['always:quota', 'always:quota', 'always:quota', 'always:quota', 'always:quota', 'always:quota', 'always:model', 'always:model', 'always:key', 'always:key'][i] ?? 'always', status: statusOf({ status, text, error, policy }) }
+  for (const [re, reason] of ALWAYS) if (re.test(hay)) return { retryable: true, reason, status: statusOf({ status, text, error, policy }) }
 
   const code = statusOf({ status, text, error, policy })
   const list = policy?.retry_on_errors ?? []

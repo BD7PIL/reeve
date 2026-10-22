@@ -3,6 +3,19 @@
 Newest first. Versions follow the plugin package (`plugin/package.json`); the
 panel extension has its own tags (`reeve-<version>`).
 
+## 0.1.8 — 2026-10-22
+
+**Fix: a 400 from zen meaning "model unavailable" is now a failover, not a caller error.**
+Zen answers unknown free models with HTTP 400 + `Model is unavailable.`; the
+classifier treated any 400 as non-retryable, so a dead free candidate aborted the
+request instead of falling through to paid. The always-retry patterns now cover
+`Model is unavailable` / `model does not exist` (and the ALWAYS table is a
+`[regex, reason]` pair list so inserting a rule cannot shift the reasons).
+The real-host acceptance step ② is honest about the passthrough shape gate:
+a non-engine caller gets 403 from the free tier, so ② now asserts the free lane
+was attempted and the chain fell through to paid; the engine-side free success is
+proven by ③f.
+
 ## 0.1.7 — 2026-10-22
 
 **GATE grows a native free lane (`@free`) and 9router is retired.** Chains can
