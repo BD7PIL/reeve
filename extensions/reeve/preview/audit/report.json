@@ -1,0 +1,370 @@
+{
+  "generatedAt": "2026-10-22T16:19:01.273Z",
+  "fixture": true,
+  "strictContrast": false,
+  "total": 40,
+  "failed": 0,
+  "warned": 0,
+  "items": [
+    {
+      "id": "01-chain-default",
+      "note": "链首屏：链卡（含 @free 自动行）+ agent/候选/更多",
+      "file": "01-chain-default.png",
+      "scenario": null,
+      "failures": [],
+      "warnings": [],
+      "consoleErrors": []
+    },
+    {
+      "id": "02-chain-row-selected",
+      "note": "选中候选 → 动作条（上移/下移/换模型/删除）",
+      "file": "02-chain-row-selected.png",
+      "scenario": null,
+      "failures": [],
+      "warnings": [],
+      "consoleErrors": []
+    },
+    {
+      "id": "03-chain-picker",
+      "note": "「换模型」→ 搜索 + 候选列表 + 手填",
+      "file": "03-chain-picker.png",
+      "scenario": null,
+      "failures": [],
+      "warnings": [],
+      "consoleErrors": []
+    },
+    {
+      "id": "04-chain-picker-search",
+      "note": "搜索 deepseek → 只留命中的候选",
+      "file": "04-chain-picker-search.png",
+      "scenario": null,
+      "failures": [],
+      "warnings": [],
+      "consoleErrors": []
+    },
+    {
+      "id": "05-chain-added",
+      "note": "加进链尾 → 未保存徽标 + 底部保存条",
+      "file": "05-chain-added.png",
+      "scenario": null,
+      "failures": [],
+      "warnings": [],
+      "consoleErrors": []
+    },
+    {
+      "id": "06-chain-saved",
+      "note": "保存 → 生效中 → 已生效（预览只写内存，但会模拟 GATE 热更）",
+      "file": "06-chain-saved.png",
+      "scenario": null,
+      "failures": [],
+      "warnings": [],
+      "consoleErrors": []
+    },
+    {
+      "id": "07-chain-menu",
+      "note": "链卡「更多」：设为默认链 / 删除（destructive）",
+      "file": "07-chain-menu.png",
+      "scenario": null,
+      "failures": [],
+      "warnings": [],
+      "consoleErrors": []
+    },
+    {
+      "id": "08-chain-new",
+      "note": "＋ 新增链 → 链名输入 + 建链/取消",
+      "file": "08-chain-new.png",
+      "scenario": null,
+      "failures": [],
+      "warnings": [],
+      "consoleErrors": []
+    },
+    {
+      "id": "09-chain-agents",
+      "note": "agent → 链 映射（每 agent 一个下拉）",
+      "file": "09-chain-agents.png",
+      "scenario": null,
+      "failures": [],
+      "warnings": [],
+      "consoleErrors": []
+    },
+    {
+      "id": "10-chain-policy",
+      "note": "策略卡：数字字段 + 开关（含说明）",
+      "file": "10-chain-policy.png",
+      "scenario": null,
+      "failures": [],
+      "warnings": [],
+      "consoleErrors": []
+    },
+    {
+      "id": "11-chain-narrow",
+      "note": "窄宽 380px：不横向溢出，单列落",
+      "file": "11-chain-narrow.png",
+      "scenario": null,
+      "failures": [],
+      "warnings": [],
+      "consoleErrors": []
+    },
+    {
+      "id": "12-chain-dark",
+      "note": "链 · 深色",
+      "file": "12-chain-dark.png",
+      "scenario": null,
+      "failures": [],
+      "warnings": [],
+      "consoleErrors": []
+    },
+    {
+      "id": "13-stats-light",
+      "note": "统计：摘要数字格 + 链进度条 + provider 列表",
+      "file": "13-stats-light.png",
+      "scenario": null,
+      "failures": [],
+      "warnings": [],
+      "consoleErrors": []
+    },
+    {
+      "id": "14-stats-dark",
+      "note": "统计 · 深色",
+      "file": "14-stats-dark.png",
+      "scenario": null,
+      "failures": [],
+      "warnings": [],
+      "consoleErrors": []
+    },
+    {
+      "id": "15-ledger-light",
+      "note": "台账：事实行 + 子任务列表",
+      "file": "15-ledger-light.png",
+      "scenario": null,
+      "failures": [],
+      "warnings": [],
+      "consoleErrors": []
+    },
+    {
+      "id": "16-chain-dirty-discard",
+      "note": "删候选 →「丢弃改动」→ 回到改动前",
+      "file": "16-chain-dirty-discard.png",
+      "scenario": null,
+      "failures": [],
+      "warnings": [],
+      "consoleErrors": []
+    },
+    {
+      "id": "17-chain-keyboard",
+      "note": "键盘：选中后 Alt+↓ 换位（W3C APG）",
+      "file": "17-chain-keyboard.png",
+      "scenario": null,
+      "failures": [],
+      "warnings": [],
+      "consoleErrors": []
+    },
+    {
+      "id": "18-chain-selected-dark",
+      "note": "深色下的选中行 + 动作条",
+      "file": "18-chain-selected-dark.png",
+      "scenario": null,
+      "failures": [],
+      "warnings": [],
+      "consoleErrors": []
+    },
+    {
+      "id": "19-free-default",
+      "note": "免费车道卡：开关/次数/来源/偏好/当前展开",
+      "file": "19-free-default.png",
+      "scenario": null,
+      "failures": [],
+      "warnings": [],
+      "consoleErrors": []
+    },
+    {
+      "id": "20-free-cooling",
+      "note": "免费候选冷却中的徽标",
+      "file": "20-free-cooling.png",
+      "scenario": "free-cooling",
+      "failures": [],
+      "warnings": [],
+      "consoleErrors": []
+    },
+    {
+      "id": "21-free-empty",
+      "note": "没有可展开的免费候选（空态）",
+      "file": "21-free-empty.png",
+      "scenario": "free-empty",
+      "failures": [],
+      "warnings": [],
+      "consoleErrors": []
+    },
+    {
+      "id": "22-free-error",
+      "note": "免费车道运行态读取失败",
+      "file": "22-free-error.png",
+      "scenario": "free-error",
+      "failures": [],
+      "warnings": [],
+      "consoleErrors": []
+    },
+    {
+      "id": "23-free-max-dirty",
+      "note": "改免费次数 → 未保存徽标（轮询后出现）",
+      "file": "23-free-max-dirty.png",
+      "scenario": null,
+      "failures": [],
+      "warnings": [],
+      "consoleErrors": []
+    },
+    {
+      "id": "24-free-prefer-add",
+      "note": "固定一个免费模型进 prefer",
+      "file": "24-free-prefer-add.png",
+      "scenario": null,
+      "failures": [],
+      "warnings": [],
+      "consoleErrors": []
+    },
+    {
+      "id": "25-gate-down",
+      "note": "GATE 没起来：徽标 + 横幅 + 页签仍可用",
+      "file": "25-gate-down.png",
+      "scenario": "gate-down",
+      "failures": [],
+      "warnings": [],
+      "consoleErrors": []
+    },
+    {
+      "id": "26-gate-problems",
+      "note": "配置 problems 横幅",
+      "file": "26-gate-problems.png",
+      "scenario": "gate-problems",
+      "failures": [],
+      "warnings": [],
+      "consoleErrors": []
+    },
+    {
+      "id": "27-config-parse-error",
+      "note": "配置解析失败：横幅 + tried 列表",
+      "file": "27-config-parse-error.png",
+      "scenario": "config-parse-error",
+      "failures": [],
+      "warnings": [],
+      "consoleErrors": []
+    },
+    {
+      "id": "28-config-missing",
+      "note": "配置读不到：NOT_FOUND + tried 列表",
+      "file": "28-config-missing.png",
+      "scenario": "config-missing",
+      "failures": [],
+      "warnings": [],
+      "consoleErrors": []
+    },
+    {
+      "id": "29-ledger-missing",
+      "note": "快照读不到：台账未就绪 + 试过的路径",
+      "file": "29-ledger-missing.png",
+      "scenario": "ledger-missing",
+      "failures": [],
+      "warnings": [],
+      "consoleErrors": []
+    },
+    {
+      "id": "30-ledger-denied",
+      "note": "快照未授权：权限提示（不是\"空台账\"）",
+      "file": "30-ledger-denied.png",
+      "scenario": "ledger-denied",
+      "failures": [],
+      "warnings": [],
+      "consoleErrors": []
+    },
+    {
+      "id": "31-save-fail",
+      "note": "写入失败：notice + 没生效",
+      "file": "31-save-fail.png",
+      "scenario": "save-fail",
+      "failures": [],
+      "warnings": [],
+      "consoleErrors": []
+    },
+    {
+      "id": "32-apply-stall",
+      "note": "写了但 GATE 没热更：停在生效中",
+      "file": "32-apply-stall.png",
+      "scenario": "apply-stall",
+      "failures": [],
+      "warnings": [],
+      "consoleErrors": []
+    },
+    {
+      "id": "33-policy-dirty",
+      "note": "改策略数字 → 未保存（轮询后出现）",
+      "file": "33-policy-dirty.png",
+      "scenario": null,
+      "failures": [],
+      "warnings": [],
+      "consoleErrors": []
+    },
+    {
+      "id": "34-ledger-filter-empty",
+      "note": "筛选在飞（0 条）≠ 台账空",
+      "file": "34-ledger-filter-empty.png",
+      "scenario": null,
+      "failures": [],
+      "warnings": [],
+      "consoleErrors": []
+    },
+    {
+      "id": "35-stats-empty",
+      "note": "没有归因数据的空态",
+      "file": "35-stats-empty.png",
+      "scenario": "empty-stats",
+      "failures": [],
+      "warnings": [],
+      "consoleErrors": []
+    },
+    {
+      "id": "36-stats-stale",
+      "note": "台账旧行的窗口放宽提示",
+      "file": "36-stats-stale.png",
+      "scenario": "stale",
+      "failures": [],
+      "warnings": [],
+      "consoleErrors": []
+    },
+    {
+      "id": "37-ledger-dark",
+      "note": "台账 · 深色",
+      "file": "37-ledger-dark.png",
+      "scenario": null,
+      "failures": [],
+      "warnings": [],
+      "consoleErrors": []
+    },
+    {
+      "id": "38-chain-loading",
+      "note": "读取中的加载态",
+      "file": "38-chain-loading.png",
+      "scenario": "slow-config",
+      "failures": [],
+      "warnings": [],
+      "consoleErrors": []
+    },
+    {
+      "id": "40-chain-narrow-306",
+      "note": "宿主侧栏 306px：不溢出、徽标与更多可见、免费行仍可读",
+      "file": "40-chain-narrow-306.png",
+      "scenario": null,
+      "failures": [],
+      "warnings": [],
+      "consoleErrors": []
+    },
+    {
+      "id": "39-gate-running",
+      "note": "主徽标：在飞 + 排队（primary 色）",
+      "file": "39-gate-running.png",
+      "scenario": "gate-running",
+      "failures": [],
+      "warnings": [],
+      "consoleErrors": []
+    }
+  ]
+}

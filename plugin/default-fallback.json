@@ -1,0 +1,64 @@
+{
+  "//": "GATE 的兜底配置（机器上没有任何 reeve/fallback.jsonc 时用它）。免费池只保留 image-capable 免费模型；纯文本免费模型不进池。",
+  "//cells": "providers.<id>：base_url + path（默认 /v1/chat/completions）+ auth（auth.json 里的 id，按序取第一个有 key 的）+ key（env.X 引用或公开字面量，覆盖 auth）+ lane（native | passthrough）+ models/models_fetch（目录来源）。",
+  "//tiers": "chain_for_model 里的 `reeve/*` 五条 = 引擎档位模型（reeve/flash|standard|pro|manual|multimodal）。引擎发**全名**进请求体，键必须写全名。图片请求由 GATE 从 reasoning 改道 vision；其余档位的链目标都是 image-capable。",
+  "schema": 1,
+  "policy": {
+    "retry_on_errors": [401, 402, 403, 429, 500, 503, 529],
+    "max_fallback_attempts": 6,
+    "cooldown_seconds": 60,
+    "restore_primary_after_cooldown": false,
+    "first_prompt_watchdog_ms": 90000,
+    "provider_retries": 1,
+    "models_ttl_seconds": 300,
+    "session_ttl_seconds": 1800
+  },
+  "providers": {
+    "opencode": { "base_url": "https://opencode.ai/inference/openai/v1", "path": "/chat/completions", "key": "public", "lane": "passthrough", "models": ["*"] },
+    "openrouter": { "base_url": "https://openrouter.ai/api/v1", "path": "/chat/completions", "auth": ["openrouter"], "models": [] },
+    "zhipuai-coding-plan": { "base_url": "https://open.bigmodel.cn", "path": "/api/coding/paas/v4/chat/completions", "auth": ["zhipuai-coding-plan"] },
+    "deepseek": { "base_url": "https://api.deepseek.com", "auth": ["deepseek", "deepseek-api"] },
+    "lmuai": { "base_url": "https://api.lmuai.com", "auth": ["lmuai", "lmuai-glm"] }
+  },
+  "free": {
+    "enabled": true,
+    "max": 3,
+    "providers": ["opencode", "openrouter"],
+    "refresh_seconds": 300,
+    "failure_threshold": 3,
+    "failure_cooldown_seconds": 600,
+    "prefer": ["glm-5.3-flash-free", "mimo-v2.6-flash-free", "deepseek-v4.1-flash-free"],
+    "deny": [],
+    "require_image": true,
+    "image_models": ["glm-5.3-flash-free", "deepseek-v4.1-flash-free", "mimo-v2.6-flash-free", "nemotron-3.5-super-vl-free"],
+    "static": {}
+  },
+  "chains": {
+    "reasoning": { "targets": ["zhipuai-coding-plan/glm-5.3", "deepseek/deepseek-flash", "lmuai/glm-5.3-flash", "@free"] },
+    "standard": { "targets": ["zhipuai-coding-plan/glm-5.3-flash", "lmuai/glm-5.3-flash", "@free", "deepseek/deepseek-flash"] },
+    "free-first": { "targets": ["@free", "zhipuai-coding-plan/glm-5.3-flash", "lmuai/glm-5.3-flash", "deepseek/deepseek-flash"] },
+    "manual": { "targets": ["zhipuai-coding-plan/glm-5.3-flash"] },
+    "vision": { "targets": ["zhipuai-coding-plan/glm-5.3-flash", "lmuai/glm-5.3-flash", "@free", "deepseek/deepseek-flash"] }
+  },
+  "agents": {
+    "planner": "reasoning",
+    "advisor": "reasoning",
+    "critic": "reasoning",
+    "foreman": "manual",
+    "executor": "standard",
+    "reviewer": "standard",
+    "scout": "free-first",
+    "librarian": "free-first",
+    "looker": "vision"
+  },
+  "chain_for_model": {
+    "reeve/flash": "free-first",
+    "reeve/standard": "standard",
+    "reeve/pro": "reasoning",
+    "reeve/manual": "manual",
+    "reeve/multimodal": "vision",
+    "zhipuai-coding-plan/glm-5.3": "reasoning",
+    "zhipuai-coding-plan/glm-5.3-flash": "standard"
+  },
+  "default_chain": "standard"
+}
