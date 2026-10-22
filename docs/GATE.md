@@ -16,7 +16,7 @@
 | `plugin/src/gate/lanes.js` | 路由（链名 ＞ agent 链/显式直投 ＞ chain_for_model ＞ 兜底链 ＞ 404）、尝试计划（跳 no-op/无 provider/无键、上限、冷却顺延）、请求构造（透传逐字 vs 原生最小集）、多键轮转的取键钩子 |
 | `plugin/src/gate/gate.js` | HTTP 服务：`/v1/chat/completions`（候选顺位 + 首字节前才换 + 流式 + `x-reeve-fallback` 头）、`/v1/models`（声明 ∪ 运行时池 ∪ 链名，TTL）、`/gate/session`（session→agent 桥）、`/gate/session/:id/next`（插件侧取下一候选，去重）、`/gate/version`；台账 JSONL（不带密钥、超限轮转） |
 | `plugin/default-fallback.json` | 打包兜底配置（付费候选；免费车道属于每台机器自己的选择） |
-| `plugin/test/gate.mjs` | 21 项离线验收（单元 + 集成：stub 上游、假时钟、金丝雀密钥、零出网保证、握手式流式断言） |
+| `plugin/test/gate.mjs` | 25 项离线验收（单元 + 集成：stub 上游、假时钟、金丝雀密钥、零出网保证、握手式流式断言、`detach` 卸载语义） |
 | `~/.config/opencode/reeve/fallback.jsonc` | 机器上的用户配置（三端共享：开发机上 `~/.config/opencode/reeve/` 是 **junction** → 仓内 `.config/opencode/reeve/`；对端由 ocrc sync 这个目录） |
 
 ## 2. 语义（实现即规格）
