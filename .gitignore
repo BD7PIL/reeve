@@ -1,0 +1,16 @@
+node_modules/
+dist/
+*.log
+.DS_Store
+# 实验/临时
+.tmp-*
+*.tsbuildinfo
+
+# 内部运维脚本（EL7 staging 专用，不随公开树发布）
+.zcode/
+
+# 覆盖率产物（c8，本地与 CI 皆可重建）
+coverage/
+
+# 面板预览截图（scripts/preview.mjs 的产物）
+.preview-shots/
