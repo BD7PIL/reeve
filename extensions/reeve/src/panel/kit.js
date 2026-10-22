@@ -10,6 +10,9 @@ import {
   mountBadge, mountBanner, mountButton, mountCheckbox, mountEmpty, mountList, mountMenu,
   mountProgress, mountSearchField, mountSelect, mountSeparator, mountSpinner, mountTabs, mountTextField,
 } from '@openchamber/sdk/ui'
+// 图标模块在包里，但 `ui/index.js` 没有 re-export 它（实测）—— 直接按文件引，
+// 免得自己再造一套图标（那正是"看起来像另一个 app"的老路）。
+import { icon } from '@openchamber/sdk/dist/ui/icons.js'
 
 import { el } from './util.js'
 
@@ -115,3 +118,51 @@ export const mutedLine = (text) => el('div', { class: 'oc-xs oc-off', text })
 
 /** 让一个 kit 包装层在行里不要被 flex 拉变形。 */
 export const inline = (node) => el('span', { class: 'oc-kit-inline' }, [node])
+/** kit 自带的图标（remixicon 形状：search / chevron / check / close）。用它而不是自己画 SVG。 */
+export const kitIcon = (root, name, size = 14, className = '') => {
+  const svg = icon(name, size, className)
+  root.append(svg)
+  return root
+}
+
+/** 按钮 + 前置图标（宿主也这么拼：ghost xs + 图标 + 文本，或纯图标）。 */
+export function iconButton({ iconName, label, ...props }) {
+  const b = button({ label, ...props })
+  const inner = b.node.querySelector('button')
+  if (inner && iconName) inner.prepend(icon(iconName, 14))
+  return b
+}
+
+/** 分区：标题行（小字灰色说明在右）+ 一组行。 */
+export function section({ title, hint, body = [], headRight = null }) {
+  const node = el('div', { class: 'oc-section' })
+  const head = el('div', { class: 'oc-section-head' })
+  head.append(el('span', { class: 'oc-label', text: title }))
+  if (hint) head.append(el('span', { class: 'oc-micro oc-muted', text: hint }))
+  if (headRight) {
+    head.append(el('span', { class: 'oc-grow' }))
+    head.append(headRight)
+  }
+  node.append(head)
+  const box = el('div', { class: 'oc-section-body oc-divide' })
+  for (const child of body) box.append(child)
+  node.append(box)
+  return node
+}
+
+/** 设置行：左（标签 + 说明）/ 右（控件）。 */
+export function fieldRow({ label, description = null, control, extra = null }) {
+  const row = el('div', { class: 'oc-field-row' })
+  const main = el('div', { class: 'oc-field-main' })
+  main.append(el('label', { class: 'oc-label oc-truncate', text: label }))
+  if (description) main.append(el('span', { class: 'oc-micro oc-muted', text: description }))
+  row.append(main)
+  const right = el('div', { class: 'oc-field-control' })
+  if (control) right.append(control)
+  if (extra) right.append(extra)
+  row.append(right)
+  return row
+}
+
+/** 细线分隔（无标签）—— kit 的 mountSeparator 带文字；这里只要线。 */
+export const hairline = () => el('div', { class: 'oc-divide-anchor', style: 'height:1px;background:var(--surface-subtle, var(--interactive-border))' })

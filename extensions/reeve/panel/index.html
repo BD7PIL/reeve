@@ -5,117 +5,102 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>REEVE 编排</title>
 <style>
-  /* 页面骨架 only —— 颜色、字号、圆角、控件几何**全归宿主**。
-     宿主通过 applyHostReady() 把 --oc-* / --surface-* / --interactive-* 令牌写到 <html>，
-     kit 在第一次挂载时自己注入控件样式（按钮/徽标/列表/进度条…）。
-     这一份只留 kit 不给的**布局**：页/行/列/卡/表单网格/粘性保存条。
-     （这里曾经有一整套自绘的配色与"档位块/延迟条/chip"——正是那套自绘让面板看起来像另一个 app。） */
+  /* 页面骨架 only —— 配色、字号、圆角、控件几何**全归宿主**。
+     kit 自己注入控件样式；宿主在服务扩展文档时把它那份"外观"（GUEST_UI_LOOK_CSS）追加在后面。
+     这一份只放 kit 不给的**布局**，并且按宿主自己的设置页写法：
+       · 分区（section）之间留白，分区内部是**平铺的行**，行间用 1px 的 --surface-subtle 细线分隔（divide-y）
+       · 行 = 左标签 + 右控件（label-left / control-right），不是一格一格的卡片
+       · 只在"确实要分组"的地方用 rounded-md + border + bg-surface-elevated/50（宿主也是这么用的）
+     字号跟宿主自己的刻度对齐（--text-ui-label 14px / --text-meta 14px / --text-micro 13px）；不写死颜色。 */
 
   html, body { margin: 0; min-height: 100%; background: transparent; }
   body { font: inherit; color: inherit; }
   #root { min-height: 100%; }
-
-  /* kit 的包装层不该成为自己的布局盒 */
   .oc-kit { display: contents; }
 
   .oc-page {
     box-sizing: border-box;
     display: flex;
     flex-direction: column;
-    gap: 10px;
+    gap: 16px;            /* 分区之间（宿主 space-y-4/6 那一档） */
     min-height: 100%;
-    /* 底边留 16px：宿主底部有一条圆角条带，贴太近会被压住（实测只差 10px） */
     padding: 12px 12px 16px;
   }
 
-  .oc-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; }
-  .oc-row-nowrap { flex-wrap: nowrap; }
-  .oc-row-between { justify-content: space-between; }
+  /* ── 基本盒子 ── */
+  .oc-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; }
+  .oc-bar-nowrap { flex-wrap: nowrap; }
+  .oc-bar-between { justify-content: space-between; }
   .oc-col { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
   .oc-grow { flex: 1 1 auto; min-width: 0; }
   .oc-push { margin-left: auto; }
   .oc-truncate { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .oc-full { width: 100%; }
 
-  .oc-card {
+  /* ── 字（对齐宿主的 typography 刻度）── */
+  .oc-title { font-size: 15px; font-weight: 600; }
+  .oc-label { font-size: 14px; font-weight: 500; }
+  .oc-meta { font-size: 14px; }
+  .oc-micro { font-size: 13px; }
+  .oc-muted { color: var(--surface-muted-foreground, color-mix(in srgb, currentColor 60%, transparent)); }
+  .oc-mono { font-family: var(--font-mono, ui-monospace, monospace); font-variant-numeric: tabular-nums; }
+  .oc-nowrap { white-space: nowrap; }
+
+  /* ── 分区：标题行 + 一组平铺的行 ── */
+  .oc-section { display: flex; flex-direction: column; min-width: 0; }
+  .oc-section-head { display: flex; align-items: baseline; gap: 8px; min-width: 0; padding-bottom: 6px; }
+  .oc-section-body { display: flex; flex-direction: column; min-width: 0; }
+
+  /* 行间细线（宿主的 divide-y divide-[var(--surface-subtle)]） */
+  .oc-divide > * + * { border-top: 1px solid var(--surface-subtle, var(--interactive-border)); }
+
+  /* 设置行：左标签/说明，右控件 */
+  .oc-field-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-width: 0; padding: 8px 0; }
+  .oc-field-row > .oc-field-main { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+  .oc-field-row > .oc-field-control { flex: 0 0 auto; min-width: 0; }
+
+  /* 需要分组的 inset（宿主：rounded-md border border-border bg-surface-elevated/50） */
+  .oc-inset {
     display: flex;
     flex-direction: column;
     gap: 8px;
     min-width: 0;
-    padding: 10px;
-    /* 面 = 宿主的高层面：深色主题里 background 与 elevated 差一档，卡必须用它才立得起来
-       （上一版只画边框 —— 宿主深色的边框是 #242323bf，看着就是"没有卡"） */
-    background: var(--surface-elevated, transparent);
+    padding: 8px;
     border: 1px solid var(--interactive-border, color-mix(in srgb, currentColor 25%, transparent));
-    border-radius: var(--radius, 9px);
+    border-radius: calc(var(--radius, 9px) - 2px);
+    background: color-mix(in srgb, var(--surface-elevated, transparent) 50%, transparent);
   }
 
-  /* 候选列表可滚（长链不该把整页撑到几千 px） */
-  .oc-list-scroll { max-height: 260px; overflow: auto; }
-
-  .oc-form {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 8px 10px;
-    align-items: start;
+  .oc-list-scroll { max-height: 280px; overflow: auto; }
+  .oc-pre {
+    margin: 0; max-height: 220px; overflow: auto; padding: 8px;
+    border-radius: calc(var(--radius, 9px) - 2px);
+    background: var(--surface-muted, color-mix(in srgb, currentColor 8%, transparent));
+    font-family: var(--font-mono, ui-monospace, monospace); font-size: 13px; line-height: 1.5;
+    white-space: pre-wrap; overflow-wrap: anywhere;
   }
-  .oc-form-cell { min-width: 0; }
-  .oc-form-cell-wide { grid-column: 1 / -1; }
-  @media (max-width: 460px) { .oc-form { grid-template-columns: minmax(0, 1fr); } }
+  .oc-sr { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
 
-  .oc-xs { font-size: 11px; }
-  .oc-sm { font-size: 12px; }
-  .oc-nowrap { white-space: nowrap; }
-
-  /* 一行里放数字：等宽 + 表格数字，跨行对齐 */
-  .oc-num { font-family: var(--font-mono, ui-monospace, monospace); font-variant-numeric: tabular-nums; }
-
-  .oc-ok { color: var(--status-success, #1a7f4b); }
-  .oc-warn { color: var(--status-warning, #9a6a00); }
-  .oc-err { color: var(--status-error, #c0392b); }
-  .oc-off { color: var(--surface-muted-foreground, color-mix(in srgb, currentColor 60%, transparent)); }
-
-  /* 摘要卡里的数字格：标签小灰字 + 数字粗体 */
-  .oc-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(104px, 1fr)); gap: 8px 10px; }
-  .oc-stat-label { font-size: 11px; color: var(--surface-muted-foreground, currentColor); }
-  .oc-stat-value { font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; }
-
-  /* 统计里的一行：名字 | 次数 | 条 | 延迟（四列对齐，跨行可用同一量程比较） */
-  .oc-stat-row { display: grid; grid-template-columns: minmax(0, 1.1fr) auto minmax(80px, 1.2fr) auto; align-items: center; gap: 10px; min-height: 26px; }
-  .oc-stat-name { font-weight: 500; }
-  .oc-stat-bar { display: flex; align-items: center; }
-  .oc-stat-bar > * { flex: 1 1 auto; }
-  .oc-stat-lat { text-align: right; }
-
-  /* 保存条：只在有改动/在飞时出现，吸在底部 —— 动线是"改 → 保存 → 已生效" */
+  /* 保存条：只在有改动/在飞时出现，吸在底部（分组 inset + 主按钮） */
   .oc-savebar {
-    position: sticky;
-    bottom: 0;
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 8px;
+    position: sticky; bottom: 0;
+    display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
     padding: 8px 10px;
     border: 1px solid var(--interactive-border, color-mix(in srgb, currentColor 25%, transparent));
     border-radius: var(--radius, 9px);
     background: var(--surface-elevated, var(--background, Canvas));
   }
 
-  /* 只给读屏的播报区（视觉上不占位） */
-  .oc-sr { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
+  /* 摘要数字格：小灰标签 + 粗体数字（宿主里"读数"也是这个写法） */
+  .oc-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(112px, 1fr)); gap: 8px 12px; padding: 8px 0; }
+  .oc-stat-label { font-size: 13px; color: var(--surface-muted-foreground, color-mix(in srgb, currentColor 60%, transparent)); }
+  .oc-stat-value { font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; }
 
-  .oc-pre {
-    margin: 0;
-    max-height: 220px;
-    overflow: auto;
-    padding: 8px;
-    border-radius: calc(var(--radius, 9px) - 2px);
-    background: var(--surface-muted, color-mix(in srgb, currentColor 8%, transparent));
-    font-family: var(--font-mono, ui-monospace, monospace);
-    font-size: 11px;
-    line-height: 1.5;
-    white-space: pre-wrap;
-    overflow-wrap: anywhere;
-  }
+  /* 统计里的一行：名字 | 次数 | 条 | 延迟（等宽数字，跨行对齐） */
+  .oc-stat-row { display: grid; grid-template-columns: minmax(0, 1.1fr) auto minmax(80px, 1.2fr) auto; align-items: center; gap: 10px; min-height: 30px; }
+  .oc-stat-bar { display: flex; align-items: center; }
+  .oc-stat-bar > * { flex: 1 1 auto; }
+  .oc-stat-lat { text-align: right; }
 </style>
 </head>
 <body>
