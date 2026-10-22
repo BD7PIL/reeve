@@ -1,0 +1,52 @@
+{
+  "name": "@bd7pil/reeve",
+  "version": "0.1.6",
+  "description": "REEVE 编排层（opencode v2 插件）：agent/skill 注册 + 子任务台账 + GATE 代理层（路由/回退/台账）+ 性能统计",
+  "type": "module",
+  "main": "index.js",
+  "exports": {
+    ".": "./src/index.js"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "node test/unit.mjs && node test/reconcile.mjs && node test/snapshot.mjs && node test/gate.mjs && node test/guard.mjs && node test/stats.mjs && node test/entry.mjs && node test/wiring.mjs && node test/runtime.mjs",
+    "test:coverage": "c8 --reporter=text --reporter=json-summary --reports-dir=coverage --exclude=test/** --exclude=bench.mjs npm test",
+    "check:coverage": "node ../scripts/check-coverage.mjs",
+    "prepublishOnly": "npm test"
+  },
+  "files": [
+    "index.js",
+    "src",
+    "agents",
+    "skills",
+    "default-fallback.json",
+    "provision.json",
+    "LICENSE",
+    "THIRD-PARTY.md",
+    "licenses",
+    "README.md"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/BD7PIL/reeve.git",
+    "directory": "plugin"
+  },
+  "homepage": "https://github.com/BD7PIL/reeve#readme",
+  "bugs": {
+    "url": "https://github.com/BD7PIL/reeve/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "keywords": [
+    "opencode",
+    "opencode-plugin",
+    "orchestration"
+  ],
+  "devDependencies": {
+    "c8": "^12.0.0"
+  }
+}
