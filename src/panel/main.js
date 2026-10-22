@@ -32,15 +32,15 @@ function main() {
 
   // ---- 骨架：页（头 / tab / 段落 / 脚）----
   const page = el('div', { class: 'oc-page' })
-  const header = el('div', { class: 'oc-row oc-row-between' })
-  const headLeft = el('div', { class: 'oc-row' })
+  const header = el('div', { class: 'oc-bar oc-bar-between' })
+  const headLeft = el('div', { class: 'oc-bar' })
   const badgeKit = badge({ label: '读取中…', tone: 'neutral' })
-  headLeft.append(el('strong', { text: 'REEVE' }), badgeKit.node)
+  headLeft.append(el('span', { class: 'oc-micro oc-muted', text: '编排与代理层' }), badgeKit.node)
   const refreshBtnKit = button({ label: '刷新', variant: 'ghost', size: 'sm', data: { 'data-act': 'refresh' }, onClick: () => void refresh() })
   header.append(headLeft, refreshBtnKit.node)
   const tabsHost = el('div')
   const body = el('div', { class: 'oc-col oc-grow' })
-  const foot = el('div', { class: 'oc-xs oc-off' })
+  const foot = el('div', { class: 'oc-micro oc-muted' })
   page.append(header, tabsHost, body, foot)
   root.append(page)
 
@@ -163,6 +163,6 @@ try {
 } catch (err) {
   const root = document.getElementById('root')
   if (root) {
-    root.replaceChildren(el('div', { class: 'oc-xs oc-err', text: `面板未能启动：${err instanceof Error ? err.message : String(err)}` }))
+    root.replaceChildren(el('div', { class: 'oc-micro', style: 'color:var(--status-error)', text: `面板未能启动：${err instanceof Error ? err.message : String(err)}` }))
   }
 }

@@ -50,6 +50,30 @@
 | 台账 | 状态过滤（全部 n / 在飞 n / 失败 n） | 列表变长后"先筛再读"更快 |
 | 卡面 | 计数从右缘移到链名旁（右缘只留「更多」）；每条事实只出现一次 | 与 ocrc 面板同一套：事实在左、静默动作在右 |
 
+## 第四轮：照宿主自己的设置页重做结构（2026-10-22 深夜）
+
+用户判定："感觉还不是 openchamber 的规范"。（对照物不是我的想象，是 **app 自己**。）
+
+证据（从 app 的包里读出来的）：
+
+| 来源 | 事实 |
+| --- | --- |
+| `@openchamber/web` 的 `SettingsView-*.js` | 设置页里所有列表（技能 / 供应商 / 模型）都是 **`divide-y divide-[var(--surface-subtle)]` 的平铺行**：一行 = 左侧标题 + 小字 meta，右侧小号动作按钮 —— **没有一条一个卡片**；分组才用 `rounded-md border bg-surface-elevated/50` |
+| 同一份 CSS 的 `typography-*` 刻度 | `--text-ui-label 14px` / `--text-meta 14px` / `--text-micro 13px`（桌面）。我上一版全篇 11–12px，**比宿主小一档** |
+| `@openchamber/sdk` 的 `ui/style.js`（kit 的结构 CSS） | 工具类只有 `.oc-sdk-muted` / `.oc-sdk-mono` / `.oc-sdk-text`；行高 `padding: 6px 8px`；分隔线是 `mountSeparator`。控件样式由宿主在服务扩展文档时追加它自己的那份 |
+| `@openchamber/sdk` 的 `ui/icons.js` | kit 自带 remixicon 形状（search/chevron/check/close）→ 行内动作可以用真图标，不必写"删除"两个字 |
+
+于是第四轮改的是**结构与刻度**，不是配色：
+
+| 改 | 前 | 后 |
+| --- | --- | --- |
+| 分区 | 每条链一张带边框和底色的卡 | `section(title, hint)` + **平铺行**，行间 1px `--surface-subtle` 细线（宿主 settings 的写法） |
+| 设置项 | 两列表单网格 | **左标签 / 右控件**的 `fieldRow`（agent 映射、策略都是这个形状） |
+| 字号 | 11–12px 自造刻度 | 14px 标签 / 14px meta / 13px micro（对齐宿主的 `typography-*`） |
+| 行内动作 | "删除"文字按钮、`换模型` 大按钮 | ghost `xs` + kit 图标（× = close）；键盘路径不变 |
+| 面板标题 | 面板内再来一行粗体 "REEVE" | 宿主 chrome 已有标题 → 面板只留一行小灰字状态与读数 |
+| 分组 | 处处卡片 | 只在"确实要分组"处用 `oc-inset`（= 宿主的 `rounded-md border bg-elevated/50`），例如候选拾取器 |
+
 ## 与上一版的差别（2026-10-22 重做）
 
 上一版被判定"无法融入宿主风格、文字堆砌、动线混乱"。根因与修法：

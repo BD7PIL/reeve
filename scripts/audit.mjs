@@ -44,10 +44,10 @@ const PLAN = [
   { id: '02-chain-row-selected', tab: 'chain', note: '选中一个候选 → 动作条出现（上移/下移/换模型/删除）', steps: [clickSel('.oc-sdk-row', 1)] },
   { id: '03-chain-picker', tab: 'chain', note: '「换模型」→ 搜索框 + 候选列表 + 手填', steps: [clickSel('.oc-sdk-row', 1), click('换模型')] },
   { id: '04-chain-picker-search', tab: 'chain', note: '搜索结果（只留命中的候选）', steps: [clickSel('.oc-sdk-row', 1), click('换模型'), { type: '9router' }] },
-  { id: '05-chain-added', tab: 'chain', note: '加进链尾 → 未保存徽标 + 底部保存条', steps: [click('＋ 添加候选'), { type: 'deepseek' }, clickSel('.oc-list-scroll .oc-sdk-row', 0)] },
-  { id: '06-chain-saved', tab: 'chain', note: '保存并生效 → 生效中 → 已生效徽标（预览的写只进内存）', steps: [click('＋ 添加候选'), { type: 'deepseek' }, clickSel('.oc-list-scroll .oc-sdk-row', 0), click('保存并生效')], settle: 1600 },
+  { id: '05-chain-added', tab: 'chain', note: '加进链尾 → 未保存徽标 + 底部保存条', steps: [click('+ 添加候选'), { type: 'deepseek' }, clickSel('.oc-list-scroll .oc-sdk-row', 0)] },
+  { id: '06-chain-saved', tab: 'chain', note: '保存并生效 → 生效中 → 已生效徽标（预览的写只进内存）', steps: [click('+ 添加候选'), { type: 'deepseek' }, clickSel('.oc-list-scroll .oc-sdk-row', 0), click('保存并生效')], settle: 1600 },
   { id: '07-chain-menu', tab: 'chain', note: '链卡「更多」：设为默认链 / 删除这条链（destructive）', steps: [click('更多')] },
-  { id: '08-chain-new', tab: 'chain', note: '＋ 新增链 → 链名输入 + 建链/取消', steps: [click('＋ 新增链'), { scrollSel: '[data-act="new-chain-row"]', block: 'end' }] },
+  { id: '08-chain-new', tab: 'chain', note: '＋ 新增链 → 链名输入 + 建链/取消', steps: [click('+ 新增链'), { scrollSel: '[data-act="new-chain-row"]', block: 'end' }] },
   { id: '09-chain-agents', tab: 'chain', note: 'agent → 链 映射（每个 agent 一个下拉）+ 追加未映射的 agent', steps: [{ scrollText: 'agent → 链' }] },
   { id: '10-chain-policy', tab: 'chain', note: '策略卡：三个数字字段 + 一个开关（含说明）', steps: [{ scrollText: '策略' }] },
   { id: '11-chain-narrow', tab: 'chain', width: 380, note: '窄宽 380px：卡片/表单不溢出，单列落' },
@@ -57,7 +57,7 @@ const PLAN = [
   { id: '15-ledger-light', tab: 'ledger', note: '台账 tab：事实卡 + 子任务列表（点行开子会话）' },
   { id: '17-chain-keyboard', tab: 'chain', note: '键盘：选中后 Alt+↓ 换位（W3C APG 键位；链尾再按是空操作，有守卫）', steps: [clickSel('.oc-sdk-row', 1), { key: 'ArrowDown', alt: true }] },
   { id: '18-chain-selected-dark', tab: 'chain', theme: 'dark', note: '深色下的选中行 + 动作条（选中色来自宿主 token）', steps: [clickSel('.oc-sdk-row', 1)] },
-  { id: '16-chain-dirty-discard', tab: 'chain', note: '改动后「丢弃改动」→ 回到未保存前的样子', steps: [clickSel('.oc-sdk-row', 1), click('删除'), click('丢弃改动')] },
+  { id: '16-chain-dirty-discard', tab: 'chain', note: '改动后「丢弃改动」→ 回到未保存前的样子', steps: [clickSel('.oc-sdk-row', 1), clickSel('[data-act="remove"]', 0), click('丢弃改动')] },
 ]
 
 const chrome = [
@@ -174,7 +174,7 @@ const SCROLL_SEL_JS = (selector, block) => `(() => {
 })()`
 
 const SCROLL_TEXT_JS = (text) => `(() => {
-  const hit = [...document.querySelectorAll('strong, .oc-card')].find((x) => (x.textContent || '').includes(${JSON.stringify(text)}));
+  const hit = [...document.querySelectorAll('strong, .oc-label, .oc-section')].find((x) => (x.textContent || '').includes(${JSON.stringify(text)}));
   if (!hit) return false;
   hit.scrollIntoView({ block: 'start' });
   return true;

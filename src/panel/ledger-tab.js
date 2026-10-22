@@ -5,8 +5,10 @@
 //
 // 排版：一张事实卡（数 + 编排面证据）+ 一张列表卡（每行一条子任务，点行跳子会话）。
 
-import { button, empty, list, mutedLine, stat } from './kit.js'
+import { button, empty, list, section as kitSection, stat } from './kit.js'
 import { STATE_LABEL, STATE_TONE, el, fmtClock, fmtDur } from './util.js'
+
+const mutedText = (text) => el('div', { class: 'oc-micro oc-muted', text })
 
 export function createLedgerTab({ host }) {
   /** 列表过滤：全部 / 在飞 / 失败。默认全部。 */
@@ -25,7 +27,7 @@ export function createLedgerTab({ host }) {
         }),
       )
       if (!denied && read?.tried?.length) {
-        section.append(mutedLine(read.tried.map((t) => `${t.code} · ${t.path}`).join('；')))
+        section.append(mutedText(read.tried.map((t) => `${t.code} · ${t.path}`).join('；')))
       }
       return
     }
@@ -35,7 +37,7 @@ export function createLedgerTab({ host }) {
     const running = tasks.filter((t) => t.state === 'running')
     const deadline = tasks.filter((t) => t.timedOut).length
 
-    const facts = el('div', { class: 'oc-card' })
+    const facts = el('div', { class: 'oc-col' })
     const cells = el('div', { class: 'oc-stats' })
     cells.append(
       stat('记录', String(tasks.length)),
@@ -50,10 +52,10 @@ export function createLedgerTab({ host }) {
     if (t) {
       const vis = (t.visible ?? []).map((a) => a.id).join('、') || '（无）'
       const roster = doc.roster ? `名册 ${doc.roster.count} 个` : '名册未注入'
-      facts.append(mutedLine(`前台可见 agent：${vis} · 隐藏 ${(t.hidden ?? []).length} 个 · ${roster}`))
+      facts.append(mutedText(`前台可见 agent：${vis} · 隐藏 ${(t.hidden ?? []).length} 个 · ${roster}`))
     }
     if (doc.registered) {
-      facts.append(mutedLine(`插件包内注册：agent ${doc.registered.agents?.length ?? 0} 个 · skill ${doc.registered.skills?.length ?? 0} 个`))
+      facts.append(mutedText(`插件包内注册：agent ${doc.registered.agents?.length ?? 0} 个 · skill ${doc.registered.skills?.length ?? 0} 个`))
     }
     section.append(facts)
 
@@ -95,7 +97,7 @@ export function createLedgerTab({ host }) {
       }
     })
 
-    const card = el('div', { class: 'oc-card' })
+    const card = el('div', { class: 'oc-col' })
     card.append(bar)
     card.append(
       list({
@@ -108,7 +110,7 @@ export function createLedgerTab({ host }) {
         ariaLabel: 'REEVE 台账',
       }).node,
     )
-    card.append(mutedLine('点一行打开子会话（宿主自己的会话视图）。台账只记本机派过的任务。'))
+    card.append(mutedText('点一行打开子会话（宿主自己的会话视图）。台账只记本机派过的任务。'))
     section.append(card)
   }
 

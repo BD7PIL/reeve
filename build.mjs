@@ -68,6 +68,8 @@ await (esbuild.build ?? esbuild.default.build)({
   minify: true,
   outfile: out,
   alias: {
+    // 图标模块在包里但没被 ui/index re-export（实测）→ 给个子路径 alias，别自己画图标
+    '@openchamber/sdk/dist/ui/icons.js': join(sdkPkg, 'dist/ui/icons.js'),
     '@openchamber/sdk/ui': sdkUiEntry,
     '@openchamber/sdk': sdkEntry,
   },

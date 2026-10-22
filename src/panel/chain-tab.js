@@ -1,4 +1,5 @@
-// 链 tab：GATE 配置的编辑面 —— 每条链一张卡（候选顺序）、agent → 链 映射、策略。
+// 链 tab：GATE 配置的编辑面 —— 平铺的分区 + 行（宿主的设置页写法：细线分隔，不用卡片）。
+//   一条链 = 一组行（链名行 + 候选行 + 动作行），组间用 hairline 分隔；agent 映射与策略是"左标签 / 右控件"的设置行。
 //
 // 动线只有一条：**选一个候选 → 动作条出现（上移/下移/换/删）→ 改完保存 → 顶部变「已生效」**。
 // 想加：链卡底部的「＋ 添加候选」→ 搜索/手填 → 落进链尾。
@@ -12,7 +13,7 @@
 // （temp + rename），GATE 那边永远看不到半截 JSON；`fallback-edit.js` 保证只重写被改的几节。
 
 import { applySave, agentsForChain, parseJsonc, planSave, viewOf } from './fallback-edit.js'
-import { badge, banner, button, checkbox, field, list, menu, mutedLine, search, select, separator } from './kit.js'
+import { badge, banner, button, checkbox, field, fieldRow, iconButton, list, menu, search, section as kitSection, select, separator } from './kit.js'
 import { el, fallbackConfigPathFor, fmtAgo, fmtClock, readGateConfig } from './util.js'
 
 const clone = (v) => JSON.parse(JSON.stringify(v ?? {}))
@@ -100,7 +101,7 @@ export function createChainTab({ host, onNeedPoll }) {
   /** 重画之后把焦点放回被移动的那一行（W3C APG：移动后焦点跟着条目走）。 */
   function focusRow(chain, index) {
     queueMicrotask(() => {
-      const card = document.querySelector(`.oc-card[data-chain="${CSS.escape(chain)}"]`)
+      const card = document.querySelector(`[data-chain="${CSS.escape(chain)}"]`)
       const row = card?.querySelectorAll('.oc-sdk-row')?.[index]
       row?.focus?.()
     })
@@ -254,22 +255,22 @@ export function createChainTab({ host, onNeedPoll }) {
   function renderChainCard(chain, snapshot, section) {
     const targets = targetsOf(chain)
     const users = agentsForChain(state.view, chain)
-    const card = el('div', { class: 'oc-card', 'data-chain': chain })
+    const card = el('div', { class: 'oc-col', 'data-chain': chain, style: 'gap:6px;padding:10px 0' })
 
     // 标题行：链名 + 状态徽标 + 灰字事实；右侧只有「更多」一个入口
-    const head = el('div', { class: 'oc-row oc-row-between' })
-    const left = el('div', { class: 'oc-row' })
-    left.append(el('strong', { text: chain }))
+    const head = el('div', { class: 'oc-bar oc-bar-between' })
+    const left = el('div', { class: 'oc-bar' })
+    left.append(el('span', { class: 'oc-label', text: chain }))
     if (state.view.default_chain === chain) left.append(badge({ label: '默认', tone: 'primary' }).node)
-    left.append(el('span', { class: 'oc-xs oc-off', text: users.length ? `agent：${users.join(' · ')}` : '没有 agent 用它' }))
-    left.append(el('span', { class: 'oc-xs oc-off oc-num', text: `${targets.length} 个候选` }))
+    left.append(el('span', { class: 'oc-micro oc-muted', text: users.length ? `agent：${users.join(' · ')}` : '没有 agent 用它' }))
+    left.append(el('span', { class: 'oc-micro oc-muted oc-mono', text: `${targets.length} 个候选` }))
     head.append(left)
-    const right = el('div', { class: 'oc-row' })
+    const right = el('div', { class: 'oc-bar' })
     right.append(
       menu({
         label: '更多',
         variant: 'ghost',
-        size: 'sm',
+        size: 'xs',
         data: { 'data-act': 'chain-menu', 'data-chain': chain },
         items: [
           { id: 'default', label: '设为默认链', disabled: state.view.default_chain === chain },
@@ -286,7 +287,7 @@ export function createChainTab({ host, onNeedPoll }) {
     card.append(head)
 
     if (targets.length === 0) {
-      card.append(mutedLine('还没有候选 —— 加一个，GATE 才有得试。'))
+      card.append(el('span', { class: 'oc-micro oc-muted', text: '还没有候选 —— 加一个，GATE 才有得试。' }))
     } else {
       const sel = state.selected?.chain === chain ? state.selected.ref : null
       // kit 的行是 role=option / tabindex=-1（roving tabindex）→ 容器按 listbox 做，
@@ -330,23 +331,23 @@ export function createChainTab({ host, onNeedPoll }) {
       // 选中之后才出现的动作条（同权按钮不成群：这里最多四个，而且针对的是"这一个候选"）
       if (sel) {
         const at = targets.indexOf(sel)
-        const bar = el('div', { class: 'oc-row oc-row-between', 'data-act': 'row-actions', 'data-ref': sel, role: 'group', 'aria-label': `已选 ${sel}` })
-        bar.append(el('span', { class: 'oc-xs oc-off oc-truncate', text: `已选：${sel}` }))
-        const acts = el('div', { class: 'oc-row' })
+        const bar = el('div', { class: 'oc-bar oc-bar-between', 'data-act': 'row-actions', 'data-ref': sel, role: 'group', 'aria-label': `已选 ${sel}` })
+        bar.append(el('span', { class: 'oc-micro oc-muted oc-truncate', text: `已选：${sel}` }))
+        const acts = el('div', { class: 'oc-bar' })
         acts.append(
-          button({ label: '上移', variant: 'ghost', size: 'sm', disabled: at <= 0, data: { 'data-act': 'up', 'aria-keyshortcuts': 'Alt+ArrowUp' }, onClick: () => moveSelected(chain, sel, -1, section, snapshot) }).node,
-          button({ label: '下移', variant: 'ghost', size: 'sm', disabled: at < 0 || at >= targets.length - 1, data: { 'data-act': 'down', 'aria-keyshortcuts': 'Alt+ArrowDown' }, onClick: () => moveSelected(chain, sel, +1, section, snapshot) }).node,
+          button({ label: '↑', variant: 'ghost', size: 'xs', disabled: at <= 0, data: { 'data-act': 'up', 'aria-keyshortcuts': 'Alt+ArrowUp' }, onClick: () => moveSelected(chain, sel, -1, section, snapshot) }).node,
+          button({ label: '↓', variant: 'ghost', size: 'xs', disabled: at < 0 || at >= targets.length - 1, data: { 'data-act': 'down', 'aria-keyshortcuts': 'Alt+ArrowDown' }, onClick: () => moveSelected(chain, sel, +1, section, snapshot) }).node,
           button({
             label: '换模型',
             variant: 'secondary',
-            size: 'sm',
+            size: 'xs',
             data: { 'data-act': 'swap', 'aria-keyshortcuts': 'Enter' },
             onClick: () => {
               state.picker = { chain, replaceRef: sel, query: '', manual: '' }
               render(section, snapshot)
             },
           }).node,
-          button({ label: '删除', variant: 'ghost', size: 'sm', data: { 'data-act': 'remove', 'aria-keyshortcuts': 'Delete' }, onClick: () => removeSelected(chain, sel, section, snapshot) }).node,
+          iconButton({ iconName: 'close', label: '', variant: 'ghost', size: 'xs', data: { 'data-act': 'remove', 'aria-keyshortcuts': 'Delete' }, onClick: () => removeSelected(chain, sel, section, snapshot) }).node,
         )
         bar.append(acts)
         card.append(bar)
@@ -360,9 +361,9 @@ export function createChainTab({ host, onNeedPoll }) {
     } else {
       card.append(
         button({
-          label: '＋ 添加候选',
+          label: '+ 添加候选',
           variant: 'ghost',
-          size: 'sm',
+          size: 'xs',
           data: { 'data-act': 'add' },
           onClick: () => {
             state.picker = { chain, replaceRef: null, query: '', manual: '' }
@@ -379,10 +380,10 @@ export function createChainTab({ host, onNeedPoll }) {
     const all = (snapshot?.models?.candidates ?? []).filter((c) => !used.has(c.ref) || c.ref === state.picker.replaceRef)
     const q = String(state.picker.query ?? '').toLowerCase()
     const matches = all.filter((c) => !q || c.ref.toLowerCase().includes(q)).slice(0, 30)
-    const wrap = el('div', { class: 'oc-col' })
+    const wrap = el('div', { class: 'oc-inset' })
     wrap.append(search({ value: state.picker.query, placeholder: '搜索候选（provider/model）', onChange: (v) => { state.picker.query = v; render(section, snapshot) } }).node)
     if (matches.length === 0) {
-      wrap.append(mutedLine(all.length ? '没有匹配的候选 —— 也可以在下面手填。' : '候选列表是空的（GATE 还没列出来）—— 在下面手填。'))
+      wrap.append(el('span', { class: 'oc-micro oc-muted', text: all.length ? '没有匹配的候选 —— 也可以在下面手填。' : '候选列表是空的（GATE 还没列出来）—— 在下面手填。' }))
     } else {
       const scroll = el('div', { class: 'oc-list-scroll' })
       scroll.append(
@@ -399,31 +400,24 @@ export function createChainTab({ host, onNeedPoll }) {
       )
       wrap.append(scroll)
     }
-    const manual = el('div', { class: 'oc-row' })
+    const manual = el('div', { class: 'oc-bar' })
     const apply = (v) => placeTarget(chain, v, state.picker.replaceRef, section, snapshot)
     const f = field({ value: state.picker.manual, placeholder: 'provider/model', mono: true, onChange: (v) => { state.picker.manual = v; addBtn.handle.update({ disabled: !v.includes('/') }) } })
-    const addBtn = button({ label: '加入', variant: 'secondary', size: 'sm', disabled: !String(state.picker.manual ?? '').includes('/'), onClick: () => apply(state.picker.manual) })
-    manual.append(el('span', { class: 'oc-form-cell' }, [f.node]), addBtn.node)
-    manual.append(button({ label: '取消', variant: 'ghost', size: 'sm', onClick: () => { state.picker = null; render(section, snapshot) } }).node)
+    const addBtn = button({ label: '加入', variant: 'secondary', size: 'xs', disabled: !String(state.picker.manual ?? '').includes('/'), onClick: () => apply(state.picker.manual) })
+    manual.append(el('span', { class: 'oc-grow' }, [f.node]), addBtn.node)
+    manual.append(button({ label: '取消', variant: 'ghost', size: 'xs', onClick: () => { state.picker = null; render(section, snapshot) } }).node)
     wrap.append(manual)
     return wrap
   }
 
   function renderAgents(section, snapshot) {
-    const card = el('div', { class: 'oc-card' })
-    const head = el('div', { class: 'oc-row oc-row-between' })
-    head.append(el('strong', { text: 'agent → 链' }))
-    head.append(el('span', { class: 'oc-xs oc-off', text: '没映射的 agent 按自己的主模型挑链，再落到默认链' }))
-    card.append(head)
-
     const mapped = Object.keys(state.view.agents).sort()
     const known = [...new Set([...(snapshot?.agentTable?.visible ?? []).map((a) => a.id), ...(snapshot?.agentTable?.subagent ?? []).map((a) => a.id), 'planner', 'advisor', 'critic', 'foreman', 'executor', 'reviewer', 'scout', 'librarian'])]
-    const form = el('div', { class: 'oc-form' })
+    const rows = []
     for (const agent of mapped) {
-      const cell = el('div', { class: 'oc-form-cell', 'data-agent': agent })
+      const cell = el('div', { class: 'oc-field-control', 'data-agent': agent })
       cell.append(
         select({
-          label: agent,
           value: state.view.agents[agent],
           options: [{ id: '__none__', label: '不映射' }, ...chainNames(state.view).map((c) => ({ id: c, label: c }))],
           onChange: (id) => mutate(section, snapshot, () => {
@@ -432,17 +426,15 @@ export function createChainTab({ host, onNeedPoll }) {
           }),
         }).node,
       )
-      form.append(cell)
+      rows.push(fieldRow({ label: agent, control: cell.node }))
     }
-    card.append(form)
-
     const missing = known.filter((a) => !state.view.agents[a])
     if (missing.length) {
-      const row = el('div', { class: 'oc-row' })
-      row.append(
+      const cell = el('div', { class: 'oc-field-control' })
+      cell.append(
         select({
           value: null,
-          placeholder: '＋ 给某个 agent 指定链…',
+          placeholder: '指定…',
           searchable: true,
           options: missing.map((a) => ({ id: a, label: a })),
           onChange: (id) => mutate(section, snapshot, () => {
@@ -451,26 +443,21 @@ export function createChainTab({ host, onNeedPoll }) {
           }),
         }).node,
       )
-      card.append(row)
+      rows.push(fieldRow({ label: '再加一个 agent', description: '没映射的按自己的主模型挑链，再落到默认链', control: cell.node }))
     }
-    return card
+    return kitSection({
+      title: 'agent → 链',
+      hint: '没映射的按自己的主模型挑链，再落到默认链',
+      body: rows,
+    })
   }
 
   function renderPolicy(section, snapshot) {
     const p = state.view.policy ?? {}
-    const card = el('div', { class: 'oc-card' })
-    const head = el('div', { class: 'oc-row oc-row-between' })
-    head.append(el('strong', { text: '策略' }))
-    head.append(el('span', { class: 'oc-xs oc-off', text: '改完点保存才生效（GATE ≤5 秒热更）' }))
-    card.append(head)
-
-    const form = el('div', { class: 'oc-form' })
-    const numField = (label, key, value, helper) => {
-      const cell = el('div', { class: 'oc-form-cell', 'data-policy': key })
+    const numRow = (label, key, value, description) => {
+      const cell = el('div', { class: 'oc-field-control', 'data-policy': key })
       cell.append(
         field({
-          label,
-          helper,
           value: value == null ? '' : String(value),
           mono: true,
           onChange: (v) => {
@@ -480,17 +467,13 @@ export function createChainTab({ host, onNeedPoll }) {
           },
         }).node,
       )
-      return cell
+      return fieldRow({ label, description, control: cell.node })
     }
-    form.append(numField('最多尝试候选数', 'max_fallback_attempts', p.max_fallback_attempts, '换到第几个候选就放弃（默认 3）'))
-    form.append(numField('冷却秒数', 'cooldown_seconds', p.cooldown_seconds, '失败过的候选在这段时间里被跳过（默认 60）'))
-    form.append(numField('provider 内重试', 'provider_retries', p.provider_retries, '同一家上游的瞬时错误先重试（默认 1）'))
-    const wide = el('div', { class: 'oc-form-cell oc-form-cell-wide' })
-    wide.append(
+    const switchCell = el('div', { class: 'oc-field-control', 'data-policy': 'restore_primary_after_cooldown' })
+    switchCell.append(
       checkbox({
-        label: '冷却结束后回到首选',
+        label: '',
         checked: p.restore_primary_after_cooldown === true,
-        description: '默认关：失败换人后就粘住新的候选，不自动回到首选',
         onChange: (checked) => {
           state.view.policy = { ...state.view.policy, restore_primary_after_cooldown: checked }
           state.dirty = true
@@ -498,16 +481,23 @@ export function createChainTab({ host, onNeedPoll }) {
         },
       }).node,
     )
-    form.append(wide)
-    card.append(form)
-    return card
+    return kitSection({
+      title: '策略',
+      hint: '改完点保存才生效（GATE ≤5 秒热更）',
+      body: [
+        numRow('最多尝试候选数', 'max_fallback_attempts', p.max_fallback_attempts, '换到第几个候选就放弃（默认 3）'),
+        numRow('冷却秒数', 'cooldown_seconds', p.cooldown_seconds, '失败过的候选在这段时间里被跳过（默认 60）'),
+        numRow('provider 内重试', 'provider_retries', p.provider_retries, '同一家上游的瞬时错误先重试（默认 1）'),
+        fieldRow({ label: '冷却结束后回到首选', description: '默认关：失败换人后就粘住新的候选，不自动回到首选', control: switchCell.node }),
+      ],
+    })
   }
 
   function render(section, snapshot) {
     if (!section) return
     section.__snapshot = snapshot
     if (state.view === null && !state.loadError) {
-      section.replaceChildren(el('div', { class: 'oc-xs oc-off', text: '正在读 GATE 配置…' }))
+      section.replaceChildren(el('div', { class: 'oc-micro oc-muted', text: '正在读 GATE 配置…' }))
       void load(snapshot).then(() => render(section, snapshot))
       return
     }
@@ -517,13 +507,10 @@ export function createChainTab({ host, onNeedPoll }) {
     const gate = snapshot?.gate ?? null
     const path = state.path ?? fallbackConfigPathFor(snapshot)
 
-    // 头一行：这一页干什么 + 运行态；保存状态用徽标说一次
-    const top = el('div', { class: 'oc-row oc-row-between' })
-    const left = el('div', { class: 'oc-row' })
-    left.append(el('span', { class: 'oc-sm', text: '顺序 = 先试谁，失败顺位往下' }))
-    left.append(el('span', { class: 'oc-xs oc-off oc-truncate', text: gate?.port ? `GATE :${gate.port}` : 'GATE 未运行' }))
-    top.append(left)
-    const right = el('div', { class: 'oc-row' })
+    // 头一行：运行态（宿主 chrome 已经有面板标题，这里不重复）+ 保存状态徽标
+    const top = el('div', { class: 'oc-bar oc-bar-between' })
+    top.append(el('div', { class: 'oc-bar' }))
+    const right = el('div', { class: 'oc-bar' })
     const s = state.save
     if (state.dirty) right.append(badge({ label: '未保存', tone: 'warning' }).node)
     else if (s.status === 'waiting') right.append(badge({ label: '生效中…', tone: 'info' }).node)
@@ -546,35 +533,40 @@ export function createChainTab({ host, onNeedPoll }) {
     if (gate?.problems?.length) section.append(banner({ tone: 'warning', title: `配置加载有 ${gate.problems.length} 个问题`, body: gate.problems.slice(0, 3).join('；') }))
     if (state.notice) section.append(banner({ tone: s.status === 'failed' ? 'error' : 'info', title: state.notice }))
 
-    for (const chain of chainNames(state.view)) section.append(renderChainCard(chain, snapshot, section))
-
-    // 新增链：一个小入口，展开成一行输入
+    const chainRows = chainNames(state.view).map((chain) => renderChainCard(chain, snapshot, section))
+    // 新增链：入口一行（或展开成一行输入）
     if (state.addingChain) {
-      const row = el('div', { class: 'oc-row', 'data-act': 'new-chain-row' })
-      const ok = button({ label: '建链', variant: 'secondary', size: 'sm', disabled: !state.newChainName.trim(), onClick: () => addChain(state.newChainName, section, snapshot) })
+      const row = el('div', { class: 'oc-bar', 'data-act': 'new-chain-row', style: 'padding:8px 0' })
+      const ok = button({ label: '建链', variant: 'secondary', size: 'xs', disabled: !state.newChainName.trim(), onClick: () => addChain(state.newChainName, section, snapshot) })
       row.append(
-        el('span', { class: 'oc-form-cell' }, [
+        el('span', { class: 'oc-grow' }, [
           field({
-            label: '新链名',
             value: state.newChainName,
-            placeholder: '如 free-first',
+            placeholder: '新链名，如 free-first',
             mono: true,
             onChange: (v) => { state.newChainName = v; ok.handle.update({ disabled: !v.trim() }) },
           }).node,
         ]),
         ok.node,
-        button({ label: '取消', variant: 'ghost', size: 'sm', onClick: () => { state.addingChain = false; state.newChainName = ''; render(section, snapshot) } }).node,
+        button({ label: '取消', variant: 'ghost', size: 'xs', onClick: () => { state.addingChain = false; state.newChainName = ''; render(section, snapshot) } }).node,
       )
-      section.append(row)
+      chainRows.push(row)
     } else {
-      section.append(button({ label: '＋ 新增链', variant: 'ghost', size: 'sm', data: { 'data-act': 'add-chain' }, onClick: () => { state.addingChain = true; render(section, snapshot) } }).node)
+      chainRows.push(
+        el('div', { style: 'padding:6px 0' }, [
+          button({ label: '+ 新增链', variant: 'ghost', size: 'xs', data: { 'data-act': 'add-chain' }, onClick: () => { state.addingChain = true; render(section, snapshot) } }).node,
+        ]),
+      )
     }
+    section.append(kitSection({ title: '链', hint: '顺序 = 先试谁，失败顺位往下', body: chainRows }))
 
     const live = el('div', { class: 'oc-sr', 'aria-live': 'polite', text: state.live })
     section.append(live)
     section.append(renderAgents(section, snapshot))
     section.append(renderPolicy(section, snapshot))
-    section.append(el('div', { class: 'oc-xs oc-off', text: `配置文件：${path}` }))
+    section.append(
+      el('div', { class: 'oc-micro oc-muted oc-mono oc-truncate', text: `${path}${gate?.port ? `  ·  GATE :${gate.port}` : '  ·  GATE 未运行'}` }),
+    )
 
     // 保存条：只在有改动 / 在飞 / 刚失败时出现
     if (state.dirty || s.status === 'waiting' || s.status === 'failed' || s.status === 'timeout') {
@@ -616,7 +608,7 @@ export function createChainTab({ host, onNeedPoll }) {
             : s.status === 'timeout'
               ? '写入后 30 秒没看到 GATE 确认 —— 看上面那条问题'
               : '只重写被改的几节，注释与排版原样保留'
-      bar.append(el('span', { class: 'oc-xs oc-off', text }))
+      bar.append(el('span', { class: 'oc-micro oc-muted', text }))
       section.append(bar)
     }
   }

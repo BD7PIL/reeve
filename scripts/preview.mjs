@@ -41,6 +41,7 @@ const bundle = await (esbuild.build ?? esbuild.default.build)({
   write: false,
   alias: {
     '@openchamber/sdk': join(root, 'preview/host-shim.js'),
+    '@openchamber/sdk/dist/ui/icons.js': join(sdkDir, 'ui/icons.js'),
     '@openchamber/sdk/ui': join(sdkDir, 'ui/index.js'),
   },
 })
