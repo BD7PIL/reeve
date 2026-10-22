@@ -69,6 +69,13 @@
   `chain-narrow-306` 钉住这个宽度。
 - 对端 headless 客户端的 CJK 字体回退成 serif 是客户端字体环境（真实桌面客户端用宿主字体），不是面板缺陷。
 - 真宿主 DOM 断言（`scripts/host-audit.mjs`）另有一份报告：`preview/host-audit/3001.json` 与 `4610.json`。
+- **安全保存测试**（`--save`，0.1.10 新增）：备份 `fallback.jsonc` → 面板里"新增链"→ 建 `host-audit-<id>` →
+  给链加 `deepseek/deepseek-flash` 候选 → 保存 → 等面板出现"已生效"→ 轮询 GATE `chain_targets` 确认临时链真的
+  写进去了 → 删链、`finally` 回写备份并比对 sha256 → 再等 GATE 里临时链消失。
+  两端结果（2026-10-22）：开发机 3001 与对端 4610 均 `applied=true`、`targets=["deepseek/deepseek-flash"]`、
+  `restored=true`、`gateDropped=true`，前后 sha256 同为 `a134a3887817d28c5dd9481e2bfd3d712993043833b95b13f9331a00ff7441a4`。
+  这条测试先抓出面板"已生效"要等 60s 统计的假阴性（插件 0.1.10 改为 2s 刷新），又抓出同一 Edge 开两个 app 页时
+  脚本会连错 OOPIF（已按 `appHost` 过滤）。仅空闲时跑：它会短暂改真配置。
 
 ## 怎么重跑
 
@@ -76,6 +83,8 @@
 node extensions/reeve/scripts/audit.mjs --fixture        # 全量（39 项）
 node extensions/reeve/scripts/audit.mjs --only 19        # 单项
 node extensions/reeve/scripts/audit.mjs --strict-contrast # 3–4.5 也算失败
+node scripts/host-audit.mjs --app=http://127.0.0.1:3001/ --cdp=http://127.0.0.1:9222          # 真宿主
+node scripts/host-audit.mjs --app=http://127.0.0.1:3001/ --cdp=http://127.0.0.1:9222 --save   # + 安全保存测试
 ```
 
 `report.json` 里有每项的 failures/warnings/consoleErrors；CI 上传整套图与报告。
