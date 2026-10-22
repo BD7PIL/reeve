@@ -22,7 +22,7 @@
 
 链 tab 里的「免费车道」卡编辑配置的 `free` 节：启用、免费尝试次数（含 3+1 预算提示）、
 参与发现的 provider（opencode / openrouter / nvidia，含 key 与发现状态）、偏好顺序（置顶/排除/固定）、
-NVIDIA 白名单、发现/冷却参数、**当前展开**（运行时只读，来自插件快照）。语义见 `../../docs/FREE-LANE.md`。
+NVIDIA 白名单、发现/冷却参数、**当前展开**（运行时只读，来自插件快照）。
 
 链里写 `@free` 显示为「免费车道（自动）· 最多 N 个」；保存后「已生效」比较的是
 `chain_targets` + `policy` + `free` 三者的真实变化，不再只比链名。
@@ -81,4 +81,4 @@ curl -b <会话 cookie> -X PUT -H 'Content-Type: application/json' \
 - 窄栏（≤520px）标签在上、控件满宽；候选名允许换行，不许把 `-flash` 这种后缀截掉。
 - 错误/空/加载/脏态必须一眼可读，并给出下一步（刷新/重新读取/批准权限）。
 
-相关：`../../docs/FREE-LANE.md`、`../../docs/GATE.md`、`preview/audit/README.md`。
+相关：`preview/audit/README.md`（39 项审计与结论）、`plugin/src/gate/free.js`（免费车道的实现与注释）。
