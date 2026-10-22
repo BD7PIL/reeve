@@ -134,6 +134,8 @@ try { rmSync(profile, { recursive: true, force: true }) } catch { /* Windows 句
 
 const browser = spawn(chrome, [
   '--headless=new', '--disable-gpu', '--hide-scrollbars', '--no-first-run', '--no-default-browser-check',
+  // 容器/CI 里 Chrome 的沙箱起不来（CDP 目标不会出现）：CI 下关沙箱 + 共享内存目录
+  ...(process.env.CI ? ['--no-sandbox', '--disable-dev-shm-usage'] : []),
   `--remote-debugging-port=${debugPort}`, `--user-data-dir=${profile}`, 'about:blank',
 ], { stdio: ['ignore', 'ignore', 'ignore'] })
 
