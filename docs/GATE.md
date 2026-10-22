@@ -16,7 +16,7 @@
 | `plugin/src/gate/free.js` | **免费车道**：发现（opencode/openrouter 公开列表 + nvidia 白名单）、TTL、失败保留上一份、`@free` 展开（prefer/deny/预算）、按模型的全局冷却 |
 | `plugin/src/gate/gate.js` | HTTP 服务：`/v1/chat/completions`、`/v1/models`、`/gate/session`、`/gate/session/:id/next`、`/gate/version`、**`/gate/free`**；台账 JSONL（不带密钥、超限轮转） |
 | `plugin/default-fallback.json` | 打包兜底配置（付费候选；免费车道由用户配置决定） |
-| `plugin/test/gate.mjs` | 28 项离线验收（单元 + 集成 + 图片路由 + 并发 + detach） |
+| `plugin/test/gate.mjs` | 29 项离线验收（单元 + 集成 + 图片路由 + 并发 + detach） |
 | `plugin/test/free.mjs` | 17 项免费车道验收（发现/TTL/展开/预算/冷却/热更/并发/无键/空目录/image 过滤） |
 | `~/.config/opencode/reeve/fallback.jsonc` | 机器上的用户配置（三端共享；开发机是 junction，对端由 ocrc sync） |
 
@@ -59,7 +59,7 @@
 
 ## 3. 验收
 
-- 离线：`plugin/test/gate.mjs` 28 项、`plugin/test/free.mjs` 17 项；插件全量（unit 79 / reconcile 30 /
+- 离线：`plugin/test/gate.mjs` 29 项、`plugin/test/free.mjs` 17 项；插件全量（unit 79 / reconcile 30 /
   snapshot 9 / stats 9 / entry 4 / wiring 6 / runtime 6 / guard 2）。
 - 覆盖率门槛：global 95/79/95 + `src/index.js` 97/67/93 + `src/gate/` 97/84/96（只升不降）。
 - 真机：`scripts/accept-gate.sh` ①–⑨（①/② 免费车道、④ 关闭免费→付费、④b 死免费候选→付费、

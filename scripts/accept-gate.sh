@@ -137,7 +137,7 @@ else
     const stripLineComments = (t) => String(t).split(String.fromCharCode(10)).filter((l) => !l.trim().startsWith('//')).join(String.fromCharCode(10))
     const p = process.argv[1]
     const j = JSON.parse(stripLineComments(readFileSync(p, 'utf8')))
-    j.free = { ...(j.free ?? {}), enabled: true, max: 1, providers: ['opencode'], static: { opencode: ['__accept_dead__'] }, prefer: ['opencode/__accept_dead__'] }
+    j.free = { ...(j.free ?? {}), enabled: true, max: 1, providers: ['opencode'], static: { opencode: ['__accept_dead__'] }, prefer: ['opencode/__accept_dead__'], require_image: true, image_models: ['__accept_dead__'] }
     writeFileSync(p, JSON.stringify(j, null, 2))
   " "$USER_CFG"
   sleep 6
