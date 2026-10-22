@@ -1,4 +1,4 @@
-# REEVE 面板 —— UI 断言审计（39 项 + 多模态复审）
+# REEVE 面板 —— UI 断言审计（40 项 + 多模态复审）
 
 > 由 `node extensions/reeve/scripts/audit.mjs --fixture` 生成截图与 `report.json`；本表是**逐项断言 + 人工/多模态结论**。
 > 改面板后必须重跑；图变了而结论没更新 = 没审。
@@ -50,12 +50,25 @@
 | 37 | `ledger-dark` | ✅ 行间细线可见 |
 | 38 | `chain-loading` | ✅ spinner + 正在读 GATE 配置 |
 | 39 | `gate-running` | ✅ 主徽标「2 在飞 / 1 排队 / 4 总」 |
+| 40 | `chain-narrow-306` | ✅ 宿主侧栏 306px：@free 行标题+自动徽标一行、更多可见、无溢出（≤360 隐藏次要 meta） |
 
 ## 多模态复审（本轮新增的门）
 
 - 方法：审计截图分批交 `multimodal-looker`，按宿主规范逐图 pass/fail（一致性、层级、对齐、字号、对比度、截断、空/错/加载态、深浅一致）；真宿主截图同一套复审。
 - 发现并修掉的真问题：浅色选中行对比度 ~2.3:1；agent/策略/免费车道的**控件根本没渲染**（`el().node` 误用）；深色输入框无面；窄栏标题折词/动作脱行；台账 `隐藏 undefined`；台账行无细线/无可点暗示；配置错误无文件路径/无恢复动作；免费车道错误只有灰字；脏态不定位到节。
-- 复审结论：39/39 PASS（02/11/22/23/24/27/29/33/37/38 经二轮复审通过；残余 nits 不影响验收）。
+- 复审结论：40/40 PASS（02/11/22/23/24/27/29/33/37/38 经二轮复审通过；40 是 306px 宿主侧栏专项；残余 nits 不影响验收）。
+
+## 真宿主复审（开发机 3001 + 对端 4610）
+
+- 抓图：`scripts/host-shot.mjs`。面板在 OOPIF：headless 下对 OOPIF 的 `Page.captureScreenshot` 没有数据，
+  走顶层页面的 screencast/截图；宿主的 "OpenCode 更新" 提示条只认真实鼠标事件，脚本用 `Input.dispatchMouseEvent` 关掉。
+- `preview/host-audit/dev-3001.png`（中文宿主，sheet ~518px）：多模态 **PASS** —— 链卡、@free 行 +
+  自动徽标 + 完整 "最多 3 个 · 全部冷却走付费"、首选徽标、每节 更多、刷新全在；无裁切/溢出/提示条遮挡。
+- `preview/host-audit/peer-4610.png`（英文宿主，经 ocrc 转发 4610）：**PASS**。修复前该宿主侧栏 306px 下
+  @free 标题被挤成一字一行、徽标被推出、免费行说明被截；扩展 0.1.4 在 ≤360px 隐藏次要 meta，40 项审计的
+  `chain-narrow-306` 钉住这个宽度。
+- 对端 headless 客户端的 CJK 字体回退成 serif 是客户端字体环境（真实桌面客户端用宿主字体），不是面板缺陷。
+- 真宿主 DOM 断言（`scripts/host-audit.mjs`）另有一份报告：`preview/host-audit/3001.json` 与 `4610.json`。
 
 ## 怎么重跑
 
