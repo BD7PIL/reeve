@@ -26,8 +26,9 @@
 > 开发机 3001 与对端 4610 各跑一次：`applied/restored/gateDropped` 全 true，前后 sha256 同为 `a134a388…`，
 > GATE 里临时链消失。对端那次还暴露出脚本会连到同一 Edge 里另一个 app 页的 OOPIF（把临时链写到开发机配置上，
 > 已从干净副本恢复）—— 两处 target 选择都按 `appHost` 过滤后才对。
-> 提交 `1a1852b` + 本修复；npm `@bd7pil/reeve@0.1.10`；扩展仍 0.1.4；ocrc pin `0b860562`；报告
-> `preview/host-audit/3001.json`、`4610.json`。
+> 提交 `1a1852b` + `d3bf225`；npm `@bd7pil/reeve@0.1.10`；扩展仍 0.1.4；ocrc pin `0b860562`；报告
+> `preview/host-audit/3001.json`、`4610.json`。两端在 0.1.10 上重跑 `accept-gate.sh` ①–⑨ **全过**
+> （2026-10-22，开发机与对端同一份脚本）。
 >
 > **0.1.9（已发，两端已升）**：两处修正 —— ① OpenRouter/NVIDIA 的 `base_url` 已带 `/v1` 但 provider 没写
 > `path`，GATE 打到 `/v1/v1/...` 404；用户配置与打包默认都补 `"path": "/chat/completions"`。
