@@ -1,0 +1,43 @@
+# 上游免费模型目录的契约哨兵（每日）。
+#
+# GATE 的免费车道靠两个公开列表自动发现；列表形状变了只会静默退化成"全走付费"。
+# 这里每天验一次形状 + 免费项数量：漂移就红，并开一个 issue（同名未关闭的只开一次）。
+# 不改 pin、不发版 —— 运行时的 @free 展开仍然自动跟随列表。
+
+name: Upstream model catalog
+
+on:
+  schedule:
+    - cron: '17 4 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  check:
+    name: 免费目录形状（opencode / openrouter）
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: 契约检查
+        run: node scripts/check-upstream-models.mjs
+      - name: 漂移时开 issue（同名未关闭的只开一次）
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TITLE='上游免费模型目录形状变了'
+          OPEN=$(gh issue list --state open --search "$TITLE in:title" --json number --jq 'length')
+          if [ "$OPEN" = "0" ]; then
+            gh issue create --title "$TITLE" \
+              --body "每日契约哨兵失败：${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+检查 \`scripts/check-upstream-models.mjs\` 的输出，以及 GATE \`free.sources\` 的 URL/filter（opencode 的 \`-free\`/big-pickle、openrouter 的 \`:free\`）。"
+          else
+            echo "已有未关闭的同类 issue（$OPEN 个），不再重复创建"
+          fi
