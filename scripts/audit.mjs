@@ -250,7 +250,18 @@ const CHECKS_JS = `(() => {
   if (de.scrollWidth > de.clientWidth + 1) out.overflow.push('document ' + de.scrollWidth + '>' + de.clientWidth);
   for (const sel of ['.oc-page', '.oc-savebar', '.oc-field-row']) {
     for (const el of document.querySelectorAll(sel)) {
-      if (el.scrollWidth > el.clientWidth + 1) out.overflow.push(sel + ' ' + el.scrollWidth + '>' + el.clientWidth);
+      if (el.scrollWidth > el.clientWidth + 1) {
+        let detail = '';
+        if (sel === '.oc-page') {
+          const pr = el.getBoundingClientRect();
+          detail = [...el.querySelectorAll('*')]
+            .filter((x) => { const r = x.getBoundingClientRect(); return r.width > 0 && r.right > pr.right + 0.5; })
+            .slice(0, 3)
+            .map((x) => (x.tagName.toLowerCase() + '.' + String(x.className).split(' ').slice(0, 2).join('.') + '+' + Math.round(x.getBoundingClientRect().right - pr.right) + 'px'))
+            .join(',');
+        }
+        out.overflow.push(sel + ' ' + el.scrollWidth + '>' + el.clientWidth + (detail ? ' [' + detail + ']' : ''));
+      }
     }
   }
   const rs = getComputedStyle(de);
