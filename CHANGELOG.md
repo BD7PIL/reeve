@@ -3,6 +3,19 @@
 Newest first. Versions follow the plugin package (`plugin/package.json`); the
 panel extension has its own tags (`reeve-<version>`).
 
+## 0.1.11 — 2026-10-22
+
+**Four tiers with cost-appropriate agent allocation; chain names are strategies.**
+The plugin now registers `reeve/flash`, `reeve/coding`, `reeve/pro`, and
+`reeve/multimodal`. The fallback chains were renamed from legacy `tier1`/`tier2a`
+to `reasoning` / `coding` / `free-first` / `vision` / `fallback`. Bundled agents
+now split work by cost: planner/advisor/critic use `reeve/pro` (strong reasoning),
+foreman/executor/reviewer use `reeve/coding` (mid-tier), and scout/librarian use
+`reeve/flash` (free-first). The top-level default model is `reeve/coding`, so bare
+runs and the composer no longer fall into the strongest reasoning chain. The
+bundled fallback config and the user config are updated together; engine configs
+must remove per-agent `model` overrides so the plugin's allocation applies.
+
 ## 0.1.10 — 2026-10-22
 
 **Fix: the panel's "已生效" waited on the 60-second stats cadence.** The

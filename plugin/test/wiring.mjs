@@ -111,6 +111,7 @@ const CONFIG = {
     const refs = (snap.models?.candidates ?? []).map((c) => c.ref)
     assert.ok(refs.includes('p1/m1'), `候选含声明模型（实际：${refs.join(', ')}）`)
     assert.ok(refs.includes('reeve/flash'), '候选含引擎档位模型')
+    assert.ok(refs.includes('reeve/coding'), '候选含引擎档位模型（coding）')
     assert.ok(refs.includes('reeve/pro'), '候选含引擎档位模型（pro）')
     ok('gate 开：真起服务 / 快照 gate 段 / 统计读台账（两跳）/ 模型候选（含链候选）')
   } finally {

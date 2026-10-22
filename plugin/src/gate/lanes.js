@@ -1,7 +1,7 @@
 // GATE 的路由与尝试计划 —— **纯逻辑**（可测的部分）。
 //
 // 路由优先级（含一条 omo 语义的细化）：
-//   ① 请求的 model 就是链名（`tier1`）→ 走它；
+//   ① 请求的 model 就是链名（`reasoning`）→ 走它；
 //   ② 该 session 的 agent 有链，且请求的模型就是那条链的首选（或请求不是一个可直投的
 //      `provider/model`）→ 走 agent 的链；
 //   ③ 请求是一个可直投的 `provider/model`（provider 已在注册表里）→ 直投

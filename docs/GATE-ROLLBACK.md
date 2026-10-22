@@ -19,6 +19,16 @@
 > 对端 `reeve/fallback.jsonc` 与本地相同（config-diff：文件面 0 漂移）。
 > 发布被 2026-10-22T02:33Z 起的 npm registry 故障挡住约 70 分钟（先 E503、后 OIDC 交换失败报 ENEEDAUTH），恢复后重跑同一 job 成功。
 >
+> **0.1.11（已发，两端已升）**：四档位 + 策略链名。插件新增 `reeve/coding`；档位变为
+> `reeve/flash`（free-first）/ `reeve/coding`（coding）/ `reeve/pro`（reasoning）/ `reeve/multimodal`（vision）。
+> 链从历史编号 `tier1`/`tier2a` 改成 `reasoning`/`coding`，`multimodal`→`vision`，`default`→`fallback`。
+> agent 分配按成本：planner/advisor/critic→`reeve/pro`；foreman/executor/reviewer→`reeve/coding`；
+> scout/librarian→`reeve/flash`。顶层默认模型改为 `reeve/coding`，不再默认最强推理。
+> 引擎配置里删掉了 8 个 agent 的直连 model 覆盖（否则会绕过 GATE）；`fallback.jsonc` 的 `agents` 段仍保留，
+> 但 GATE 的 session→agent 桥没有生产调用方，实际路由按档位模型走 `chain_for_model`。
+> 回滚：把 `plugin/package.json` 回到 0.1.10、公开树回 `d3bf225`、ocrc pin 回 `0b860562`，并把两端
+> `opencode.jsonc` 的 `model`/`agents` 与 `fallback.jsonc` 恢复到旧版（`~/.config/opencode/reeve/fallback.jsonc.ocrc-bak`）。
+>
 > **0.1.10（已发，两端已升）**：真宿主保存测试抓到的两处 —— ① 面板"已生效"误报：已应用判定读快照的 `gate` 段，
 > 而该段只随 60s 统计刷新，GATE 已换链、面板还说"未生效"；插件改为独立的 2s gate 状态刷新（仅签名变化时写盘；
 > 复用者走环回 `/gate/version`）。② 安全保存测试本身：`scripts/host-audit.mjs --save` 备份 `fallback.jsonc` →

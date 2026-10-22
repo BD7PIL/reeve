@@ -2,7 +2,7 @@
 description: 执行者。照实施文档干活，是唯一的实现者。不重新设计、不扩大范围。
 mode: subagent
 hidden: true
-model: reeve/flash
+model: reeve/coding
 permissions:
   - action: "*"
     resource: "*"

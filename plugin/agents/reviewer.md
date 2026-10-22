@@ -2,7 +2,7 @@
 description: 代码审查者。审查代码 diff（不是计划），输出必填字段的结构化评论。只读。
 mode: subagent
 hidden: true
-model: reeve/pro
+model: reeve/coding
 permissions:
   - action: "*"
     resource: "*"

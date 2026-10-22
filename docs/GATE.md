@@ -1,8 +1,9 @@
-# GATE —— reeve 的代理层（0.1.7：免费车道 + 9router 退役）
+# GATE —— reeve 的代理层（0.1.11：四档位 + 策略链名）
 
-> 状态（2026-10-22）：**0.1.7 交付** —— GATE 原生免费车道（链里写 `@free`，请求时展开）、9router 退役、
-> 面板「免费车道」卡 + UI 断言门（39 项审计 + 多模态复审）。0.1.5/0.1.6 已发布并两端验收；0.1.7 见 CHANGELOG。
-> 回滚记录：`docs/GATE-ROLLBACK.md`；免费车道语义：`docs/FREE-LANE.md`。
+> 状态（2026-10-22）：**0.1.11 交付** —— 四档位 `reeve/flash|coding|pro|multimodal`，
+> 链名从历史编号改为策略名（`reasoning` / `coding` / `free-first` / `vision` / `fallback`），
+> 只有规划/评审用强推理，编排/执行/审查走中型链，侦察/检索免费优先。
+> 0.1.10 及以前见 `docs/GATE-ROLLBACK.md`；免费车道语义：`docs/FREE-LANE.md`。
 
 ## 1. 交付物（本次）
 
@@ -32,6 +33,22 @@
 - 车道：`passthrough`（头逐字转发，含 UA 与 `x-opencode-session*`）｜`native`（最小头集）。
 - 密钥：`key:'none'` / `env.X` / 公开字面量 / `auth` 列表（auth.json，按序取第一个有键的）；
   多键轮转游标在服务侧。**台账/目录/响应体/`/gate/free` 里只有键名，没有键值**。
+
+### 2.1 档位、链与 agent 分配
+
+链是"按顺序试哪些候选"的配方，模型是插件注册给引擎的公开档位；`chain_for_model` 负责映射。
+默认分配（插件自带 agent 定义）：
+
+| 档位 | 链 | agent | 说明 |
+| --- | --- | --- | --- |
+| `reeve/pro` | `reasoning` | planner / advisor / critic | 强推理；glm-5.3 打头，后接中型/廉价兜底 |
+| `reeve/coding` | `coding` | foreman / executor / reviewer | 中型；glm-5.3-flash 打头，日常执行/审查不烧强推理 |
+| `reeve/flash` | `free-first` | scout / librarian | `@free` 免费优先，失败顺位付费 |
+| `reeve/multimodal` | `vision` | 无（UI 手动选） | 只放声明能吃图的上游 |
+
+`fallback` 链给"没有 agent/模型信息"的裸模型请求兜底，同样是中型链。引擎配置里**不要再覆盖
+`agents.model`**；删掉覆盖后插件会注册上表。GATE 的 `agents` 段（session→agent 桥）目前没有生产调用方，
+实际路由按请求的档位模型走 `chain_for_model`；改 `fallback.jsonc` 的 `agents` 段不会影响当前请求。
 
 ## 3. 验收
 

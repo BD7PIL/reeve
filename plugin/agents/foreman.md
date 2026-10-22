@@ -1,7 +1,7 @@
 ---
 description: 编排者。grill 到清楚 → 写计划 → 多轮评审 → 派活 → 亲自验收。唯一的主 agent。
 mode: primary
-model: reeve/pro
+model: reeve/coding
 permissions:
   - action: "*"
     resource: "*"

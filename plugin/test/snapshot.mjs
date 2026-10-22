@@ -144,12 +144,12 @@ const dir = await mkdtemp(join(tmpdir(), 'reeve-snap-'))
     port: 18080,
     version: '0.1.0',
     from: '/home/x/.config/opencode/reeve/fallback.jsonc',
-    chains: ['tier1', 'free-first', 'default'],
-    chain_targets: { tier1: ['a/m', 'b/n'], 'free-first': ['9router/oc/free'] },
+    chains: ['reasoning', 'free-first', 'fallback'],
+    chain_targets: { reasoning: ['a/m', 'b/n'], 'free-first': ['9router/oc/free'] },
     providers: ['9router', 'zhipuai-coding-plan'],
     policy: { max_fallback_attempts: 3, cooldown_seconds: 60, restore_primary_after_cooldown: false },
     ledger: '/home/x/.reeve/gate.jsonl',
-    problems: ['tier1: 认不出的 target "x"'],
+    problems: ['reasoning: 认不出的 target "x"'],
     sessions: { sessions: 2, cooling: 1 },
   }
   const snap = buildSnapshot([], {
@@ -159,7 +159,7 @@ const dir = await mkdtemp(join(tmpdir(), 'reeve-snap-'))
   })
   assert.equal(snap.gate.port, 18080)
   assert.equal(snap.gate.from, '/home/x/.config/opencode/reeve/fallback.jsonc')
-  assert.deepEqual(snap.gate.chain_targets.tier1, ['a/m', 'b/n'], '链的候选原样进快照（面板选择器的候选来源）')
+  assert.deepEqual(snap.gate.chain_targets.reasoning, ['a/m', 'b/n'], '链的候选原样进快照（面板选择器的候选来源）')
   assert.equal(snap.gate.policy.max_fallback_attempts, 3)
   assert.equal(snap.gate.sessions.cooling, 1)
   assert.equal(snap.gate.problems.length, 1)

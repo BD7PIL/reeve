@@ -31,6 +31,11 @@
 `max=3` 且 `max_fallback_attempts=3` 时实际只展开 2 个；要 3 个免费就把总尝试数调到 4。
 面板的「免费尝试次数」下面会直接显示这条关系。
 
+免费车道只挂在 `free-first` 链上，默认给 `reeve/flash`（scout / librarian）用；`reeve/pro`
+（planner / advisor / critic）走 `reasoning` 付费强推理，`reeve/coding`（foreman / executor /
+reviewer）走 `coding` 中型付费链。不要让所有 agent 都落到 `@free`，免费池里多是 flash 档，
+规划/评审质量会掉；也不要把所有 agent 都钉到最强推理，成本和延迟都没必要。
+
 ## 2. 发现源
 
 | provider | 来源 | 过滤 | 说明 |

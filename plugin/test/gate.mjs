@@ -190,16 +190,16 @@ const postJson = (gate, path, body) =>
   const sessions = createSessionStore({ now: () => 0, policy: {} })
   const config = cfg({
     providers: { a: { base_url: 'http://x.test', key: 'none' }, b: { base_url: 'http://y.test', key: 'none' } },
-    chains: { tier1: { targets: ['a/m1', 'b/m2'] }, shared: { targets: ['b/m9'] } },
-    agents: { planner: 'tier1' },
+    chains: { reasoning: { targets: ['a/m1', 'b/m2'] }, shared: { targets: ['b/m9'] } },
+    agents: { planner: 'reasoning' },
     chain_for_model: { 'b/m9': 'shared' },
-    default_chain: 'tier1',
+    default_chain: 'reasoning',
   })
   config.env = {}
   config.auth = {}
   sessions.setAgent(SESSION, 'planner')
   // ① agent 的链（请求就是它的首选）
-  assert.deepEqual(routeFor({ model: 'a/m1', sessionID: SESSION }, { config, sessions })?.chain, 'tier1', 'agent 链优先（请求=首选）')
+  assert.deepEqual(routeFor({ model: 'a/m1', sessionID: SESSION }, { config, sessions })?.chain, 'reasoning', 'agent 链优先（请求=首选）')
   // ② 用户显式换了别的模型 → 直投（尊重人的选择）
   const override = routeFor({ model: 'b/m2', sessionID: SESSION }, { config, sessions })
   assert.equal(override?.kind, 'direct', '显式换模型 → 直投')
@@ -209,7 +209,7 @@ const postJson = (gate, path, body) =>
   // ④ session/agent 不明 → chain_for_model 兜底
   assert.equal(routeFor({ model: 'b/m9', sessionID: null }, { config, sessions })?.chain, 'shared', 'chain_for_model 兜底')
   // ⑤ 裸模型名（无 `provider/` 前缀）→ default_chain；写了前缀却没人认识 → null（404，不拿兜底链顶替）
-  assert.equal(routeFor({ model: 'bare-name', sessionID: null }, { config, sessions })?.chain, 'tier1', '裸名 → default_chain')
+  assert.equal(routeFor({ model: 'bare-name', sessionID: null }, { config, sessions })?.chain, 'reasoning', '裸名 → default_chain')
   assert.equal(routeFor({ model: 'zz/whatever', sessionID: null }, { config, sessions }), null, '未知 provider → null（调用方 404）')
   // ⑥ 多斜杠模型名（9router 的 oc/xxx）
   assert.deepEqual(parseTarget('9router/oc/mimo-v2.6-flash-free'), { provider: '9router', model: 'oc/mimo-v2.6-flash-free' })
@@ -448,7 +448,7 @@ const postJson = (gate, path, body) =>
     'content-length': '123',
     'accept-encoding': 'gzip, deflate',
   }
-  const body = JSON.stringify({ model: 'tier1', stream: true, messages: [{ role: 'user', content: 'hi' }], tools: [{ type: 'function', function: { name: 'read', description: 'd', parameters: { type: 'object', properties: { path: { type: 'string' } } } } }] })
+  const body = JSON.stringify({ model: 'reasoning', stream: true, messages: [{ role: 'user', content: 'hi' }], tools: [{ type: 'function', function: { name: 'read', description: 'd', parameters: { type: 'object', properties: { path: { type: 'string' } } } } }] })
   const passthrough = buildUpstreamRequest({ attempt: attemptOf('passthrough', 'Bearer public'), inHeaders, bodyText: body })
   assert.equal(passthrough.headers['user-agent'], 'opencode/latest/2.0.32/cli', '透传：UA 逐字保留（客户端身份就是它的意义）')
   for (const k of ['x-opencode-session-id', 'x-opencode-session', 'x-session-affinity', 'x-session-id', 'x-opencode-client', 'x-opencode-project'])
@@ -549,8 +549,8 @@ const postJson = (gate, path, body) =>
   const h = await harness({
     stubs: { free: (_req, res) => SSE_OK(res), paid: (_req, res) => SSE_OK(res) },
     providers: { free: { lane: 'passthrough' } },
-    chains: { tier1: { targets: ['free/oc/mimo-v2.6-flash-free', 'paid/m1'] } },
-    agents: { scout: 'tier1' },
+    chains: { reasoning: { targets: ['free/oc/mimo-v2.6-flash-free', 'paid/m1'] } },
+    agents: { scout: 'reasoning' },
     auth: { paid: { key: CANARY } },
   })
   const session = SESSION
@@ -562,7 +562,7 @@ const postJson = (gate, path, body) =>
   await h.gate.flushLedger()
   const rows = (await readFile(join(h.dir, 'gate.jsonl'), 'utf8')).trim().split('\n').map((l) => JSON.parse(l))
   assert.equal(rows.length, 1, '一笔请求一行台账')
-  assert.equal(rows[0].chain, 'tier1', '台账带链名（agent 桥生效）')
+  assert.equal(rows[0].chain, 'reasoning', '台账带链名（agent 桥生效）')
   assert.equal(rows[0].agent, 'scout')
   assert.equal(rows[0].status, 'ok')
   assert.ok(!(await readFile(join(h.dir, 'gate.jsonl'), 'utf8')).includes(CANARY), '台账无密钥')
@@ -821,8 +821,8 @@ const postJson = (gate, path, body) =>
       paid: () => {}, // 声明模型用，不会被调用
     },
     providers: { pool: { models_fetch: true, models: ['*'] }, paid: { models: ['glm-5.3-flash'] } },
-    chains: { tier1: { targets: ['pool/oc/mimo-v2.6-flash-free'] } },
-    defaultChain: 'tier1',
+    chains: { reasoning: { targets: ['pool/oc/mimo-v2.6-flash-free'] } },
+    defaultChain: 'reasoning',
   })
   let t = 100
   const gate2 = await startGate({ port: 0, configPath: h.configPath, bundledPath: BUNDLED_FALLBACK_PATH, ledgerPath: join(h.dir, 'gate.jsonl'), authPath: join(h.dir, 'auth.json'), logger: silent, fetchImpl: h.fetchImpl, now: () => t, sleepImpl: () => Promise.resolve(), configWatchMs: 1_000_000 })
@@ -830,7 +830,7 @@ const postJson = (gate, path, body) =>
   const ids = m1.body.data.map((d) => d.id)
   assert.ok(ids.includes('pool/oc/mimo-v2.6-flash-free'), '目录含运行时池')
   assert.ok(ids.includes('paid/glm-5.3-flash'), '目录含注册表声明')
-  assert.ok(ids.includes('tier1'), '目录含链名（UI 里可直接选链）')
+  assert.ok(ids.includes('reasoning'), '目录含链名（UI 里可直接选链）')
   const callsAfterFirst = h.up.pool.state.calls
   await getJson(gate2, '/v1/models')
   assert.equal(h.up.pool.state.calls, callsAfterFirst, 'TTL 内不重拉池')

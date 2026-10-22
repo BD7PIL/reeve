@@ -3,7 +3,7 @@
   "snapshot": {
     "generatedAt": 1792646400000,
     "plugin": "reeve",
-    "version": "0.1.7",
+    "version": "0.1.11",
     "agentTable": {
       "total": 8,
       "visible": [{ "id": "planner", "mode": "primary" }, { "id": "foreman", "mode": "primary" }, { "id": "scout", "mode": "subagent" }],
@@ -15,18 +15,19 @@
       "version": "0.1.0",
       "port": 18080,
       "from": "~/.config/opencode/reeve/fallback.jsonc",
-      "chains": ["tier1", "tier2a", "free-first", "default"],
+      "chains": ["reasoning", "coding", "free-first", "vision", "fallback"],
       "chain_targets": {
-        "tier1": ["zhipuai-coding-plan/glm-5.3", "deepseek/deepseek-flash"],
-        "tier2a": ["zhipuai-coding-plan/glm-5.3-flash", "deepseek/deepseek-flash"],
+        "reasoning": ["zhipuai-coding-plan/glm-5.3", "xxyapi-deepseek/deepseek-v4.1-flash", "deepseek/deepseek-flash"],
+        "coding": ["zhipuai-coding-plan/glm-5.3-flash", "xxyapi-deepseek/deepseek-v4.1-flash", "deepseek/deepseek-flash"],
         "free-first": ["@free", "zhipuai-coding-plan/glm-5.3-flash", "deepseek/deepseek-flash"],
-        "default": ["zhipuai-coding-plan/glm-5.3-flash", "deepseek/deepseek-flash"]
+        "vision": ["xxyapi-deepseek/deepseek-v4.1-flash", "lmuai/glm-5.3-flash"],
+        "fallback": ["zhipuai-coding-plan/glm-5.3-flash", "deepseek/deepseek-flash"]
       },
       "providers": ["opencode", "openrouter", "nvidia", "zhipuai-coding-plan", "deepseek"],
       "policy": { "max_fallback_attempts": 4, "cooldown_seconds": 60, "restore_primary_after_cooldown": false, "provider_retries": 1 },
-      "agents": { "planner": "tier1", "advisor": "tier1", "foreman": "tier2a", "scout": "free-first", "librarian": "free-first" },
-      "chain_for_model": { "reeve/flash": "free-first", "reeve/pro": "tier1" },
-      "default_chain": "default",
+      "agents": { "planner": "reasoning", "advisor": "reasoning", "foreman": "coding", "scout": "free-first", "librarian": "free-first" },
+      "chain_for_model": { "reeve/flash": "free-first", "reeve/coding": "coding", "reeve/pro": "reasoning", "reeve/multimodal": "vision" },
+      "default_chain": "fallback",
       "problems": [],
       "free": {
         "enabled": true,
@@ -54,6 +55,7 @@
         { "ref": "zhipuai-coding-plan/glm-5.3-flash", "sources": ["chain", "gate"] },
         { "ref": "deepseek/deepseek-flash", "sources": ["chain"] },
         { "ref": "reeve/flash", "sources": ["engine"] },
+        { "ref": "reeve/coding", "sources": ["engine"] },
         { "ref": "reeve/pro", "sources": ["engine"] }
       ]
     },
@@ -91,8 +93,8 @@
         "fallback": { "requests": 6, "hops": 6, "byIndex": [{ "index": 1, "n": 32 }, { "index": 2, "n": 6 }] },
         "byChain": [
           { "chain": "free-first", "agent": "scout", "n": 18, "ok": 17, "error": 1, "hops": 3, "latency": { "n": 18, "avg": 900, "p50": 800, "p95": 1800, "max": 2400 } },
-          { "chain": "tier2a", "agent": "foreman", "n": 14, "ok": 13, "error": 1, "hops": 2, "latency": { "n": 14, "avg": 1300, "p50": 1100, "p95": 2200, "max": 3000 } },
-          { "chain": "tier1", "agent": "planner", "n": 6, "ok": 5, "error": 1, "hops": 1, "latency": { "n": 6, "avg": 2100, "p50": 2000, "p95": 3300, "max": 3600 } }
+          { "chain": "coding", "agent": "foreman", "n": 14, "ok": 13, "error": 1, "hops": 2, "latency": { "n": 14, "avg": 1300, "p50": 1100, "p95": 2200, "max": 3000 } },
+          { "chain": "reasoning", "agent": "planner", "n": 6, "ok": 5, "error": 1, "hops": 1, "latency": { "n": 6, "avg": 2100, "p50": 2000, "p95": 3300, "max": 3600 } }
         ],
         "byProvider": [
           { "provider": "opencode", "n": 18, "ok": 17, "error": 1, "latency": { "n": 18, "avg": 900, "p50": 800, "p95": 1800, "max": 2400 } },
@@ -154,14 +156,15 @@
       "deepseek": { "base_url": "https://api.deepseek.com", "auth": ["deepseek", "deepseek-api"] }
     },
     "chains": {
-      "tier1": { "targets": ["zhipuai-coding-plan/glm-5.3", "deepseek/deepseek-flash"] },
-      "tier2a": { "targets": ["zhipuai-coding-plan/glm-5.3-flash", "deepseek/deepseek-flash"] },
+      "reasoning": { "targets": ["zhipuai-coding-plan/glm-5.3", "xxyapi-deepseek/deepseek-v4.1-flash", "deepseek/deepseek-flash"] },
+      "coding": { "targets": ["zhipuai-coding-plan/glm-5.3-flash", "xxyapi-deepseek/deepseek-v4.1-flash", "deepseek/deepseek-flash"] },
       "free-first": { "targets": ["@free", "zhipuai-coding-plan/glm-5.3-flash", "deepseek/deepseek-flash"] },
-      "default": { "targets": ["zhipuai-coding-plan/glm-5.3-flash", "deepseek/deepseek-flash"] }
+      "vision": { "targets": ["xxyapi-deepseek/deepseek-v4.1-flash", "lmuai/glm-5.3-flash"] },
+      "fallback": { "targets": ["zhipuai-coding-plan/glm-5.3-flash", "deepseek/deepseek-flash"] }
     },
-    "agents": { "planner": "tier1", "advisor": "tier1", "foreman": "tier2a", "scout": "free-first", "librarian": "free-first" },
-    "chain_for_model": { "reeve/flash": "free-first", "reeve/pro": "tier1" },
-    "default_chain": "default",
+    "agents": { "planner": "reasoning", "advisor": "reasoning", "foreman": "coding", "scout": "free-first", "librarian": "free-first" },
+    "chain_for_model": { "reeve/flash": "free-first", "reeve/coding": "coding", "reeve/pro": "reasoning", "reeve/multimodal": "vision" },
+    "default_chain": "fallback",
     "free": {
       "enabled": true,
       "max": 3,

@@ -51,8 +51,8 @@ if (apiKey !== undefined && apiKey !== 'reeve-local' && !String(apiKey).includes
 }
 const models = config.providers?.reeve?.models
 if (models !== undefined) {
-  // 只有显式覆盖时才检查；不写 = 由插件注册三个档位
-  for (const tier of ['flash', 'pro', 'multimodal']) {
+  // 只有显式覆盖时才检查；不写 = 由插件注册四个档位
+  for (const tier of ['flash', 'coding', 'pro', 'multimodal']) {
     if (!models[tier]?.modelID) problems.push(`覆盖了 models 就要写全：档位 ${tier} 缺 modelID`)
   }
   if (models.multimodal?.capabilities?.input?.includes('image') !== true) {

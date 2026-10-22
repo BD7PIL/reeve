@@ -1,4 +1,4 @@
-// 三个档位的**模型注册** —— 让 opencode.jsonc 里不再需要一份 models 映射。
+// 四个档位的**模型注册** —— 让 opencode.jsonc 里不再需要一份 models 映射。
 //
 // 为什么能做：v2 的插件 API 有 `ctx.provider.transform(editor => editor.models.set(id, models))`
 //（`packages/plugin/src/promise/provider.ts` @v2.0.27），`Model.Info` 也能从最小形状造出来。
@@ -16,9 +16,10 @@ import { readFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 
-/** 三个档位。`images` 决定这一档声明不声明"能吃图"（只有视觉档声明）。 */
+/** 四个档位。`images` 决定这一档声明不声明"能吃图"（只有视觉档声明）。 */
 export const REEVE_TIERS = Object.freeze([
-  { id: 'flash', modelID: 'reeve/flash', name: 'REEVE flash（廉价链）', images: false },
+  { id: 'flash', modelID: 'reeve/flash', name: 'REEVE flash（免费优先链）', images: false },
+  { id: 'coding', modelID: 'reeve/coding', name: 'REEVE coding（中型链）', images: false },
   { id: 'pro', modelID: 'reeve/pro', name: 'REEVE pro（强推理链）', images: false },
   { id: 'multimodal', modelID: 'reeve/multimodal', name: 'REEVE multimodal（视觉链）', images: true },
 ])

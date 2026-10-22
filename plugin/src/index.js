@@ -383,7 +383,7 @@ export default {
 
     // ---- ⓪ 注册（让 opencode.jsonc 尽量短）----
     // 三件事都在插件里做，配置里就不用写 models / agents / default_agent：
-    //   a) 三个档位模型（配置里已写的不动 —— 配置说话时以配置为准）
+    //   a) 四个档位模型（配置里已写的不动 —— 配置说话时以配置为准）
     //   b) 把内置 agent 藏起来（前台只出现编排者）
     //   c) 默认 agent = foreman（存在才设）
     // ⚠️ 端点（baseURL / key）**注册不了**：Provider.Info 没有 URL、Connection 只是凭据引用、
