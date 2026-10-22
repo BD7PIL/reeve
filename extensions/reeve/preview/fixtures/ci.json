@@ -3,7 +3,7 @@
   "snapshot": {
     "generatedAt": 1792646400000,
     "plugin": "reeve",
-    "version": "0.1.11",
+    "version": "0.1.12",
     "agentTable": {
       "total": 8,
       "visible": [{ "id": "planner", "mode": "primary" }, { "id": "foreman", "mode": "primary" }, { "id": "scout", "mode": "subagent" }],

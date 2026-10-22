@@ -19,6 +19,10 @@
 > 对端 `reeve/fallback.jsonc` 与本地相同（config-diff：文件面 0 漂移）。
 > 发布被 2026-10-22T02:33Z 起的 npm registry 故障挡住约 70 分钟（先 E503、后 OIDC 交换失败报 ENEEDAUTH），恢复后重跑同一 job 成功。
 >
+> **0.1.12（已发，两端已升）**：0.1.11 的四档位/链名代码不变，只修装配清单 ——
+> `plugin/provision.json` 仍写着 `0.1.10`，导致 `ocrc remote apply --with-components` 装回旧组件。
+> 现在 provision 与 package 同为 0.1.12，并在 `plugin/test/unit.mjs` 加了 version/enginePlugin.spec 一致性断言。
+>
 > **0.1.11（已发，两端已升）**：四档位 + 策略链名。插件新增 `reeve/coding`；档位变为
 > `reeve/flash`（free-first）/ `reeve/coding`（coding）/ `reeve/pro`（reasoning）/ `reeve/multimodal`（vision）。
 > 链从历史编号 `tier1`/`tier2a` 改成 `reasoning`/`coding`，`multimodal`→`vision`，`default`→`fallback`。

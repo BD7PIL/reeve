@@ -250,10 +250,13 @@ section('名册：subagent 工具描述补名 + 与 agents/*.md 不漂移')
 }
 
 
-// ---- 版本常量不许漂：PLUGIN_VERSION 必须等于 package.json 的 version ----
+// ---- 版本常量不许漂：PLUGIN_VERSION / provision.json 必须等于 package.json 的 version ----
 {
   const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'))
+  const provision = JSON.parse(readFileSync(new URL('../provision.json', import.meta.url), 'utf8'))
   ok(`PLUGIN_VERSION 与 package.json 一致（${PLUGIN_VERSION}）`, PLUGIN_VERSION === pkg.version, `常量 ${PLUGIN_VERSION} ≠ package ${pkg.version}`)
+  ok('provision.json 的 version 与 package.json 一致', provision.version === pkg.version, `provision ${provision.version} ≠ package ${pkg.version}`)
+  ok('provision.json 的 enginePlugin.spec 指向当前版本', provision.enginePlugin?.spec === `${pkg.name}@${pkg.version}`, `spec ${provision.enginePlugin?.spec} ≠ ${pkg.name}@${pkg.version}`)
 }
 
 console.log(`

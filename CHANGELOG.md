@@ -3,6 +3,14 @@
 Newest first. Versions follow the plugin package (`plugin/package.json`); the
 panel extension has its own tags (`reeve-<version>`).
 
+## 0.1.12 — 2026-10-22
+
+**Fix the deployable artifact: `provision.json` still pinned 0.1.10.** The
+0.1.11 npm package carried the four-tier code but its `provision.json` still said
+`0.1.10`, so `ocrc remote apply --with-components` installed the old component.
+`provision.json` is now 0.1.12, and `plugin/test/unit.mjs` asserts its version and
+`enginePlugin.spec` match `package.json` so this cannot drift silently again.
+
 ## 0.1.11 — 2026-10-22
 
 **Four tiers with cost-appropriate agent allocation; chain names are strategies.**
