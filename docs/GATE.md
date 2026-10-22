@@ -2,9 +2,8 @@
 
 > 状态（2026-10-22）：**全部交付** —— 核心落地、Bifrost 退役、面板（链/策略/台账）、9router 两端常驻、
 > `@bd7pil/reeve@0.1.5` 已发布、两端真机验收 ①–⑨ 全过（发布记录见 `docs/GATE-ROLLBACK.md`）。
-> 0.1.6（版本号漂移 + GATE 生命周期：工作区驱逐不再带走代理）已提交并打标签，npm 发布被
-> 2026-10-22T02:33Z 起的 registry 故障挡住 —— 恢复后 `gh run rerun <run> -R BD7PIL/reeve --failed` 即可，
-> 两台机器先留在 0.1.5。
+> 0.1.6（版本号漂移 + GATE 生命周期：工作区驱逐不再带走代理）**已发布**，两台机器都已升级并重跑验收 ①–⑨ 全过
+> （发布被 2026-10-22T02:33Z 起的 npm registry 故障挡了约 70 分钟，恢复后重跑同一 job 成功）。
 > 需求来源：v1 时代那套 fallback（per-agent 候选链 + 错误分类触发 + 冷却/粘性）在 v2 没有等价物 → 由 GATE 复现。
 
 ## 1. 交付物（本次）
@@ -31,7 +30,7 @@
 
 ## 3. 验收（已跑）
 
-- 离线：`node plugin/test/gate.mjs` → 24 项全过（快乐路径、429/500/额度文案/503+retry-after/连不上、流已开始不换、不可重试透传、上限与 502 体、冷却与粘性（两种 restore）、流式不缓冲（握手）、客户端断开传播、provider 重试、多键轮转、目录 TTL 与降级、会话桥与 next、热更（好/坏文件）、dispose 幂等、端口冲突、边界 400/413/404/502、`probeGate` 复用探针、零出网）。
+- 离线：`node plugin/test/gate.mjs` → 25 项全过（快乐路径、429/500/额度文案/503+retry-after/连不上、流已开始不换、不可重试透传、上限与 502 体、冷却与粘性（两种 restore）、流式不缓冲（握手）、客户端断开传播、provider 重试、多键轮转、目录 TTL 与降级、会话桥与 next、热更（好/坏文件）、dispose 幂等、端口冲突、`detach` 卸载语义、边界 400/413/404/502、零出网）。
 - 门槛：lint 干净（新文件 0 警告）；全量 plugin 测试绿；覆盖率 global 91/79/91 + `src/gate/` 96/80/96（分支 80 未到计划写的 85，差距如实记在 `scripts/coverage-baseline.json` 的 `_history`）。
 
 ## 4. 与邻居的关系（本轮之后）
@@ -60,4 +59,4 @@
 3. ~~**面板**~~：已完成 —— 链编辑器（每 agent 一条）+ 策略 + 台账/统计；manifest/`check.mjs` 调整；18 项交互审计截图逐张看过（`extensions/reeve/preview/audit/`）。
 4. ~~**9router**~~：已完成 —— 两端常驻（pin 0.5.104、`requireApiKey=false`、Windows 启动文件夹隐藏 VBS / EL7 `@reboot` cron、`scripts/setup-9router.mjs` 幂等管理）。
 5. ~~**发布**~~：已完成 —— reeve 0.1.5 → npm + 扩展 `reeve-0.1.2`/`reeve-latest` → ocrc pin/sync → 对端升级 + 两端验收 + 回滚文档。
-   0.1.6（版本号漂移修正）等 npm registry 恢复后补发（见文首状态）。
+   0.1.6（版本号漂移 + 生命周期修正）已补发，两端已升级并重跑 ①–⑨。
