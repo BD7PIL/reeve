@@ -35,7 +35,7 @@ export function run() {
     "9router": { "base_url": "http://127.0.0.1:20128", "key": "none" }
   },
   "chains": {
-    "tier1": { "targets": ["a/m1", "b/m2"] },
+    "reasoning": { "targets": ["a/m1", "b/m2"] },
     "free-first": { "targets": ["9router/oc/free"] }
   },
   "free": {
@@ -44,16 +44,16 @@ export function run() {
     "prefer": ["mimo-v2.6-flash-free"],
     "sources": { "opencode": { "url": "https://opencode.ai/zen/v1/models", "filter": "opencode-free" } }
   },
-  "agents": { "planner": "tier1" },
+  "agents": { "planner": "reasoning" },
   "chain_for_model": { "reeve/flash": "free-first" },
-  "default_chain": "tier1"
+  "default_chain": "reasoning"
 }
 `
 
   // 1. 解析：整行注释可剥；坏 JSON 抛错
   {
     const doc = parseJsonc(CONFIG)
-    assert.equal(doc.chains.tier1.targets.length, 2)
+    assert.equal(doc.chains.reasoning.targets.length, 2)
     assert.equal(doc.providers.chains.key, 'none', 'providers 里的 chains 不该被当成顶层 chains')
     assert.throws(() => parseJsonc('{ 坏 }'), /JSON/)
     ok('parseJsonc')
@@ -78,7 +78,7 @@ export function run() {
     const span = findTopLevelSection(CONFIG, 'chains')
     assert.ok(span, '找得到顶层的 chains')
     const body = CONFIG.slice(span.start, span.end)
-    assert.ok(body.includes('tier1'), '取到的是链那一节')
+    assert.ok(body.includes('reasoning'), '取到的是链那一节')
     assert.ok(!body.includes('base_url'), '没把 providers.chains 取进来')
     assert.equal(findTopLevelSection(CONFIG, '不存在的键'), null)
     ok('findTopLevelSection（顶层判定）')
@@ -102,7 +102,7 @@ export function run() {
     assert.ok(r.text.includes('"planner": "free-first"'))
     const doc = parseJsonc(r.text)
     assert.deepEqual(doc.agents, { planner: 'free-first', scout: 'free-first' })
-    assert.deepEqual(doc.chains.tier1.targets, ['a/m1', 'b/m2'], '别的节没被动')
+    assert.deepEqual(doc.chains.reasoning.targets, ['a/m1', 'b/m2'], '别的节没被动')
     // 追加不存在的节（带逗号）
     const r2 = replaceSection(r.text, 'extra', { note: 1 })
     assert.equal(r2.replaced, false)
@@ -116,8 +116,8 @@ export function run() {
   {
     const { view, problems } = viewOf(parseJsonc(CONFIG))
     assert.deepEqual(view.chains['free-first'].targets, ['9router/oc/free'])
-    assert.equal(view.agents.planner, 'tier1')
-    assert.equal(view.default_chain, 'tier1')
+    assert.equal(view.agents.planner, 'reasoning')
+    assert.equal(view.default_chain, 'reasoning')
     assert.equal(problems.length, 0)
     const bad = viewOf({ chains: { empty: { targets: [] } }, agents: { a: 42 } })
     assert.ok(bad.problems.some((p) => p.includes('chains.empty')))
@@ -152,10 +152,10 @@ export function run() {
   // 8. applySave：真配置上的往返（注释保留、问题拒绝、自校验兜底）
   {
     const planned = planSave({
-      chains: { tier1: { targets: ['a/m1'] }, 'free-first': { targets: ['b/m2'] } },
-      agents: { planner: 'tier1', scout: 'free-first' },
+      chains: { reasoning: { targets: ['a/m1'] }, 'free-first': { targets: ['b/m2'] } },
+      agents: { planner: 'reasoning', scout: 'free-first' },
       chain_for_model: { 'reeve/flash': 'free-first' },
-      default_chain: 'tier1',
+      default_chain: 'reasoning',
       policy: { max_fallback_attempts: 2, cooldown_seconds: 30, restore_primary_after_cooldown: true, provider_retries: 0 },
     })
     assert.deepEqual(planned.problems, [])
@@ -163,9 +163,9 @@ export function run() {
     assert.equal(replaced, 6, '六节都替换到（不是追加：chains/agents/chain_for_model/policy/free/default_chain）')
     assert.ok(text.includes('// 头注释') && text.includes('// 一个叫 chains 的 provider'), '两份注释都还在')
     const doc = parseJsonc(text)
-    assert.deepEqual(doc.chains.tier1.targets, ['a/m1'])
-    assert.deepEqual(doc.agents, { planner: 'tier1', scout: 'free-first' })
-    assert.equal(doc.default_chain, 'tier1')
+    assert.deepEqual(doc.chains.reasoning.targets, ['a/m1'])
+    assert.deepEqual(doc.agents, { planner: 'reasoning', scout: 'free-first' })
+    assert.equal(doc.default_chain, 'reasoning')
     assert.equal(doc.policy.restore_primary_after_cooldown, true)
     assert.deepEqual(doc.providers['9router'].base_url, 'http://127.0.0.1:20128', 'providers 节原样')
     // 有问题 → 拒绝写
@@ -178,7 +178,7 @@ export function run() {
   // 9. 反查与候选
   {
     const { view } = viewOf(parseJsonc(CONFIG))
-    assert.deepEqual(agentsForChain(view, 'tier1'), ['planner'])
+    assert.deepEqual(agentsForChain(view, 'reasoning'), ['planner'])
     assert.deepEqual(agentsForChain(view, 'free-first'), [])
     const cands = candidateList({ models: { candidates: [{ ref: 'a/m', sources: ['gate'] }, { ref: 'b/m', sources: ['chain'] }] } }, { exclude: ['b/m'] })
     assert.deepEqual(cands, [{ ref: 'a/m', hint: 'GATE 目录' }])
