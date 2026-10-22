@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>REEVE 编排</title>
+<style>
+  /* 页面骨架 only —— 配色、字号、圆角、控件几何**全归宿主**。
+     kit 自己注入控件样式；宿主在服务扩展文档时把它那份"外观"（GUEST_UI_LOOK_CSS）追加在后面。
+     这一份只放 kit 不给的**布局**，并且按宿主自己的设置页写法：
+       · 分区（section）之间留白，分区内部是**平铺的行**，行间用 1px 的 --surface-subtle 细线分隔（divide-y）
+       · 行 = 左标签 + 右控件（label-left / control-right），不是一格一格的卡片
+       · 只在"确实要分组"的地方用 rounded-md + border + bg-surface-elevated/50（宿主也是这么用的）
+     字号跟宿主自己的刻度对齐（--text-ui-label 14px / --text-meta 14px / --text-micro 13px）；不写死颜色。 */
+
+  html, body { margin: 0; min-height: 100%; background: transparent; }
+  body { font: inherit; color: inherit; }
+  #root { min-height: 100%; }
+  .oc-kit { display: contents; }
+
+  .oc-page {
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;            /* 分区之间（宿主 space-y-4/6 那一档） */
+    min-height: 100%;
+    padding: 12px 12px 16px;
+  }
+
+  /* ── 基本盒子 ── */
+  .oc-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; }
+  .oc-bar-nowrap { flex-wrap: nowrap; }
+  .oc-bar-between { justify-content: space-between; }
+  .oc-col { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+  .oc-grow { flex: 1 1 auto; min-width: 0; }
+  .oc-push { margin-left: auto; }
+  .oc-truncate { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .oc-full { width: 100%; }
+
+  /* ── 字（对齐宿主的 typography 刻度）── */
+  .oc-title { font-size: 15px; font-weight: 600; }
+  .oc-label { font-size: 14px; font-weight: 500; }
+  .oc-meta { font-size: 14px; }
+  .oc-micro { font-size: 13px; }
+  .oc-muted { color: var(--surface-muted-foreground, color-mix(in srgb, currentColor 60%, transparent)); }
+  .oc-mono { font-family: var(--font-mono, ui-monospace, monospace); font-variant-numeric: tabular-nums; }
+  .oc-nowrap { white-space: nowrap; }
+
+  /* ── 分区：标题行 + 一组平铺的行 ── */
+  .oc-section { display: flex; flex-direction: column; min-width: 0; }
+  .oc-section-head { display: flex; align-items: baseline; gap: 8px; min-width: 0; padding-bottom: 6px; }
+  .oc-section-body { display: flex; flex-direction: column; min-width: 0; }
+
+  /* 行间细线（宿主的 divide-y；用 interactive-border：surface-subtle 在深色里几乎看不见） */
+  .oc-divide > * + * { border-top: 1px solid var(--interactive-border, var(--surface-subtle)); }
+
+  /* 分区标题比行标签重一档，避免"策略"和一行 agent 长得一样 */
+  .oc-section-head .oc-label { font-size: 15px; font-weight: 600; }
+
+  /* 设置行：左标签/说明，右控件（控件列固定宽度 → 所有行共享同一条右边缘） */
+  .oc-field-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-width: 0; padding: 8px 0; }
+  .oc-field-row > .oc-field-main { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+  .oc-field-row > .oc-field-control { flex: 0 0 auto; min-width: 0; width: min(240px, 48%); }
+  .oc-field-row > .oc-field-control .oc-sdk-field,
+  .oc-field-row > .oc-field-control .oc-sdk-select { width: 100%; }
+  /* 输入框在深色里要和页面有一层"面"（kit 默认是透明的） */
+  #root .oc-sdk-input { background: var(--surface-elevated); border: 1px solid var(--interactive-border); }
+  /* 选中行：kit 的 selectionForeground 在浅色下是淡灰（对比度 ~2.3:1）——这里用正文色 + 主色竖条 */
+  #root .oc-sdk-row[aria-selected="true"] {
+    color: var(--surface-foreground);
+    background: color-mix(in srgb, var(--primary) 10%, transparent);
+    box-shadow: inset 2px 0 0 var(--primary);
+    border-radius: calc(var(--radius, 9px) - 4px);
+  }
+  #root .oc-sdk-row[aria-selected="true"] .oc-sdk-row-lead,
+  #root .oc-sdk-row[aria-selected="true"] .oc-sdk-row-sub,
+  #root .oc-sdk-row[aria-selected="true"] .oc-sdk-row-meta { color: var(--surface-muted-foreground); opacity: 1; }
+
+  /* 窄栏（宿主侧栏量级）：标签在上、控件满宽；候选序号收窄，别把模型名挤到截断 */
+  @media (max-width: 520px) {
+    .oc-field-row { flex-direction: column; align-items: stretch; gap: 6px; }
+    .oc-field-row > .oc-field-control { width: 100%; }
+    .oc-sdk-row-lead { width: 28px; }
+    /* 分区标题不许在词中间折行；说明落到下一行 */
+    .oc-section-head { flex-direction: column; align-items: flex-start; gap: 2px; }
+    .oc-section-head .oc-label { white-space: nowrap; }
+    /* 链头：名字/agent/计数可以在左侧内部换行，但「更多」必须留在右边 */
+    .oc-bar-between { flex-wrap: nowrap; }
+    .oc-bar-between > .oc-bar { min-width: 0; }
+    /* 候选名在窄栏换成可换行：宁可两行，也不要把 -flash 这种区分后缀截掉 */
+    #root .oc-sdk-row { align-items: flex-start; }
+    #root .oc-sdk-row-title { white-space: normal; overflow: visible; overflow-wrap: anywhere; }
+  }
+  /* 宿主侧栏默认 ~306px：用量/说明这类次要信息让位，否则 @free 行的标题会被挤成一字一行 */
+  @media (max-width: 360px) {
+    #root .oc-sdk-row-meta { display: none; }
+  }
+
+  /* 需要分组的 inset（宿主：rounded-md border border-border bg-surface-elevated/50） */
+  .oc-inset {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-width: 0;
+    padding: 8px;
+    border: 1px solid var(--interactive-border, color-mix(in srgb, currentColor 25%, transparent));
+    border-radius: calc(var(--radius, 9px) - 2px);
+    background: color-mix(in srgb, var(--surface-elevated, transparent) 50%, transparent);
+  }
+
+  .oc-list-scroll { max-height: 280px; overflow: auto; }
+  /* 台账行：一行一条记录，行间要有一条能看见的细线（深色下尤其） */
+  .oc-ledger-list .oc-sdk-row + .oc-sdk-row { border-top: 1px solid var(--interactive-border); }
+  .oc-pre {
+    margin: 0; max-height: 220px; overflow: auto; padding: 8px;
+    border-radius: calc(var(--radius, 9px) - 2px);
+    background: var(--surface-muted, color-mix(in srgb, currentColor 8%, transparent));
+    font-family: var(--font-mono, ui-monospace, monospace); font-size: 13px; line-height: 1.5;
+    white-space: pre-wrap; overflow-wrap: anywhere;
+  }
+  .oc-sr { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
+
+  /* 保存条：只在有改动/在飞时出现，吸在底部（分组 inset + 主按钮） */
+  .oc-savebar {
+    position: sticky; bottom: 0;
+    display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+    padding: 8px 10px;
+    border: 1px solid var(--interactive-border, color-mix(in srgb, currentColor 25%, transparent));
+    border-radius: var(--radius, 9px);
+    background: var(--surface-elevated, var(--background, Canvas));
+  }
+
+  /* 摘要数字格：小灰标签 + 粗体数字（宿主里"读数"也是这个写法） */
+  .oc-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(112px, 1fr)); gap: 8px 12px; padding: 8px 0; }
+  .oc-stat-label { font-size: 13px; color: var(--surface-muted-foreground, color-mix(in srgb, currentColor 60%, transparent)); }
+  .oc-stat-value { font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; }
+
+  /* 统计里的一行：名字 | 次数（定宽右对齐） | 条 | 延迟（定宽）——条有共同起点，才能横向比 */
+  .oc-stat-row { display: grid; grid-template-columns: minmax(0, 1.1fr) 128px minmax(80px, 1.2fr) 150px; align-items: center; gap: 10px; min-height: 30px; }
+  .oc-stat-row > .oc-micro:nth-child(2) { text-align: right; }
+  .oc-stat-bar { display: flex; align-items: center; }
+  .oc-stat-bar > * { flex: 1 1 auto; }
+  .oc-stat-lat { text-align: right; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script src="./main.js"></script>
+</body>
+</html>

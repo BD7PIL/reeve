@@ -1,0 +1,63 @@
+{
+  "//": "GATE 的兜底配置（机器上没有任何 reeve-fallback.jsonc 时用它）。刻意只放付费候选——免费车道（@free）属于每台机器自己的选择，写在用户配置里。",
+  "//cells": "providers.<id>：base_url + path（默认 /v1/chat/completions）+ auth（auth.json 里的 id，按序取第一个有 key 的）+ key（env.X 引用或公开字面量，覆盖 auth）+ lane（native | passthrough）+ models/models_fetch（目录来源）。",
+  "//tiers": "chain_for_model 里的 `reeve/*` 四条 = 引擎档位模型（插件注册的 reeve/flash|coding|pro|multimodal）。引擎发**全名**进请求体，键必须写全名。没有免费车道时：flash → coding（便宜付费链）、coding → coding、pro → reasoning、multimodal → vision。",
+  "schema": 1,
+  "policy": {
+    "retry_on_errors": [401, 402, 403, 429, 500, 503, 529],
+    "max_fallback_attempts": 3,
+    "cooldown_seconds": 60,
+    "restore_primary_after_cooldown": false,
+    "first_prompt_watchdog_ms": 90000,
+    "provider_retries": 1,
+    "models_ttl_seconds": 300,
+    "session_ttl_seconds": 1800
+  },
+  "providers": {
+    "opencode": { "base_url": "https://opencode.ai/inference/openai/v1", "path": "/chat/completions", "key": "public", "lane": "passthrough", "models": ["*"] },
+    "openrouter": { "base_url": "https://openrouter.ai/api/v1", "path": "/chat/completions", "auth": ["openrouter"], "models": [] },
+    "nvidia": { "base_url": "https://integrate.api.nvidia.com/v1", "path": "/chat/completions", "auth": ["nvidia"], "models": [] },
+    "zhipuai-coding-plan": { "base_url": "https://open.bigmodel.cn", "path": "/api/coding/paas/v4/chat/completions", "auth": ["zhipuai-coding-plan"] },
+    "xxyapi-deepseek": { "base_url": "https://www.xxyapi.com", "auth": ["xxyapi-deepseek"] },
+    "lmuai": { "base_url": "https://api.lmuai.com", "auth": ["lmuai", "lmuai-glm"] },
+    "deepseek": { "base_url": "https://api.deepseek.com", "auth": ["deepseek", "deepseek-api"] },
+    "xiaomi": { "base_url": "https://api.xiaomimimo.com", "auth": ["xiaomi"] },
+    "alibaba-cn": { "base_url": "https://dashscope.aliyuncs.com", "path": "/compatible-mode/v1/chat/completions", "auth": ["alibaba-cn"] }
+  },
+  "free": {
+    "enabled": true,
+    "max": 3,
+    "providers": ["opencode", "openrouter", "nvidia"],
+    "refresh_seconds": 300,
+    "failure_threshold": 3,
+    "failure_cooldown_seconds": 600,
+    "prefer": [],
+    "deny": [],
+    "static": {}
+  },
+  "chains": {
+    "reasoning": { "targets": ["zhipuai-coding-plan/glm-5.3", "xxyapi-deepseek/deepseek-v4.1-flash", "deepseek/deepseek-flash"] },
+    "coding": { "targets": ["zhipuai-coding-plan/glm-5.3-flash", "xxyapi-deepseek/deepseek-v4.1-flash", "lmuai/glm-5.3-flash", "deepseek/deepseek-flash"] },
+    "vision": { "targets": ["xxyapi-deepseek/deepseek-v4.1-flash", "lmuai/glm-5.3-flash", "zhipuai-coding-plan/glm-5.3-flash"] },
+    "fallback": { "targets": ["zhipuai-coding-plan/glm-5.3-flash", "xxyapi-deepseek/deepseek-v4.1-flash", "deepseek/deepseek-flash"] }
+  },
+  "agents": {
+    "planner": "reasoning",
+    "advisor": "reasoning",
+    "critic": "reasoning",
+    "foreman": "coding",
+    "executor": "coding",
+    "reviewer": "coding",
+    "scout": "coding",
+    "librarian": "coding"
+  },
+  "chain_for_model": {
+    "reeve/flash": "coding",
+    "reeve/coding": "coding",
+    "reeve/pro": "reasoning",
+    "reeve/multimodal": "vision",
+    "zhipuai-coding-plan/glm-5.3": "reasoning",
+    "zhipuai-coding-plan/glm-5.3-flash": "coding"
+  },
+  "default_chain": "fallback"
+}
