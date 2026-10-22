@@ -19,6 +19,16 @@
 > 对端 `reeve/fallback.jsonc` 与本地相同（config-diff：文件面 0 漂移）。
 > 发布被 2026-10-22T02:33Z 起的 npm registry 故障挡住约 70 分钟（先 E503、后 OIDC 交换失败报 ENEEDAUTH），恢复后重跑同一 job 成功。
 >
+> **0.1.10（已发，两端已升）**：真宿主保存测试抓到的两处 —— ① 面板"已生效"误报：已应用判定读快照的 `gate` 段，
+> 而该段只随 60s 统计刷新，GATE 已换链、面板还说"未生效"；插件改为独立的 2s gate 状态刷新（仅签名变化时写盘；
+> 复用者走环回 `/gate/version`）。② 安全保存测试本身：`scripts/host-audit.mjs --save` 备份 `fallback.jsonc` →
+> 面板加临时链 → 保存 → 断言 GATE `chain_targets` 真变了 → 删链恢复，`finally` 回写备份并校验 sha256。
+> 开发机 3001 与对端 4610 各跑一次：`applied/restored/gateDropped` 全 true，前后 sha256 同为 `a134a388…`，
+> GATE 里临时链消失。对端那次还暴露出脚本会连到同一 Edge 里另一个 app 页的 OOPIF（把临时链写到开发机配置上，
+> 已从干净副本恢复）—— 两处 target 选择都按 `appHost` 过滤后才对。
+> 提交 `1a1852b` + 本修复；npm `@bd7pil/reeve@0.1.10`；扩展仍 0.1.4；ocrc pin `0b860562`；报告
+> `preview/host-audit/3001.json`、`4610.json`。
+>
 > **0.1.9（已发，两端已升）**：两处修正 —— ① OpenRouter/NVIDIA 的 `base_url` 已带 `/v1` 但 provider 没写
 > `path`，GATE 打到 `/v1/v1/...` 404；用户配置与打包默认都补 `"path": "/chat/completions"`。
 > ② 面板扩展 0.1.4：宿主侧栏 306px 下 `@free` 行标题被挤成一字一行 → ≤360px 隐藏次要 meta，审计加 40 号专项。

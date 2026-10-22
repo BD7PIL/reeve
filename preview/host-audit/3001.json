@@ -1,18 +1,18 @@
 {
   "app": "http://127.0.0.1:3001/",
   "host": "127.0.0.1:3001",
-  "at": "2026-10-22T08:46:23.425Z",
+  "at": "2026-10-22T09:02:17.350Z",
   "guest": "http://127.0.0.1:3001/api/guests/reeve/panel/index.html",
   "checks": {
-    "textLen": 1802,
+    "textLen": 18018,
     "missing": [],
     "overflow": false,
     "tokens": []
   },
   "save": {
     "enabled": true,
-    "chain": "host-audit-mvjaqk2w",
-    "applied": false,
+    "chain": "host-audit-mvjbbb0a",
+    "applied": true,
     "targets": [
       "deepseek/deepseek-flash"
     ],
@@ -23,7 +23,5 @@
     "error": null
   },
   "consoleErrors": [],
-  "failures": [
-    "保存测试：面板没有出现「已生效」"
-  ]
+  "failures": []
 }
