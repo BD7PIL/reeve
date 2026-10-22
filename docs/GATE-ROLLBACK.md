@@ -1,8 +1,14 @@
 # GATE 交付的回滚手册（Bifrost 退役 → 回 0.1.4 那一代）
 
-> 状态（2026-10-22）：**交付已实现、开发机验收全过，但尚未发布**（使用者要求先审核面板）。
-> 这份手册是发布窗口的赔率表：真出事时按它一步回到"Bifrost + 0.1.4"的已知好状态。
-> **发布时把它连同 CHANGELOG 一起再读一遍**——里面的版本号与提交号在发布前不该漂。
+> 状态（2026-10-22）：**已发布并两端验收通过**。手动流程见 §2.4。
+>
+> 发布记录（回滚时按这些号找回来）：
+> · reeve：npm `@bd7pil/reeve@0.1.5`（GitHub Actions `Publish plugin` 绿）、扩展 `reeve-0.1.2` 钉 + `reeve-latest` 通道（`reeve-extension.yml` 绿）；
+>   公开树单提交 `2df3c18`（CI 绿）；本仓开发历史：`a415709`（面板重做）→ `a415709`..`af57774`（基线/验收包修正）
+> · ocrc：`d4069478`（pin 0.1.5）、`8b623577`（暂存穿透链接）、`08b6ebe0`（sync 含 reeve 目录）
+> · 对端（demo@192.168.26.101）：组件 `~/.ocrc/components/reeve/package` = 0.1.5、扩展已装并授权、`~/.config/opencode/reeve/fallback.jsonc` 已同步、
+>   9router 0.5.104（`requireApiKey=false` + `@reboot` cron）、旧 Bifrost 进程已清、`accept-gate.sh` ①–⑨ 全过
+> · 两端 `config-diff`：`reeve/fallback.jsonc` 相同、一次同步写 0 个文件
 
 ## 1. 这次交付改了什么（回滚的边界）
 
