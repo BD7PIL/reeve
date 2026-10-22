@@ -32,8 +32,9 @@
 >   9router 已 `npm rm -g`（数据目录保留）
 > · 对端（demo@192.168.26.101）：组件 0.1.8（`remote apply --with-components` + `down`/`up`）、`sync-config` 已对齐、
 >   `accept-gate.sh` ①–⑨ 全过、`accept-lifecycle.mjs` 全过、扩展 0.1.3、9router 已卸载（`~/.9router` 数据保留）。
->   真宿主的可视化复核没做成：对端 9222 上的 headless Chrome 停在 Unlock 页（会话已失效，我们没有也不该去拿密码）；
->   该宿主的面板安装/授权由 apply 验证，渲染由开发机真宿主 + 预览 39 项覆盖。
+>   真宿主：经 ocrc 转发 `http://127.0.0.1:4610/`、用 store 里的 uiPassword 登录（不打印）后
+>   `host-audit.mjs` **PASS**（报告 `preview/host-audit/4610.json`：1770 字、console 0、无溢出、宿主 token 在位）；
+>   9222 的 Chrome 会话失效不影响这条路径。
 > · 回滚边界：
 > · **只想关掉免费**：`fallback.jsonc` 里 `free.enabled=false`（`@free` 展开为空，链直接走付费），或把 `free.max=0`；不用回滚代码。
 > · **想回到 9router 时代**：把 `9router` provider 与 `9router/oc/<model>` 候选加回配置；两台机器重装

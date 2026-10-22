@@ -91,7 +91,13 @@ const att = await send('Target.attachToTarget', { targetId: frame.targetId, flat
 const sid = att.result?.sessionId
 await send('Runtime.enable', {}, sid)
 await send('Page.enable', {}, sid)
-await sleep(1500)
+// 面板是 OOPIF：attach 之后它可能还在挂载（首屏文本从几十字长到整页）；等文本长起来再断言
+let ready = 0
+for (let i = 0; i < 24 && ready < 200; i++) {
+  await sleep(500)
+  const probe = await send("Runtime.evaluate", { expression: "document.body.innerText.length", returnByValue: true }, sid)
+  ready = Number(probe.result?.result?.value ?? 0)
+}
 
 const checks = await send(
   'Runtime.evaluate',
