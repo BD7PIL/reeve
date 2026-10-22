@@ -73,6 +73,98 @@ const readyCtx = {
 
 const err = (message, code) => Object.assign(new Error(message), { code })
 
+// ---- 场景注入（审计/CI 用；逐页隔离，不碰真实文件）----
+// ?scenario=gate-down|gate-problems|config-missing|config-parse-error|ledger-missing|ledger-denied|
+//           save-fail|apply-stall|stale|slow-read|empty-stats|empty-tasks|free-empty|free-cooling|free-error|gate-running
+// ?fixture=ci      正常态用仓库里的夹具（CI 没有真快照/真配置）
+// ?applyDelay=800  写入后多久把新配置"热更"进快照（模拟 GATE ≤5s；apply-stall 时永不）
+const scenario = params.get('scenario') ?? ''
+const fixtureMode = params.get('fixture') === 'ci'
+const applyDelay = Number(params.get('applyDelay') ?? 800)
+let writtenText = null
+let writtenConfig = null
+let writtenAt = 0
+let fixtureDoc = null
+
+const isConfigPath = (p) => /fallback\.jsonc$/.test(String(p))
+const isSnapshotPath = (p) => /ledger\.json$/.test(String(p))
+const delay = (ms) => new Promise((r) => setTimeout(r, ms))
+const stripComments = (t) => String(t).split('\n').filter((l) => !l.trim().startsWith('//')).join('\n')
+const parseLoose = (t) => JSON.parse(stripComments(t))
+
+async function loadFixture() {
+  if (!fixtureDoc) {
+    const res = await fetch('/preview-fixture.json')
+    if (!res.ok) throw err(`读不到 CI fixture（HTTP ${res.status}）`, 'NOT_FOUND')
+    fixtureDoc = await res.json()
+  }
+  return fixtureDoc
+}
+
+/** 写入 → 模拟 GATE 热更：快照的 gate 段按新配置重算（含 free 节）。 */
+function patchApplied(snapshot) {
+  if (!writtenConfig || Date.now() - writtenAt < applyDelay || scenario === 'apply-stall') return snapshot
+  const cfg = writtenConfig
+  const gate = { ...(snapshot.gate ?? {}) }
+  const policy = cfg.policy ?? {}
+  gate.chains = Object.keys(cfg.chains ?? {})
+  gate.chain_targets = Object.fromEntries(Object.entries(cfg.chains ?? {}).map(([n, s]) => [n, [...(s?.targets ?? [])]]))
+  gate.agents = { ...(cfg.agents ?? {}) }
+  gate.default_chain = cfg.default_chain ?? null
+  gate.policy = {
+    max_fallback_attempts: Number(policy.max_fallback_attempts ?? 3),
+    cooldown_seconds: Number(policy.cooldown_seconds ?? 60),
+    restore_primary_after_cooldown: policy.restore_primary_after_cooldown === true,
+    provider_retries: Number(policy.provider_retries ?? 1),
+  }
+  const f = cfg.free ?? {}
+  gate.free = {
+    enabled: f.enabled !== false,
+    max: Number(f.max ?? 3),
+    providers: Array.isArray(f.providers) ? f.providers.map(String) : ['opencode', 'openrouter', 'nvidia'],
+    refresh_seconds: Number(f.refresh_seconds ?? 300),
+    failure_threshold: Number(f.failure_threshold ?? 3),
+    failure_cooldown_seconds: Number(f.failure_cooldown_seconds ?? 600),
+    prefer: Array.isArray(f.prefer) ? f.prefer.map(String) : [],
+    deny: Array.isArray(f.deny) ? f.deny.map(String) : [],
+    static: Object.fromEntries(Object.entries(f.static ?? {}).map(([k, v]) => [k, Array.isArray(v) ? v.map(String) : []])),
+  }
+  return { ...snapshot, gate }
+}
+
+/** 错误/空/陈旧态（只改这一页读到的数据，不碰盘）。 */
+function applyScenario(snapshot) {
+  const out = { ...snapshot }
+  if (scenario === 'stale') {
+    out.generatedAt = Date.now() - 2 * 86_400_000
+    if (out.stats) {
+      out.stats = { ...out.stats, generatedAt: out.generatedAt }
+      if (out.stats.gate) out.stats.gate = { ...out.stats.gate, window: { ...(out.stats.gate.window ?? {}), relaxed: true } }
+    }
+  }
+  if (scenario === 'gate-down') out.gate = { error: 'GATE 起不来（模拟：端口被占）' }
+  if (scenario === 'gate-problems' && out.gate) {
+    out.gate = { ...out.gate, problems: ['chains.demo 没有 targets（模拟）', 'agents.scout 指向的链不存在（模拟）'] }
+  }
+  if (scenario === 'empty-stats') out.stats = null
+  if (scenario === 'empty-tasks') out.tasks = []
+  if (scenario === 'gate-running') {
+    out.counts = { ...(out.counts ?? {}), running: 2, total: Math.max(3, out.counts?.total ?? 3) }
+    if (out.stats?.orchestrate) out.stats = { ...out.stats, orchestrate: { ...out.stats.orchestrate, queue: { active: 2, waiting: 1 } } }
+  }
+  if (scenario === 'free-empty') out.free = { enabled: true, max: 3, cap: 3, providers: [], expand: [], cooling: [], prefer: [], deny: [] }
+  if (scenario === 'free-cooling') {
+    const base = out.free ?? { enabled: true, max: 3, cap: 3, providers: [], prefer: [], deny: [] }
+    out.free = {
+      ...base,
+      expand: ['opencode/mimo-v2.6-flash-free', 'opencode/deepseek-v4.1-flash-free'],
+      cooling: [{ ref: 'opencode/mimo-v2.6-flash-free', fails: 3, until: Date.now() + 240_000 }],
+    }
+  }
+  if (scenario === 'free-error') out.free = { error: '读不到免费车道运行态（模拟）' }
+  return out
+}
+
 const client = {
   onReady: (listener) => {
     readyListeners.add(listener)
@@ -112,14 +204,44 @@ const client = {
     keys: async () => [],
   },
   readFile: async (path) => {
+    if (scenario === 'slow-read') await delay(2600)
+    // 只慢读配置：快照先到 → 面板先画骨架 → 链 tab 停在"正在读 GATE 配置…"（确定性加载态）
+    if (scenario === 'slow-config' && isConfigPath(path)) await delay(3000)
+    // 错误态优先于夹具/真盘：否则 fixture 模式会绕过注入
+    if (isConfigPath(path)) {
+      if (scenario === 'config-missing') throw err('没有这个文件（模拟）', 'NOT_FOUND')
+      if (scenario === 'config-parse-error') return { content: '{ 坏 json' }
+    }
+    if (isSnapshotPath(path)) {
+      if (scenario === 'ledger-missing') throw err('读不到台账快照（模拟）', 'NOT_FOUND')
+      if (scenario === 'ledger-denied') throw err('没有文件权限（模拟：未授权 filesystem）', 'NOT_GRANTED')
+    }
+    if (fixtureMode) {
+      const doc = await loadFixture()
+      if (isConfigPath(path)) return { content: writtenText ?? JSON.stringify(doc.config, null, 2) }
+      if (isSnapshotPath(path)) return { content: JSON.stringify(patchApplied(applyScenario(doc.snapshot))) }
+      return { content: JSON.stringify(doc.snapshot) }
+    }
     const res = await fetch(`/api/file?path=${encodeURIComponent(path)}`)
     if (!res.ok) {
       const body = await res.json().catch(() => ({}))
       throw err(body.error ?? `读取失败（HTTP ${res.status}）`, body.code ?? (res.status === 403 ? 'NOT_GRANTED' : 'UNKNOWN'))
     }
-    return res.json()
+    const body = await res.json()
+    if (isSnapshotPath(path)) {
+      try {
+        return { content: JSON.stringify(patchApplied(applyScenario(JSON.parse(body.content)))) }
+      } catch {
+        return body
+      }
+    }
+    return body
   },
   writeFile: async (path, content) => {
+    if (scenario === 'save-fail') {
+      await delay(500)
+      throw err('写入失败（模拟：配置文件只读）', 'UNKNOWN')
+    }
     const res = await fetch('/api/write', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
@@ -128,6 +250,15 @@ const client = {
     if (!res.ok) throw err(`写入失败（HTTP ${res.status}）`, 'UNKNOWN')
     const out = await res.json()
     writes.push({ path, bytes: content.length, applied: out.applied })
+    if (isConfigPath(path)) {
+      try {
+        writtenConfig = parseLoose(content)
+        writtenText = content
+        writtenAt = Date.now()
+      } catch {
+        /* 写进坏配置不是面板该走的路（applySave 自校验会先拦），这里不处理 */
+      }
+    }
     return { written: true }
   },
 }

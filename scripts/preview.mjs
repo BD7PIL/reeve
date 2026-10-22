@@ -7,6 +7,9 @@
 // URL 里可带参数：
 //   ?theme=light|dark     宿主主题（真 host 也是这么发的）
 //   ?tab=chain|stats|ledger  先切到哪个 tab（预览脚本注入一次点击）
+//   ?scenario=…           错误/空/冷却/慢读/应用失败等状态的注入（见 preview/host-shim.js 头注释）
+//   ?fixture=ci           正常态用仓库夹具（CI 没有真快照/真配置）
+//   ?applyDelay=800       保存后多久把新配置"热更"进快照（模拟 GATE；apply-stall 永不）
 //
 // 读的是**你机器上的真状态**：~/.reeve/ledger.json（快照）与 ~/.config/opencode/reeve/fallback.jsonc
 // （GATE 配置）。写默认只进内存 —— 预览不该动真配置。
@@ -52,6 +55,8 @@ const expand = (p) => (p.startsWith('~/') || p === '~' ? join(HOME, p.slice(1)) 
 const ALLOWED = [
   '~/.reeve/ledger.json',
   '~/.local/share/opencode/reeve/ledger.json',
+  '~/.reeve-staging/.reeve/ledger.json',
+  '~/.reeve-staging/.local/share/opencode/reeve/ledger.json',
   '~/.config/opencode/reeve/fallback.jsonc',
   '~/.reeve-staging/.config/opencode/reeve/fallback.jsonc',
   '~/.reeve/gate.jsonl',
@@ -77,6 +82,13 @@ const server = createServer((req, res) => {
   }
   if (url.pathname === '/preview.js') {
     return send(200, bundle.outputFiles[0].text, 'text/javascript; charset=utf-8')
+  }
+  if (url.pathname === '/preview-fixture.json') {
+    try {
+      return send(200, readFileSync(join(root, 'preview/fixtures/ci.json'), 'utf8'))
+    } catch (err) {
+      return send(404, { error: `读不到 CI 夹具：${err.code ?? err.message}` })
+    }
   }
   if (url.pathname === '/api/file') {
     const p = url.searchParams.get('path') ?? ''

@@ -52,7 +52,8 @@ export function createLedgerTab({ host }) {
     if (t) {
       const vis = (t.visible ?? []).map((a) => a.id).join('、') || '（无）'
       const roster = doc.roster ? `名册 ${doc.roster.count} 个` : '名册未注入'
-      facts.append(mutedText(`前台可见 agent：${vis} · 隐藏 ${(t.hidden ?? []).length} 个 · ${roster}`))
+      const hiddenN = Array.isArray(t.hidden) ? t.hidden.length : Number(t.hidden ?? 0)
+      facts.append(mutedText(`前台可见 agent：${vis} · 隐藏 ${hiddenN} 个 · ${roster}`))
     }
     if (doc.registered) {
       facts.append(mutedText(`插件包内注册：agent ${doc.registered.agents?.length ?? 0} 个 · skill ${doc.registered.skills?.length ?? 0} 个`))
@@ -88,16 +89,19 @@ export function createLedgerTab({ host }) {
       if (task.background) flags.push('后台')
       // 状态只在彩色胶囊里说一次 —— 左侧再写一遍灰字等于每行读两遍同一个词
       const sid = task.childSessionID ? `ses_…${String(task.childSessionID).slice(-6)}` : '无子会话'
+      const dur = task.endedAt ? fmtDur(task.startedAt, task.endedAt) : fmtDur(task.startedAt)
       return {
         id: task.taskID,
         title: task.description || task.agent || task.taskID,
         subtitle: [task.agent ?? '?', flags.join('/'), sid].filter(Boolean).join(' · '),
-        meta: task.endedAt ? fmtDur(task.startedAt, task.endedAt) : fmtDur(task.startedAt),
+        // 有子会话的才是可打开的：给一个 › 暗示；没有的置灰（disabled，点了也不会假装能开）
+        meta: task.childSessionID ? `${dur} ›` : dur,
+        disabled: !task.childSessionID,
         badge: { label: STATE_LABEL[task.state] ?? task.state ?? '?', tone: STATE_TONE[task.state] ?? 'neutral' },
       }
     })
 
-    const card = el('div', { class: 'oc-col' })
+    const card = el('div', { class: 'oc-col oc-ledger-list' })
     card.append(bar)
     card.append(
       list({
@@ -106,7 +110,10 @@ export function createLedgerTab({ host }) {
           const task = tasks.find((x) => x.taskID === id)
           if (task?.childSessionID) void host.openSession(task.childSessionID)
         },
-        emptyText: '台账是空的 —— 还没有派过子任务。',
+        emptyText:
+          tasks.length === 0
+            ? '台账是空的 —— 还没有派过子任务。'
+            : `这个筛选下没有记录（台账里共 ${tasks.length} 条，换个筛选看看）。`,
         ariaLabel: 'REEVE 台账',
       }).node,
     )

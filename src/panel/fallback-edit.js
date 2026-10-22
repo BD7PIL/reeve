@@ -169,6 +169,7 @@ export function viewOf(doc) {
   }
   if (typeof doc?.default_chain === 'string' && doc.default_chain) out.default_chain = doc.default_chain
   out.policy = asRecord(doc?.policy) ?? {}
+  out.free = freeViewOf(doc?.free)
   return { view: out, problems }
 }
 
@@ -225,21 +226,52 @@ export function planSave(view, { isRef = defaultIsRef } = {}) {
     restore_primary_after_cooldown: p.restore_primary_after_cooldown === true,
     provider_retries: Math.max(0, num(p.provider_retries, 1)),
   }
-  return { chains, agents, chain_for_model: chainForModel, default_chain: defaultChain, policy, problems }
+  const free = freeViewOf(view?.free)
+  return { chains, agents, chain_for_model: chainForModel, default_chain: defaultChain, policy, free, problems }
 }
 
-/** `provider/model`（模型名可带斜杠）；没有斜杠或斜杠在首尾都不算。 */
+/** `provider/model`（模型名可带斜杠）；没有斜杠或斜杠在首尾都不算。`@free` 是链里的自动占位符。 */
 export function defaultIsRef(ref) {
   const s = String(ref ?? '')
+  if (s === '@free') return true
   const i = s.indexOf('/')
   return i > 0 && i < s.length - 1
+}
+
+const asStrings = (v) => (Array.isArray(v) ? v.filter((x) => typeof x === 'string' && x.length > 0) : [])
+const clampInt = (v, min, max, dflt) => {
+  const n = Number(v)
+  return Number.isFinite(n) ? Math.min(max, Math.max(min, Math.trunc(n))) : dflt
+}
+
+/**
+ * `free` 节的视图/保存共用归一化：保留未知键（例如 `sources` —— 面板不编辑它，
+ * 但保存时绝不能把使用者手改的发现源冲掉），已知键按类型收敛并夹到安全范围。
+ */
+export function freeViewOf(raw) {
+  const f = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {}
+  const staticIn = f.static && typeof f.static === 'object' && !Array.isArray(f.static) ? f.static : {}
+  const staticOut = {}
+  for (const [id, list] of Object.entries(staticIn)) staticOut[id] = asStrings(list)
+  return {
+    ...f,
+    enabled: f.enabled !== false,
+    max: clampInt(f.max, 0, 8, 3),
+    providers: Array.isArray(f.providers) ? asStrings(f.providers) : ['opencode', 'openrouter', 'nvidia'],
+    refresh_seconds: clampInt(f.refresh_seconds, 30, 86_400, 300),
+    failure_threshold: clampInt(f.failure_threshold, 1, 20, 3),
+    failure_cooldown_seconds: clampInt(f.failure_cooldown_seconds, 60, 86_400, 600),
+    prefer: asStrings(f.prefer),
+    deny: asStrings(f.deny),
+    static: staticOut,
+  }
 }
 
 /**
  * 把一次保存**落到文本上**：只重写被改过的节，其余字节（含注释）保留。
  * 注意 `policy` 是整体替换（它的键少，整体写更好读）；`chains`/`agents`/`chain_for_model` 同理。
  */
-export function applySave(text, planned, { sections = ['chains', 'agents', 'chain_for_model', 'policy', 'default_chain'] } = {}) {
+export function applySave(text, planned, { sections = ['chains', 'agents', 'chain_for_model', 'policy', 'free', 'default_chain'] } = {}) {
   if (planned?.problems?.length) throw new Error(`配置有 ${planned.problems.length} 个问题，先改掉再保存：\n  ${planned.problems.join('\n  ')}`)
   let out = text
   let replaced = 0
