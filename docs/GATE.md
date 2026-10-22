@@ -2,8 +2,9 @@
 
 > 状态（2026-10-22）：**全部交付** —— 核心落地、Bifrost 退役、面板（链/策略/台账）、9router 两端常驻、
 > `@bd7pil/reeve@0.1.5` 已发布、两端真机验收 ①–⑨ 全过（发布记录见 `docs/GATE-ROLLBACK.md`）。
-> 0.1.6（仅"快照/面板版本号读 0.1.4"的修正）已提交并打标签，npm 发布被 2026-10-22T02:33Z 起的
-> registry 故障挡住 —— 恢复后 `gh run rerun <run> -R BD7PIL/reeve --failed` 即可，两台机器先留在 0.1.5。
+> 0.1.6（版本号漂移 + GATE 生命周期：工作区驱逐不再带走代理）已提交并打标签，npm 发布被
+> 2026-10-22T02:33Z 起的 registry 故障挡住 —— 恢复后 `gh run rerun <run> -R BD7PIL/reeve --failed` 即可，
+> 两台机器先留在 0.1.5。
 > 需求来源：v1 时代那套 fallback（per-agent 候选链 + 错误分类触发 + 冷却/粘性）在 v2 没有等价物 → 由 GATE 复现。
 
 ## 1. 交付物（本次）
@@ -45,7 +46,11 @@
 - 用户配置：`~/.config/opencode/reeve/fallback.jsonc`（目录是共享面；开发机是 junction，对端是实体目录）。
 - 台账：`~/.reeve/gate.jsonl`（超 5MB 轮转到 `.1`）。
 - 开发机上 `ln -s` 与 `mklink` 都需要提权 → 用 `cmd //c mklink //J`（junction 不需要权限、可跨盘）。
-- **生命周期（已知边界）**：GATE 是**插件实例**起的进程内服务 —— 引擎按工作区加载插件，第一个实例绑定 18080，其余实例 `probeGate` 复用；自己起的才自己关。因此"起 GATE 的那个工作区被引擎驱逐（`location services evicted`）时 GATE 随之关闭"，下一个插件实例加载时会重建。单工作区无感；**两个工作区并开时**，若宿主在活跃工作区发请求前先驱逐了起服务的工作区，那一次请求会遇到连接拒绝。修法方向（未做）：每个实例加低频重探 watchdog，或 `server.unref()` 后让 GATE 活到引擎进程退出。
+- **生命周期**：GATE 是**引擎级**服务 —— 引擎按工作区加载插件，第一个实例绑定 18080，其余实例 `probeGate` 复用。
+  插件实例卸载（工作区被引擎闲置驱逐，`location services evicted`）**不关端口**：`detach()` 只清空闲连接，
+  监听口与配置热更留着 —— 否则"起服务的工作区"一被驱逐，其它活跃工作区就永久拿不到代理（0.1.6 修，两台机器都实测到）。
+  监听 handle 是 `unref` 的，一次性进程（`opencode run`）卸载后照样立刻退出（`test/wiring.mjs` 用子进程钉住）；
+  真正关端口只发生在进程退出或显式 `dispose()`（测试/升级用）。
 - 排查现况：`~/.reeve/ledger.json` 是插件快照（含 `gate` 段与版本号），停止更新即说明插件实例已卸载；`~/.reeve/gate.jsonl` 才是台账。
 
 ## 6. 交付步骤（全部完成）

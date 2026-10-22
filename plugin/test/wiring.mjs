@@ -1,11 +1,12 @@
 // 插件装配层的 **GATE 接线** 验证（src/index.js 的 gate 段 + 统计循环 + dispose）。
 //
 // 为什么单独一条：entry.mjs 用 `gate:false` 把重 IO 全关掉，只验"装了什么"；
-// 而"GATE 真起来了、台账真被读、快照真带 gate 段、dispose 真关端口"这几条
+// 而"GATE 真起来了、台账真被读、快照真带 gate 段、卸载后仍然服务（引擎级）、一次性进程能退出"
 // 只有把它真起来才能验。这里用**临时端口 + 临时配置 + 临时台账**，不碰真机器状态。
 //   node plugin/test/wiring.mjs
 
 import assert from 'node:assert/strict'
+import { spawn } from 'node:child_process'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { createServer as createNetServer } from 'node:net'
 import { tmpdir } from 'node:os'
@@ -115,11 +116,12 @@ const CONFIG = {
   } finally {
     dispose()
     await sleep(150)
-    // dispose 之后端口必须关掉（否则下一个引擎起不来）
-    const after = await fetch(`http://127.0.0.1:${port}/gate/version`).then(() => 'open', () => 'closed')
-    assert.equal(after, 'closed', 'dispose 关掉 GATE 端口')
+    // 卸载 ≠ 关端口：GATE 是**引擎级**服务 —— 起它的工作区被闲置驱逐，不能让其它工作区断代理。
+    // 进程退出由"监听口 unref + 空闲连接清扫"保证（下一条用例用子进程钉住）。
+    const after = await fetch(`http://127.0.0.1:${port}/gate/version`).then((r) => r.ok, () => false)
+    assert.equal(after, true, '插件实例卸载后 GATE 仍在服务')
     await rm(dir, { recursive: true, force: true })
-    ok('dispose：GATE 端口关掉 / 定时器不拖住退出')
+    ok('卸载：GATE 端口留着（引擎级服务，工作区驱逐不带走代理）')
   }
 }
 
@@ -233,6 +235,76 @@ const CONFIG = {
     await sleep(100)
     await rm(dir, { recursive: true, force: true })
   }
+}
+
+// ---- 5. 卸载后一次性进程能退出：监听口必须 unref，否则 `opencode run` 跑完会挂住 ----
+{
+  const dir = await mkdtemp(join(tmpdir(), 'reeve-wiring-exit-'))
+  const port = await freePort()
+  const configPath = join(dir, 'fallback.jsonc')
+  const snapPath = join(dir, 'ledger.json')
+  await writeFile(configPath, JSON.stringify(CONFIG), 'utf8')
+  const probe = join(dir, 'exit-probe.mjs')
+  await writeFile(
+    probe,
+    `import { request } from 'node:http'
+import plugin from ${JSON.stringify(new URL('../src/index.js', import.meta.url).href)}
+
+const [port, configPath, ledgerPath, snapPath] = process.argv.slice(2)
+const storage = { async get() { return null }, async set() {}, async scan() { return { entries: [] } } }
+const editor = () => ({ add() {}, get() {}, update() {}, models: new Map(), agent: () => ({}) })
+const ctx = {
+  options: {
+    gate: { enabled: true, port: Number(port), configPath, ledgerPath },
+    ownEndpoint: false,
+    snapshotPath: snapPath,
+    retentionDays: 0,
+    stats: { intervalMs: 0 },
+  },
+  storage,
+  location: { directory: null },
+  tool: { transform: async (fn) => { fn(editor()) }, hook: async () => {} },
+  session: { hook: async () => {}, interrupt: async () => {} },
+  event: { subscribe: () => (async function* () {})() },
+  provider: { transform: async (fn) => { fn(editor()) } },
+  agent: { transform: async (fn) => { fn({ get: () => undefined, update: () => {} }) }, list: async () => ({ data: [] }) },
+  skill: { transform: async (fn) => { fn({ get: () => undefined, add: () => {} }) } },
+}
+const dispose = await plugin.setup(ctx)
+await new Promise((resolve, reject) => {
+  const req = request({ host: '127.0.0.1', port: Number(port), path: '/gate/version', agent: false }, (res) => {
+    res.resume()
+    res.on('end', resolve)
+  })
+  req.on('error', reject)
+  req.end()
+})
+dispose()
+// 刻意不 process.exit：能自然结束，才说明 GATE 没把事件循环吊住
+`,
+    'utf8',
+  )
+  const t0 = Date.now()
+  const child = spawn(process.execPath, [probe, String(port), configPath, join(dir, 'gate.jsonl'), snapPath], { stdio: ['ignore', 'pipe', 'pipe'] })
+  let err = ''
+  child.stderr.on('data', (c) => {
+    err += c
+  })
+  const code = await new Promise((resolve) => {
+    const timer = setTimeout(() => {
+      child.kill()
+      resolve('timeout')
+    }, 8000)
+    child.on('exit', (c) => {
+      clearTimeout(timer)
+      resolve(c)
+    })
+  })
+  const ms = Date.now() - t0
+  assert.equal(code, 0, `卸载后子进程应自然退出（实际：${code}；stderr：${err.slice(0, 400)}）`)
+  assert.ok(ms < 6000, `退出要快（实际 ${ms}ms）`)
+  await rm(dir, { recursive: true, force: true })
+  ok(`卸载后一次性进程能退出（${ms}ms —— 监听口 unref，不拖进程）`)
 }
 
 console.log(`\n接线测试：${passed} 项全过`)

@@ -90,8 +90,9 @@ const sendJson = (res, status, obj) => {
 }
 
 /**
- * 拉起 GATE。返回 handle：`{ port, dispose, snapshot, reload, sessions, ledgerPath, configPath }`。
- * 任何"起不来"的失败都**抛**（它是引擎启动路径上的东西，吵比静默好）；运行期失败只记日志。
+ * 拉起 GATE。返回 handle：`{ port, detach, dispose, snapshot, reload, sessions, ledgerPath, configPath }`。
+ * 生命周期：`detach()` = 插件实例卸载但 GATE 继续服务（引擎级，活到进程退出）；`dispose()` = 真关
+ * （测试与显式停止用）。任何"起不来"的失败都**抛**（它是引擎启动路径上的东西，吵比静默好）；运行期失败只记日志。
  */
 export async function startGate({
   port,
@@ -350,6 +351,9 @@ export async function startGate({
       resolve()
     })
   })
+  // 引擎级服务：监听口**不**替引擎续命。引擎是长活进程，自己有事吊着；而 CLI 那种一次性
+  // 进程卸载插件后必须能立刻退出 —— 少了这一行，卸载后还挂着一个 ref 着的监听 handle。
+  server.unref?.()
 
   const watch = watchGateConfig({
     path: configPath,
@@ -371,6 +375,7 @@ export async function startGate({
   })
 
   const disposeFns = [() => watch.stop(), () => ledger.flush(), () => new Promise((r) => server.close(() => r()))]
+  let sweep = null
   return {
     port: server.address()?.port ?? port,
     host,
@@ -398,7 +403,37 @@ export async function startGate({
       problems,
       sessions: sessions.snapshot(),
     }),
+    /**
+     * 插件实例卸载时调用（引擎按工作区加载插件：工作区被闲置驱逐 = 这个实例卸载，
+     * **不是**引擎退出）。监听口与配置热更留着 —— 否则"起 GATE 的那个工作区"一被驱逐，
+     * 其它还活跃的工作区就永久拿不到代理（拆 0.1.7 前的实测）。这里只做两件事：
+     * ① 把已经空闲的 keep-alive 连接清掉；② 起一个 unref 的低频清扫，兜住"卸载后才变空闲"的那些
+     * （每条连接的生命周期里只有很短一段是 busy，第一条命令常赶不上）；
+     * 定时器全是 unref 的，且 2s 后自停 —— 既不拖进程退出，也不长期干扰连接复用。
+     */
+    detach() {
+      const closeIdle = () => {
+        try {
+          server.closeIdleConnections?.()
+        } catch {
+          /* 尽力而为 */
+        }
+      }
+      closeIdle()
+      if (sweep) return
+      sweep = setInterval(closeIdle, 250)
+      sweep.unref?.()
+      const stop = setTimeout(() => {
+        if (sweep) clearInterval(sweep)
+        sweep = null
+      }, 2000)
+      stop.unref?.()
+    },
     async dispose() {
+      if (sweep) {
+        clearInterval(sweep)
+        sweep = null
+      }
       for (const f of disposeFns.reverse()) {
         try {
           await f()

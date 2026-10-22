@@ -908,6 +908,23 @@ const postJson = (gate, path, body) =>
   ok('服务生命周期：dispose 幂等（含定时器已开）/ 端口冲突吵')
 }
 
+// ---- 20b. detach：插件实例卸载 ≠ 关端口（GATE 是引擎级服务）----
+{
+  const h = await harness({ stubs: { a: (_req, res) => SSE_OK(res) }, chains: { c: { targets: ['a/m1'] } }, defaultChain: 'c' })
+  try {
+    h.gate.detach()
+    const ver = await getJson(h.gate, '/gate/version')
+    assert.equal(ver.status, 200, 'detach 后版本面照常')
+    assert.equal(ver.body.name, 'reeve-gate')
+    const res = await post(h.gate, { model: 'c', stream: true, messages: [] })
+    assert.equal(res.status, 200, 'detach 后真请求照常走链')
+    assert.equal(res.headers['x-reeve-fallback'], '1/a/m1')
+    ok('detach：卸载只松手（端口/热更/台账都在），dispose 才真关')
+  } finally {
+    await h.close()
+  }
+}
+
 // ---- 21. 边界与错误面（400/413/404/未知路由/空列） ----
 {
   const h = await harness({

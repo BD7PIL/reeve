@@ -164,7 +164,9 @@ export default {
     // **复用优先**：引擎是**按工作区**加载插件的 —— 同一个引擎里可能有多个插件实例（每个工作区一个）。
     // 第一个实例把 GATE 拉到端点口上，后面的实例**用健康检查接上**（`external: true`），
     // 而不是去抢同一个口（抢必失败 → 快照里会出现假的"GATE 未就绪"，面板跟着误报）。
-    // 自己起的才自己关：接上别人的实例在卸载时**不动**那台 GATE。
+    // 卸载语义：**都不在卸载时关端口** —— GATE 是引擎级服务，插件实例（工作区）被闲置驱逐
+    // 并不意味着引擎退出。以前"自己起的自己关"会让起服务的工作区被驱逐后，其它活跃工作区的
+    // 请求永久拿不到代理（2026-10-22 两台机器实测）。`detach()` 只清空闲连接，不阻塞进程退出。
     let gateHandle = null
     if (options.gate !== false && options.gate?.enabled !== false) {
       const endpoint = await readEndpoint({})
@@ -563,7 +565,9 @@ export default {
         snapshot.cancel()
         void snapshot.flush().catch(() => {})
       }
-      if (gateHandle) void gateHandle.dispose().catch(() => {})
+      // GATE 是引擎级服务：卸载只"松手"（清空闲连接、不关监听口）。真正关端口只在进程退出
+      // 或测试里显式 dispose；`detach` 的定时器都是 unref 的，CLI 一次性进程照样能立刻退出。
+      if (gateHandle) gateHandle.detach?.()
       logger.debug('[reeve] 已卸载')
     }
   },
