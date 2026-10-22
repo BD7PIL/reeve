@@ -3,6 +3,55 @@
 Newest first. Versions follow the plugin package (`plugin/package.json`); the
 panel extension has its own tags (`reeve-<version>`).
 
+## 0.1.7 — 2026-10-22
+
+**GATE grows a native free lane (`@free`) and 9router is retired.** Chains can
+now write `@free`; GATE expands it at request time into the currently
+discoverable, non-cooling, keyed free candidates. The chain file no longer
+stores a list that rots, and there is no sidecar daemon to keep alive.
+
+- **Free lane** (`plugin/src/gate/free.js`): discovery from the public
+  OpenCode Zen list (`-free`/`big-pickle`, minus `deepseek-v4-flash-free`) and
+  the OpenRouter catalog (`:free`), plus a static whitelist for NVIDIA (its
+  free tier is account quota, not a model marker). TTL cache; a failed refresh
+  keeps the last good list and reports the error. Expansion order: `prefer`
+  (full ref or bare model id) → provider/discovery order; `deny` never
+  expands. Free attempts are capped at `min(free.max, max_fallback_attempts-1)`
+  so a paid fallback always gets one slot (default 3 free + 1 paid). Failed
+  free models cool down globally (3 consecutive failures → 600s); when every
+  free candidate is cooling/unkeyed/unavailable the request goes straight to
+  paid. Dynamic chains do not use the index-based sticky pointer; per-ref
+  cooldowns carry the state instead.
+- **`/gate/free`** exposes the runtime picture (providers, discovery errors,
+  current expansion, cooldowns) and the plugin projects it into the snapshot;
+  `GET /v1/models` now includes discovered free models so the panel's picker
+  can pin them. `/gate/version` carries the `free` config block for the
+  panel's applied check.
+- **9router retired**: provider/targets removed from the shared fallback
+  config, `setup-9router.mjs` deleted, autostart removed on both machines,
+  acceptance steps rewritten around the direct free lane. MiMo Code Free
+  (`mmf/mimo-auto`) was the one zero-config provider that came with 9router;
+  it is intentionally dropped.
+- **Panel** (`extensions/reeve` 0.1.3): a 免费车道 card (enable, slot count
+  with the budget rule, discovery providers + key/readiness, prefer/deny,
+  NVIDIA whitelist, refresh/failure knobs, live expansion), `@free` rendered
+  as an automatic row in chains, and the applied check now compares
+  `chain_targets` + `policy` + `free` against what was saved (the old
+  name-only check reported "applied" even when candidate edits never reached
+  GATE). Fixes from the multimodal review: light-mode selected-row contrast,
+  shared right edge for controls, narrow-viewport stacking, dark input
+  surfaces, ledger row affordances/hairlines, per-section dirty markers,
+  free-lane error banner, snapshot/config error recovery.
+- **Verification**: 15 free-lane tests, 26 gate tests (new concurrency cases:
+  40 parallel requests, one-advance dedupe, abort isolation), a two-round
+  soak script (`scripts/soak-gate.mjs`: no second-round heap growth), an
+  isolated-engine lifecycle acceptance (`scripts/accept-lifecycle.mjs`:
+  workspace eviction no longer closes GATE), a 39-item UI audit with
+  programmatic assertions (console/overflow/tokens/contrast/a11y) wired into
+  CI with headless Chrome, and a daily upstream-catalog sentinel.
+- **Docs**: `docs/FREE-LANE.md`, `docs/GATE.md` rewritten for 0.1.7,
+  rollback manual updated with the 9router removal steps.
+
 ## 0.1.6 — 2026-10-22
 
 **Fix: the proxy no longer disappears with the workspace that started it.** GATE

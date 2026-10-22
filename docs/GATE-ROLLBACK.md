@@ -18,6 +18,17 @@
 > 两端（开发机 + 对端 `demo@192.168.26.101`）都已升到 0.1.6 并重跑 `accept-gate.sh` ①–⑨ **全过**；
 > 对端 `reeve/fallback.jsonc` 与本地相同（config-diff：文件面 0 漂移）。
 > 发布被 2026-10-22T02:33Z 起的 npm registry 故障挡住约 70 分钟（先 E503、后 OIDC 交换失败报 ENEEDAUTH），恢复后重跑同一 job 成功。
+>
+> **0.1.7（本次交付）**：GATE 原生免费车道（链里 `@free`，请求时展开）+ **9router 退役** + 面板 0.1.3（免费车道卡 + 39 项 UI 断言门）。
+> 免费车道语义见 `docs/FREE-LANE.md`。回滚边界：
+> · **只想关掉免费**：`fallback.jsonc` 里 `free.enabled=false`（`@free` 展开为空，链直接走付费），或把 `free.max=0`；不用回滚代码。
+> · **想回到 9router 时代**：把 `9router` provider 与 `9router/oc/<model>` 候选加回配置；两台机器重装
+>   `npm i -g 9router@0.5.104`、恢复 `requireApiKey=false`、自启（Windows 启动文件夹 VBS / EL7 `@reboot` cron 指向
+>   `setup-9router.mjs ensure` —— 该脚本已从仓库删除，从 0.1.6 的 tag 取回）；然后 `ocrc remote config-diff` 对齐。
+> · **代码回滚**：本仓 `git reset --hard <0.1.6 的提交>`；公开树用 `scripts/publish-repo.sh <ref>`；扩展回 `reeve-0.1.2`。
+> · 发布记录（提交/公开树/npm/扩展 tag）在发布后补：本次 npm `@bd7pil/reeve@0.1.7`、扩展 `reeve-0.1.3`/`reeve-latest`。
+> · 新增的验收：`accept-gate.sh` ①–⑨（免费车道/关闭/死候选）、`accept-lifecycle.mjs`（驱逐后 GATE 仍在）、
+>   `audit.mjs --fixture` 39 项（CI 作业 `ui-audit`）、每日 `upstream-models.yml` 契约哨兵。
 
 ## 1. 这次交付改了什么（回滚的边界）
 

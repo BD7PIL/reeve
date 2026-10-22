@@ -14,7 +14,7 @@ import { mkdtemp, readFile, rm, writeFile, mkdir } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { BUNDLED_FALLBACK_PATH, loadGateConfig, normalizeGateConfig, stripLineComments, POLICY_DEFAULTS } from '../src/gate/config.js'
+import { BUNDLED_FALLBACK_PATH, defaultFallbackConfigPath, loadGateConfig, normalizeGateConfig, stripLineComments, POLICY_DEFAULTS } from '../src/gate/config.js'
 import { classifyFailure, statusOf } from '../src/gate/classify.js'
 import { createSessionStore } from '../src/gate/state.js'
 import { attemptRow, buildUpstreamRequest, forwardedHeaders, modelsPathOf, parseTarget, planAttempts, resolveKeyFor, routeFor } from '../src/gate/lanes.js'
@@ -32,6 +32,7 @@ const silent = { debug: () => {} }
 
 // ── 公共夹具 ────────────────────────────────────────────────────────────────
 const cfg = (raw) => normalizeGateConfig(raw)
+assert.ok(defaultFallbackConfigPath().replaceAll('\\', '/').endsWith('.config/opencode/reeve/fallback.jsonc'), '默认配置路径')
 
 /** 可编程 stub 上游：handler(req, res, state) 完全自己写响应；请求头/体原样记下。 */
 const makeStub = async (handler) => {
@@ -991,6 +992,63 @@ const postJson = (gate, path, body) =>
   await h.close()
   await h2.close()
   ok('边界：400（非 JSON/缺 model）/ 413（过大）/ 404（未知模型与路由）/ 502（无可用候选，列出原因）')
+}
+
+// ---- 22. 并发：40 路互不串扰 / 同 session 去重推进 / 断开只影响自己 ----
+{
+  const h = await harness({
+    stubs: {
+      fastp: (_req, res) => SSE_OK(res),
+      slowp: () => {}, // 永不响应：等客户端断开
+    },
+    chains: { fast: { targets: ['fastp/m'] }, slow: { targets: ['slowp/m'] }, mul: { targets: ['fastp/m1', 'fastp/m2', 'fastp/m3'] } },
+    defaultChain: 'mul',
+  })
+  try {
+    const many = await Promise.all(
+      Array.from({ length: 40 }, (_, i) => post(h.gate, { model: 'fast', stream: true, messages: [] }, { 'x-opencode-session-id': `conc-${i}` })),
+    )
+    assert.ok(many.every((r) => r.status === 200), '40 路并发全部 200')
+    await h.gate.flushLedger?.()
+    const rows = (await import('node:fs/promises')).readFile(join(h.dir, 'gate.jsonl'), 'utf8')
+    const n = (await rows).trim().split('\n').filter(Boolean).length
+    assert.ok(n >= 40, `台账行数 ≥ 40（实际 ${n}）`)
+
+    // 同一个失败被两条事件触发 → 只推进一次（dedupeKey）
+    const id = 'ses-conc-next'
+    const [a, b] = await Promise.all([
+      postJson(h.gate, `/gate/session/${id}/next`, { dedupeKey: 'same' }),
+      postJson(h.gate, `/gate/session/${id}/next`, { dedupeKey: 'same' }),
+    ])
+    assert.equal(a.body.model, b.body.model, '同 dedupeKey 并发只推进一次')
+    assert.equal(a.body.model, 'fastp/m2', '指针从 0 起，第一次推进到第 2 个候选')
+    const c = await postJson(h.gate, `/gate/session/${id}/next`, { dedupeKey: 'next' })
+    assert.equal(c.body.model, 'fastp/m3', '新事件继续顺位')
+
+    // 一路断开不影响另一路
+    const slow = new Promise((resolve) => {
+      const payload = JSON.stringify({ model: 'slow', stream: true, messages: [] })
+      const req = httpRequest(
+        { host: '127.0.0.1', port: h.gate.port, path: '/v1/chat/completions', method: 'POST', headers: { 'content-type': 'application/json', 'content-length': Buffer.byteLength(payload) } },
+        (res) => {
+          res.resume()
+          resolve('response')
+        },
+      )
+      req.on('error', () => resolve('aborted'))
+      req.end(payload)
+      setTimeout(() => req.destroy(), 150)
+    })
+    const fast = post(h.gate, { model: 'fast', stream: true, messages: [] })
+    const [slowRes, fastRes] = await Promise.all([slow, fast])
+    assert.equal(fastRes.status, 200, '并行的正常请求不受影响')
+    assert.equal(slowRes, 'aborted')
+    await new Promise((r) => setTimeout(r, 400))
+    assert.ok(h.up.slowp.state.aborted >= 1, '断开传播到上游（stub 观察到 close）')
+    ok('并发：40 路互不串扰 / 同 session 去重只推进一次 / 断开只影响自己')
+  } finally {
+    await h.close()
+  }
 }
 
 console.log(`\nGATE 测试：${passed} 项全过`)

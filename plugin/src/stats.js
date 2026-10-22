@@ -299,6 +299,21 @@ export async function readLedgerTail({ path, limit = STATS_DEFAULTS.limit, tailB
   }
 }
 
+/**
+ * 免费车道运行态（`/gate/free`）：发现源状态、当前展开、冷却。
+ * 读不到不算错——面板会显示"未就绪"，请求侧照常降级到付费。
+ */
+export async function fetchGateFree({ port, host = '127.0.0.1', fetchImpl = fetch, timeoutMs = STATS_DEFAULTS.timeoutMs } = {}) {
+  try {
+    const res = await fetchImpl(`http://${host}:${port}/gate/free`, { signal: AbortSignal.timeout(timeoutMs) })
+    if (res.status !== 200) return { error: `HTTP ${res.status}` }
+    const doc = await res.json()
+    return doc && typeof doc === 'object' ? { ...doc, error: null } : { error: '空响应' }
+  } catch (err) {
+    return { error: String(err?.message ?? err).slice(0, 140) }
+  }
+}
+
 /** GATE 自己的模型目录（`provider/model` ∪ 链名）—— 面板选择器的候选来源之一。 */
 export async function fetchGateModels({ port, host = '127.0.0.1', fetchImpl = fetch, timeoutMs = STATS_DEFAULTS.timeoutMs } = {}) {
   try {

@@ -60,7 +60,7 @@ function main() {
   let busy = false
   let settleTimer = null
 
-  const chainTab = createChainTab({ host, onNeedPoll: () => scheduleSettlePoll() })
+  const chainTab = createChainTab({ host, onNeedPoll: () => scheduleSettlePoll(), readInfo: () => read })
   const statsTab = createStatsTab()
   const ledgerTab = createLedgerTab({ host })
 
@@ -120,9 +120,18 @@ function main() {
       paint()
       paintBadge()
       const gen = snapshot?.generatedAt
-      foot.textContent = snapshot
-        ? `快照 ${fmtClock(gen)}（${fmtAgo(gen)}） · ${shortPath(read.path)}`
-        : `读不到快照（试过 ${read?.tried?.length ?? 0} 个路径）`
+      if (snapshot) {
+        foot.textContent = `快照 ${fmtClock(gen)}（${fmtAgo(gen)}） · ${shortPath(read.path)}`
+      } else {
+        // 读不到快照时给出**原因对应的下一步**，别只报"试过 N 个路径"
+        const codes = (read?.tried ?? []).map((t) => t.code)
+        const hint = codes.includes('NOT_GRANTED')
+          ? '去 设置 → 扩展 批准「文件系统」后点刷新'
+          : codes.length > 0 && codes.every((c) => c === 'NOT_FOUND')
+            ? '跑一次模型调用，插件会写快照'
+            : '点刷新重试'
+        foot.textContent = `读不到快照（试过 ${read?.tried?.length ?? 0} 个路径）· ${hint}`
+      }
     } catch (err) {
       foot.textContent = `刷新失败：${err instanceof Error ? err.message : String(err)}`
     } finally {

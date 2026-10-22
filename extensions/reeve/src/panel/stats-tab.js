@@ -50,7 +50,7 @@ export function createStatsTab() {
     summary.append(cells)
     summary.append(
       mutedText(
-        `调用 = 一次请求；尝试 = 换候选/重试各算一次；回退 ${num(gate.fallback?.hops)} 跳；条长按统一量程 0 → ${fmtMs(gate.requestLatency?.max)}。`,
+        `调用 = 一次请求；尝试 = 换候选/重试各算一次；回退 ${num(gate.fallback?.hops)} 跳；条长 = 该链 p95 ÷ 全局最慢（0 → ${fmtMs(gate.requestLatency?.max)}），p50/p95 在右侧。`,
       ),
     )
     section.append(kitSection({ title: 'GATE 归因', hint: windowHint, body: [summary] }))

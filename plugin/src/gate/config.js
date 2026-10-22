@@ -35,6 +35,24 @@ export const POLICY_DEFAULTS = Object.freeze({
 const DEFAULT_PATH = '/v1/chat/completions'
 export const LANES = Object.freeze({ NATIVE: 'native', PASSTHROUGH: 'passthrough' })
 
+/** 免费车道的默认值（面板可改；见 docs/FREE-LANE.md）。 */
+export const FREE_DEFAULTS = Object.freeze({
+  enabled: true,
+  max: 3,
+  providers: Object.freeze(['opencode', 'openrouter', 'nvidia']),
+  refresh_seconds: 300,
+  failure_threshold: 3,
+  failure_cooldown_seconds: 600,
+  prefer: Object.freeze([]),
+  deny: Object.freeze([]),
+  static: Object.freeze({}),
+  sources: Object.freeze({
+    // 公开模型列表（不需要键；拉不到只影响该 provider，请求照常降级到付费）
+    opencode: Object.freeze({ url: 'https://opencode.ai/zen/v1/models', filter: 'opencode-free' }),
+    openrouter: Object.freeze({ url: 'https://openrouter.ai/api/v1/models', filter: 'openrouter-free' }),
+  }),
+})
+
 export function stripLineComments(text) {
   return String(text)
     .split('\n')
@@ -87,6 +105,44 @@ export function normalizeGateConfig(raw) {
     }
   }
 
+  // 免费车道：发现源 + @free 展开的偏好。全部有默认值；坏字段进 problems，不影响其余配置。
+  const asInt = (v, min, max, dflt) => {
+    const n = Number(v)
+    return Number.isFinite(n) ? Math.min(max, Math.max(min, Math.trunc(n))) : dflt
+  }
+  const fSrc = asRecord(src.free) ?? {}
+  const freeProviders = asStrings(fSrc.providers).length > 0 ? asStrings(fSrc.providers) : [...FREE_DEFAULTS.providers]
+  const free = {
+    enabled: fSrc.enabled !== false,
+    max: asInt(fSrc.max, 0, 8, FREE_DEFAULTS.max),
+    providers: freeProviders,
+    refresh_seconds: asInt(fSrc.refresh_seconds, 30, 86_400, FREE_DEFAULTS.refresh_seconds),
+    failure_threshold: asInt(fSrc.failure_threshold, 1, 20, FREE_DEFAULTS.failure_threshold),
+    failure_cooldown_seconds: asInt(fSrc.failure_cooldown_seconds, 60, 86_400, FREE_DEFAULTS.failure_cooldown_seconds),
+    prefer: asStrings(fSrc.prefer),
+    deny: asStrings(fSrc.deny),
+    static: {},
+    sources: { ...FREE_DEFAULTS.sources },
+  }
+  for (const [id, list] of Object.entries(asRecord(fSrc.static) ?? {})) {
+    if (!Array.isArray(list)) {
+      problems.push(`free.static.${id} 不是数组（忽略）`)
+      continue
+    }
+    free.static[id] = asStrings(list)
+  }
+  for (const [id, v] of Object.entries(asRecord(fSrc.sources) ?? {})) {
+    const s = asRecord(v)
+    if (!s || typeof s.url !== 'string' || s.url.length === 0) {
+      problems.push(`free.sources.${id} 缺 url（忽略）`)
+      continue
+    }
+    free.sources[id] = { url: s.url, filter: typeof s.filter === 'string' && s.filter.length > 0 ? s.filter : FREE_DEFAULTS.sources[id]?.filter ?? 'opencode-free' }
+  }
+  for (const id of free.providers) {
+    if (!providers[id]) problems.push(`free.providers 含未配置的 provider：${id}（会被跳过）`)
+  }
+
   const chains = {}
   for (const [name, v] of Object.entries(asRecord(src.chains) ?? {})) {
     const targets = asStrings(asRecord(v)?.targets)
@@ -118,7 +174,7 @@ export function normalizeGateConfig(raw) {
   const defaultChain = typeof src.default_chain === 'string' && chains[src.default_chain] ? src.default_chain : Object.keys(chains)[0] ?? null
   if (defaultChain === null) problems.push('没有可用的链（default_chain 缺失）')
 
-  return { schema: 1, policy, providers, chains, agents, chain_for_model: chainForModel, default_chain: defaultChain, problems }
+  return { schema: 1, policy, providers, chains, agents, chain_for_model: chainForModel, default_chain: defaultChain, free, problems }
 }
 
 /**

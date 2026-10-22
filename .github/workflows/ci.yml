@@ -80,6 +80,31 @@ jobs:
       - name: 提交的产物必须与 src 逐字节一致
         run: git diff --exit-code -- extensions/reeve/panel
 
+  ui-audit:
+    name: 面板 UI 审计（headless Chrome，断言门）
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      # 断言看 innerText，不依赖字体；装中文字体是为了 artifact 里的截图可读
+      - name: 中文字体（artifact 可读性）
+        run: sudo apt-get update && sudo apt-get install -y fonts-noto-cjk
+      - name: 装构建依赖（宿主 SDK + esbuild）
+        run: npm --prefix extensions/reeve ci
+      - name: 审计（CI 夹具；控制台/溢出/关键文本/token/对比度 + 39 项截图）
+        run: node extensions/reeve/scripts/audit.mjs --fixture
+      - name: 上传截图与报告
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reeve-panel-audit
+          path: |
+            extensions/reeve/preview/audit/*.png
+            extensions/reeve/preview/audit/report.json
+          if-no-files-found: error
+
   config:
     name: 引擎配置样板
     runs-on: ubuntu-latest

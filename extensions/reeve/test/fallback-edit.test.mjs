@@ -38,6 +38,12 @@ export function run() {
     "tier1": { "targets": ["a/m1", "b/m2"] },
     "free-first": { "targets": ["9router/oc/free"] }
   },
+  "free": {
+    "enabled": true,
+    "max": 3,
+    "prefer": ["mimo-v2.6-flash-free"],
+    "sources": { "opencode": { "url": "https://opencode.ai/zen/v1/models", "filter": "opencode-free" } }
+  },
   "agents": { "planner": "tier1" },
   "chain_for_model": { "reeve/flash": "free-first" },
   "default_chain": "tier1"
@@ -154,7 +160,7 @@ export function run() {
     })
     assert.deepEqual(planned.problems, [])
     const { text, replaced } = applySave(CONFIG, planned)
-    assert.equal(replaced, 5, '五节都替换到（不是追加）')
+    assert.equal(replaced, 6, '六节都替换到（不是追加：chains/agents/chain_for_model/policy/free/default_chain）')
     assert.ok(text.includes('// 头注释') && text.includes('// 一个叫 chains 的 provider'), '两份注释都还在')
     const doc = parseJsonc(text)
     assert.deepEqual(doc.chains.tier1.targets, ['a/m1'])
@@ -190,6 +196,34 @@ export function run() {
     assert.equal(doc2.a, 1)
     assert.ok(doc2.chains, '追加在 a 之后')
     ok('replaceSection：空根对象 / 非空根对象都能追加')
+  }
+
+  // 9. free 节：view/plan/apply（保留未知键 sources 与注释）+ @free 是合法候选
+  {
+    const { view } = viewOf(parseJsonc(CONFIG))
+    assert.equal(view.free.enabled, true)
+    assert.equal(view.free.max, 3)
+    assert.deepEqual(view.free.providers, ['opencode', 'openrouter', 'nvidia'], '缺省 provider 列表')
+    assert.equal(view.free.sources.opencode.url, 'https://opencode.ai/zen/v1/models', '未知键 sources 原样保留')
+    const planned = planSave({
+      chains: { c: { targets: ['@free', 'a/m'] } },
+      agents: {},
+      chain_for_model: {},
+      default_chain: 'c',
+      free: { ...view.free, max: 2, prefer: ['opencode/x'], deny: ['y'], static: { nvidia: ['n/a'] } },
+    })
+    assert.equal(planned.free.max, 2)
+    assert.deepEqual(planned.free.static, { nvidia: ['n/a'] })
+    assert.equal(planned.free.sources.opencode.url, 'https://opencode.ai/zen/v1/models', '保存仍保留 sources')
+    const r = applySave(CONFIG, planned)
+    const after = parseJsonc(r.text)
+    assert.equal(after.free.max, 2)
+    assert.equal(after.free.sources.opencode.url, 'https://opencode.ai/zen/v1/models')
+    assert.ok(r.text.includes('// 头注释'), '别的节/注释原样')
+    assert.equal(defaultIsRef('@free'), true)
+    const dup = planSave({ chains: { c: { targets: ['@free', 'a/m', '@free'] } }, free: {} })
+    assert.ok(dup.problems.some((p) => p.includes('重复')), '重复 @free 报出来')
+    ok('free 节：view/plan/apply（保留 sources 与注释）+ @free 合法')
   }
 
   return `${n} 组断言全过`

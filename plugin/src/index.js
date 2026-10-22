@@ -36,7 +36,7 @@ import { SUBAGENT_ROSTER, withRoster } from './roster.js'
 import { probeGate, startGate } from './gate/gate.js'
 import { defaultFallbackConfigPath } from './gate/config.js'
 import { REEVE_TIERS, BUILTINS_TO_HIDE, mergeTierModels, pickDefaultAgent, readEndpoint, resolveGateEndpoint } from './models.js'
-import { STATS_DEFAULTS, aggregateGateRows, aggregateLedger, buildStats, fetchGateModels, mergeModelCandidates, readLedgerTail } from './stats.js'
+import { STATS_DEFAULTS, aggregateGateRows, aggregateLedger, buildStats, fetchGateFree, fetchGateModels, mergeModelCandidates, readLedgerTail } from './stats.js'
 import { loadAgents, loadSkills } from './register.js'
 import { ensureProviderBlock, reeveProviderBlock } from './config-write.js'
 
@@ -80,6 +80,8 @@ export default {
     let statsState = null
     /** 模型候选（面板的链编辑选择器用）。必须在快照块之前声明。 */
     let modelsState = null
+    // 免费车道运行态（/gate/free）：面板的"当前展开 / 冷却 / 发现源"读它
+    let freeState = null
     /** 从插件包注册进去的 agent / skill 名单（进快照，便于上机核对"没往配置目录拷文件"）。 */
     let registeredAgents = []
     let registeredSkills = []
@@ -130,6 +132,7 @@ export default {
           agents: agentTable,
           roster,
           models: modelsState,
+          free: freeState,
           registered: { agents: registeredAgents, skills: registeredSkills },
           endpoint: endpointState,
           stats: statsState,
@@ -254,6 +257,7 @@ export default {
           },
         })
         gateState = gateHandle.snapshot()
+        freeState = await fetchGateFree({ port: gateHandle.port, host: gateHandle.host })
         // 顺手把模型候选也刷一遍（半小时一次；链编辑器的选择器用它）
         if (nowMs - lastModelsAt >= modelsIntervalMs) {
           const discovered = await fetchGateModels({ port: gateHandle.port, host: gateHandle.host })

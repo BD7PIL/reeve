@@ -5,6 +5,7 @@
 //   POST /gate/session          插件侧的 session→agent 桥（把"这个 session 是 scout"告诉 GATE）
 //   POST /gate/session/:id/next 插件侧要"下一个候选"（流已开始/沉默这两类层内换不了的情形）
 //   GET  /gate/version          探针/测试用
+//   GET  /gate/free             免费车道运行态（发现源/展开预览/冷却）——面板只读它
 //
 // 纪律：① 只记录、不泄漏——台账里没有密钥（只记键的"名字"）；② 时间与 IO 全可注入（测试零 sleep、零真实出网）；
 // ③ 管理面只认环回；④ dispose 尽力而为、绝不因为清理炸掉（含"定时器已开"的情况）。
@@ -16,7 +17,8 @@ import { Readable } from 'node:stream'
 
 import { classifyFailure } from './classify.js'
 import { BUNDLED_FALLBACK_PATH, defaultFallbackConfigPath, loadGateConfig, normalizeGateConfig, watchGateConfig } from './config.js'
-import { attemptKey, attemptRow, buildUpstreamRequest, modelsPathOf, planAttempts, resolveKeyFor, routeFor } from './lanes.js'
+import { createFreeLane } from './free.js'
+import { attemptKey, attemptRow, buildUpstreamRequest, modelsPathOf, parseTarget, planAttempts, resolveKeyFor, routeFor } from './lanes.js'
 import { createSessionStore } from './state.js'
 
 export const GATE_VERSION = '0.1.0'
@@ -143,6 +145,10 @@ export async function startGate({
     return { key: auth[id].key, name: `auth:${id}` }
   }
 
+  // 免费车道：发现（公开模型列表/静态白名单）+ `@free` 展开 + 按 ref 的全局冷却。
+  // 读的是**当前** config（热更即时生效）；时间/IO 注入，测试零出网。
+  const freeLane = createFreeLane({ getConfig: () => config, getAuth: () => auth, now, fetchImpl, logger })
+
   const note = (row) => ledger.write(row)
 
   /** 模型目录：声明 ∪ 运行时池（TTL）∪ 链名。池拉不到就降级（只回声明），不报错。 */
@@ -173,6 +179,12 @@ export async function startGate({
         logger?.debug?.(`[gate] 拉 ${provider.id} 的模型池失败（降级）：${String(err).slice(0, 120)}`)
       }
     }
+    // 免费车道发现到的模型也进目录（面板的选择器才能看到并固定它们；`@free` 本身不需要进）
+    try {
+      for (const c of await freeLane.discovered()) push(c.ref, c.provider)
+    } catch {
+      /* 发现失败只影响目录的完整性，不影响请求 */
+    }
     for (const name of Object.keys(config.chains)) push(name, 'reeve')
     modelsCache.data = data
     modelsCache.at = now()
@@ -200,7 +212,9 @@ export async function startGate({
     const sessionID = typeof req.headers['x-opencode-session-id'] === 'string' ? req.headers['x-opencode-session-id'] : null
     const route = routeFor({ model, sessionID }, { config, sessions })
     if (!route) return sendJson(res, 404, { error: { message: `未知模型或链：${model}` } })
-    const plan = planAttempts(route, { config, sessions, sessionID, keyPicker })
+    // `@free` → 当前可发现、未冷却、有键的真实候选（动态链不复用按索引的粘性指针）
+    const expanded = await freeLane.expand(route.targets, { maxAttempts: config.policy.max_fallback_attempts })
+    const plan = planAttempts({ ...route, targets: expanded.targets, dynamicFree: expanded.dynamic }, { config, sessions, sessionID, keyPicker })
 
     if (plan.ordered.length === 0) {
       return sendJson(res, 502, {
@@ -247,12 +261,14 @@ export async function startGate({
         note(attemptRow({ ts: new Date(t0).toISOString(), chainName: plan.chainName, agent: plan.agent, attempt, status: 'error', code: null, latencyMs: now() - t0, retries, detail, req: reqId, n: i + 1 }))
         attemptsSeen.push({ provider: attempt.provider.id, model: attempt.model, code: null, reason: 'network' })
         sessions.noteFailure(sessionID ?? '(anon)', plan.chainName, attemptKey(attempt))
+        freeLane.noteAttempt(attempt, false)
         continue
       }
 
       if (upstream.ok) {
         note(attemptRow({ ts: new Date(t0).toISOString(), chainName: plan.chainName, agent: plan.agent, attempt, status: 'ok', code: upstream.status, latencyMs: now() - t0, retries, req: reqId, n: i + 1 }))
         sessions.noteSuccess(sessionID ?? '(anon)', plan.chainName, attemptKey(attempt), plan.keys)
+        freeLane.noteAttempt(attempt, true)
         res.writeHead(upstream.status, {
           'content-type': upstream.headers?.get?.('content-type') ?? 'application/json',
           'x-reeve-fallback': `${i + 1}/${attempt.provider.id}/${attempt.model}`,
@@ -276,6 +292,7 @@ export async function startGate({
         return
       }
       sessions.noteFailure(sessionID ?? '(anon)', plan.chainName, attemptKey(attempt))
+      freeLane.noteAttempt(attempt, false)
     }
 
     sendJson(res, 502, { error: { message: '所有候选都失败', chain: plan.chainName, req: reqId, attempts: attemptsSeen } })
@@ -306,6 +323,19 @@ export async function startGate({
           agents: { ...config.agents },
           chain_for_model: { ...config.chain_for_model },
           default_chain: config.default_chain ?? null,
+          // 免费车道的**配置**（运行态在 /gate/free；面板的"已生效"比对用这一份）
+          free: {
+            enabled: config.free.enabled,
+            max: config.free.max,
+            providers: [...config.free.providers],
+            refresh_seconds: config.free.refresh_seconds,
+            failure_threshold: config.free.failure_threshold,
+            failure_cooldown_seconds: config.free.failure_cooldown_seconds,
+            prefer: [...config.free.prefer],
+            deny: [...config.free.deny],
+            static: { ...config.free.static },
+            sources: { ...config.free.sources },
+          },
           problems,
           sessions: sessions.snapshot(),
           ledger: ledger.path,
@@ -313,6 +343,9 @@ export async function startGate({
       }
       if (url.startsWith('/gate/')) {
         if (!LOOPBACK.has(remote)) return sendJson(res, 403, { error: { message: '管理面只认环回' } })
+        if (req.method === 'GET' && url === '/gate/free') {
+          return sendJson(res, 200, await freeLane.snapshot())
+        }
         if (req.method === 'POST' && url === '/gate/session') {
           const bodyText = await readBody(req, 1024 * 1024).catch(() => '{}')
           const { sessionID, agent } = JSON.parse(bodyText || '{}')
@@ -328,7 +361,10 @@ export async function startGate({
           const agent = sessions.agentOf(sessionID)
           const chainName = agent && config.agents[agent] ? config.agents[agent] : config.default_chain
           if (!chainName || !config.chains[chainName]) return sendJson(res, 200, { model: null, chain: null })
-          const keys = config.chains[chainName].targets
+          // 动态链（含 `@free`）在调用时展开，插件侧拿到的才是真实候选而不是占位符
+          const parsed = config.chains[chainName].targets.map(parseTarget).filter(Boolean)
+          const expanded = await freeLane.expand(parsed, { maxAttempts: config.policy.max_fallback_attempts })
+          const keys = expanded.targets.filter((t) => !t.free).map((t) => `${t.provider}/${t.model}`)
           const out = sessions.advance(sessionID, chainName, keys, { dedupeKey })
           return sendJson(res, 200, { model: out.model, chain: chainName, index: out.index })
         }
@@ -368,11 +404,14 @@ export async function startGate({
         problems = [...(next.problems ?? [])]
         modelsCache.data = null
         logger?.debug?.(`[gate] 配置热更：${next.from}`)
+        freeLane.warm()
       } else {
         logger?.debug?.(`[gate] 配置读不动，保留上一份：${next.error ?? '?'}`)
       }
     },
   })
+  // 免费车道后台预热（不阻塞启动；失败只影响免费候选，请求照常降级到付费）
+  freeLane.warm()
 
   const disposeFns = [() => watch.stop(), () => ledger.flush(), () => new Promise((r) => server.close(() => r()))]
   let sweep = null
@@ -399,6 +438,17 @@ export async function startGate({
       agents: { ...config.agents },
       chain_for_model: { ...config.chain_for_model },
       default_chain: config.default_chain ?? null,
+      free: {
+        enabled: config.free.enabled,
+        max: config.free.max,
+        providers: [...config.free.providers],
+        refresh_seconds: config.free.refresh_seconds,
+        failure_threshold: config.free.failure_threshold,
+        failure_cooldown_seconds: config.free.failure_cooldown_seconds,
+        prefer: [...config.free.prefer],
+        deny: [...config.free.deny],
+        static: { ...config.free.static },
+      },
       ledger: ledger.path,
       problems,
       sessions: sessions.snapshot(),

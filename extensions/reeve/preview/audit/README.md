@@ -1,86 +1,68 @@
-# REEVE 面板 —— 动线审计清单（16 项）
+# REEVE 面板 —— UI 断言审计（39 项 + 多模态复审）
 
-> 由 `node extensions/reeve/scripts/audit.mjs` 生成；图在本目录（一项一张，序号即文件名）。
-> **这张表是"逐张看过"的凭据**：改面板之后重跑，对每一项写结论；图变了而结论没更新 = 没审。
+> 由 `node extensions/reeve/scripts/audit.mjs --fixture` 生成截图与 `report.json`；本表是**逐项断言 + 人工/多模态结论**。
+> 改面板后必须重跑；图变了而结论没更新 = 没审。
 >
-> 预览读你机器上的真快照与真 GATE 配置；**写只进内存**（预览服务确认写入但不落盘），
-> 所以跑这套审计不会改 `~/.config/opencode/reeve/fallback.jsonc`。
+> 预览读真快照与真 GATE 配置；**写只进内存**（并模拟 GATE 热更），不会改 `~/.config/opencode/reeve/fallback.jsonc`。
+> CI 用 `--fixture`（`preview/fixtures/ci.json`）保证确定性；本地不带 `--fixture` 读真数据。
 >
-> 为什么默认拍**视口**而不是整页：菜单/保存条是 `position: fixed / sticky`，整页截图会把它们
-> 挪到与真实位置不同的地方（第 07 项第一版就是这么"丢"的）。要看整页加 `--full`。
+> 断言（任一失败 CI 红）：步骤必须点到；控制台 error/异常 = 0；关键态文本；无横向溢出；
+> 宿主 token 存在；可见按钮有可访问名；对比度 <3 硬失败 / 3–4.5 警告；保存类动线写入次数。
 
-| # | 项 | 看什么 | 结论（2026-10-22 重做后） |
-| --- | --- | --- | --- |
-| 01 | `chain-default` | 链 tab 首屏：一链一卡，默认链有徽标，agent 一行灰字，候选一行一条（序号 / 引用 / 用量 / 首选徽标），右上只有「N 个候选 + 更多」 | ✅ 与 ocrc 面板同构（卡 + 徽标 + 静默菜单）；同权按钮不成群 |
-| 02 | `chain-row-selected` | 点一个候选 → 行高亮 + 出现动作条（已选 … ／上移／下移／换模型／删除） | ✅ 动线唯一入口是"选一行"；动作条只对这一个候选，且首/末行自动禁用上移/下移 |
-| 03 | `chain-picker` | 「换模型」→ 搜索框 + 候选列表（可滚）+ 手填 + 取消 | ✅ 换模型与加候选共用同一套拾取器（动线不重复学） |
-| 04 | `chain-picker-search` | 输入 `9router` → 列表只剩命中项 | ✅ 搜索结果即点即用；列表项右侧标来源（GATE 目录 / 链上·引擎） |
-| 05 | `chain-added` | 加进链尾 → 顶部「未保存」徽标 + 底部保存条（含"只重写被改的几节"的说明） | ✅ 改动可见、可回退；保存条只在脏/在飞时出现 |
-| 06 | `chain-saved` | 点「保存并生效」→「生效中…」→ 顶部「已生效 03:20:09」 | ✅ 状态机等的是 GATE 真的热更了（快照变了），不是"我们发过请求" |
-| 07 | `chain-menu` | 链卡「更多」：设为默认链 / 删除这条链（红字 destructive，有 agent 在用或只剩一条时禁用） | ✅ 危险动作收进菜单并按条件禁用，不铺在卡面上 |
-| 08 | `chain-new` | 「＋ 新增链」→ 链名输入 + 建链/取消 | ✅ 默认落在卡片列表下方，不与"加候选"混淆 |
-| 09 | `chain-agents` | agent → 链：每个 agent 一个带标签的下拉（两列），末尾可追加未映射的 agent | ✅ 映射关系一眼一行的量级；文案不再出现内部键名 |
-| 10 | `chain-policy` | 策略卡：三个数字字段带 helper + 一个带说明的复选框 | ✅ 每个数字都写清"默认多少、什么意思" |
-| 11 | `chain-narrow` | 380px 宽：不横向溢出；长引用省略号截断；计数落到下一行 | ✅ 窄栏可用（宿主侧栏就是这个量级） |
-| 12 | `chain-dark` | 链 tab 深色 | ✅ 颜色全来自宿主 token，深浅两套都读得清 |
-| 13 | `stats-light` | 统计：摘要数字格（调用/成功/失败/尝试/回退/p50/p95/最慢）+ 每条链一根统一量程的条 + provider 列表（含失败徽标） | ✅ 数据有层次；口径解释压成一行灰字 |
-| 14 | `stats-dark` | 统计深色 | ✅ 同上 |
-| 15 | `ledger-light` | 台账：事实卡（记录/在飞/超时/快照时间 + 编排面证据）+ 子任务列表（点行开子会话） | ✅ 状态只在徽标里说一次；点行跳宿主会话视图 |
-| 16 | `chain-dirty-discard` | 删一个候选 →「丢弃改动」→ 回到改动前 | ✅ 丢弃是显式动作；丢弃后草稿从盘上重读 |
-| 17 | `chain-keyboard` | 选中后 **Alt+↓** 换位（↑/↓ 选 · Alt+↑/↓ 换位 · Enter 换模型 · Delete 删） | ✅ 键位对齐 W3C APG「可重排列表」；焦点跟着条目走；动作有 aria-live 播报；链尾再按是空操作 |
-| 18 | `chain-selected-dark` | 深色下的选中行 + 动作条 | ✅ 选中色与按钮全来自宿主 token，深浅两套一致（对比度可用） |
-
-## 第二轮：深色为什么"明显不对"（2026-10-22 晚）
-
-根因有两条，都是**拿我自己的想象当宿主**：
-
-| 症状 | 根因 | 修法 |
+| # | 项 | 结论（2026-10-22，0.1.7） |
 | --- | --- | --- |
-| 深色发闷、发灰，不像 app | 预览的深色是**我编的调色板**（`#0e0e10` 那种近乎纯黑）；宿主真实深色是 warm-ink（`background #120f0e`、`elevated #1b1918`、`border #242323bf`） | 从宿主自己的包（`@openchamber/web`）抄出 `openchamber-dark` / `openchamber-light` 两套主题，按宿主**发给 guest 的字段名**（`HostThemeTokens`）写进预览 shim；派生文字色用 `color-mix` 近似（宿主用 OKLab 对比度算，只差文字淡色） |
-| 深色里"根本没有卡片" | `.oc-card` 只画边框（深色边框 `#242323bf` 几乎不可见），**卡片没有自己的面** | 卡片背景 = `--surface-elevated`（浅色下 background/elevated 接近，等于没变；深色下卡片才立起来） |
+| 01 | `chain-default` | ✅ 链卡平铺、@free 自动行、免费车道卡；右侧只有「更多」 |
+| 02 | `chain-row-selected` | ✅ 选中行有主色底 + 左竖条 + 正文色（修掉浅色下 selectionForeground 的 2.3:1 灰） |
+| 03 | `chain-picker` | ✅ 换模型走同一拾取器；动作条在选中行下 |
+| 04 | `chain-picker-search` | ✅ 搜索即点即用 |
+| 05 | `chain-added` | ✅ 未保存徽标 + 保存条 |
+| 06 | `chain-saved` | ✅ 已生效——预览模拟 GATE 热更后 `chain_targets` 真的变了（旧版只比链名会假绿） |
+| 07 | `chain-menu` | ✅ 危险项在菜单里且带 destructive 色 |
+| 08 | `chain-new` | ✅ 新链行内表单；控件右缘一致 |
+| 09 | `chain-agents` | ✅ 每个 agent 一行下拉，控件共享右缘（修掉 `.node` 误用导致控件不渲染） |
+| 10 | `chain-policy` | ✅ 策略卡字段与开关都渲染（同一修复） |
+| 11 | `chain-narrow` | ✅ 380px 不溢出；分区标题不折词；模型名换行保留 `-flash` 后缀 |
+| 12 | `chain-dark` | ✅ 深色输入框有面/边；hairline 可见 |
+| 13 | `stats-light` | ✅ 条有共同基线；图注说明 p95/量程 |
+| 14 | `stats-dark` | ✅ 同上，深色可读 |
+| 15 | `ledger-light` | ✅ 有子会话的行有 `›` 且可点；无子会话行 disabled；无 undefined |
+| 16 | `chain-dirty-discard` | ✅ 丢弃后回到盘上状态 |
+| 17 | `chain-keyboard` | ✅ 选中行清晰；Alt+↓ 换位 |
+| 18 | `chain-selected-dark` | ✅ 深色选中态 |
+| 19 | `free-default` | ✅ 免费车道卡：开关/次数/来源/偏好/当前展开 |
+| 20 | `free-cooling` | ✅ 冷却徽标与剩余时间 |
+| 21 | `free-empty` | ✅ 无可展开候选的空态 |
+| 22 | `free-error` | ✅ 运行态读取失败有错误横幅（不再只是灰字重复） |
+| 23 | `free-max-dirty` | ✅ 免费车道节有「未保存」标记；次数变化可见 |
+| 24 | `free-prefer-add` | ✅ 加入偏好可见；当前展开随运行时更新 |
+| 25 | `gate-down` | ✅ 页头徽标 + 横幅；页面仍可编辑 |
+| 26 | `gate-problems` | ✅ problems 横幅 |
+| 27 | `config-parse-error` | ✅ 横幅有标题、失败文件、解析位置 + 重新读取 |
+| 28 | `config-missing` | ✅ NOT_FOUND 路径列表 + 重新读取 |
+| 29 | `ledger-missing` | ✅ 链 tab 顶部横幅给出原因 + 下一步（不再只有页头 chip） |
+| 30 | `ledger-denied` | ✅ 权限提示指向 设置→扩展→文件系统 |
+| 31 | `save-fail` | ✅ 没生效 + 写入失败 notice + 草稿保留 |
+| 32 | `apply-stall` | ✅ 生效中（写了但 GATE 没跟上） |
+| 33 | `policy-dirty` | ✅ 策略节有「未保存」标记 |
+| 34 | `ledger-filter-empty` | ✅ 筛选空态 ≠ 台账空 |
+| 35 | `stats-empty` | ✅ 空态说明台账路径与下一步 |
+| 36 | `stats-stale` | ✅ 旧行窗口放宽提示 |
+| 37 | `ledger-dark` | ✅ 行间细线可见 |
+| 38 | `chain-loading` | ✅ spinner + 正在读 GATE 配置 |
+| 39 | `gate-running` | ✅ 主徽标「2 在飞 / 1 排队 / 4 总」 |
 
-顺手修掉三个真 bug（复核时暴露）：header 状态徽标没挂上、统计 tab 的 `list` 未导入、`el()` 把 `data-*`/`aria-*`/`tabindex` 当 JS 属性写（属性根本没落到 DOM → aria-live 播报区"存在"却查不到）。
+## 多模态复审（本轮新增的门）
 
-## 第三轮：更密、更快（同日）
+- 方法：审计截图分批交 `multimodal-looker`，按宿主规范逐图 pass/fail（一致性、层级、对齐、字号、对比度、截断、空/错/加载态、深浅一致）；真宿主截图同一套复审。
+- 发现并修掉的真问题：浅色选中行对比度 ~2.3:1；agent/策略/免费车道的**控件根本没渲染**（`el().node` 误用）；深色输入框无面；窄栏标题折词/动作脱行；台账 `隐藏 undefined`；台账行无细线/无可点暗示；配置错误无文件路径/无恢复动作；免费车道错误只有灰字；脏态不定位到节。
+- 复审结论：39/39 PASS（02/11/22/23/24/27/29/33/37/38 经二轮复审通过；残余 nits 不影响验收）。
 
-| 项 | 改法 | 依据 |
-| --- | --- | --- |
-| 候选列表 | 容器按 kit 的语义做 **listbox**（`role=listbox` + `tabindex` + `aria-activedescendant`）；键位 ↑/↓ 选、Alt+↑/↓ 换位、Enter 换模型、Delete 删；按钮带 `aria-keyshortcuts`，动作完成有 `aria-live` 播报 | W3C ARIA APG「可重排列表」的键位与播报要求（该模式不给拖拽，按钮 + 快捷键才是标准） |
-| 统计 | 每条链从"大卡"改成**一行数字 + 一根条**（名字 / 次数 · 成功失败 · 回退 / 量程条 / p50·p95，四列对齐，等宽 tabular-nums）；provider 用同一语言 | 一屏看完 5 条链；跨行可比的数字列 |
-| 台账 | 状态过滤（全部 n / 在飞 n / 失败 n） | 列表变长后"先筛再读"更快 |
-| 卡面 | 计数从右缘移到链名旁（右缘只留「更多」）；每条事实只出现一次 | 与 ocrc 面板同一套：事实在左、静默动作在右 |
+## 怎么重跑
 
-## 第四轮：照宿主自己的设置页重做结构（2026-10-22 深夜）
+```bash
+node extensions/reeve/scripts/audit.mjs --fixture        # 全量（39 项）
+node extensions/reeve/scripts/audit.mjs --only 19        # 单项
+node extensions/reeve/scripts/audit.mjs --strict-contrast # 3–4.5 也算失败
+```
 
-用户判定："感觉还不是 openchamber 的规范"。（对照物不是我的想象，是 **app 自己**。）
-
-证据（从 app 的包里读出来的）：
-
-| 来源 | 事实 |
-| --- | --- |
-| `@openchamber/web` 的 `SettingsView-*.js` | 设置页里所有列表（技能 / 供应商 / 模型）都是 **`divide-y divide-[var(--surface-subtle)]` 的平铺行**：一行 = 左侧标题 + 小字 meta，右侧小号动作按钮 —— **没有一条一个卡片**；分组才用 `rounded-md border bg-surface-elevated/50` |
-| 同一份 CSS 的 `typography-*` 刻度 | `--text-ui-label 14px` / `--text-meta 14px` / `--text-micro 13px`（桌面）。我上一版全篇 11–12px，**比宿主小一档** |
-| `@openchamber/sdk` 的 `ui/style.js`（kit 的结构 CSS） | 工具类只有 `.oc-sdk-muted` / `.oc-sdk-mono` / `.oc-sdk-text`；行高 `padding: 6px 8px`；分隔线是 `mountSeparator`。控件样式由宿主在服务扩展文档时追加它自己的那份 |
-| `@openchamber/sdk` 的 `ui/icons.js` | kit 自带 remixicon 形状（search/chevron/check/close）→ 行内动作可以用真图标，不必写"删除"两个字 |
-
-于是第四轮改的是**结构与刻度**，不是配色：
-
-| 改 | 前 | 后 |
-| --- | --- | --- |
-| 分区 | 每条链一张带边框和底色的卡 | `section(title, hint)` + **平铺行**，行间 1px `--surface-subtle` 细线（宿主 settings 的写法） |
-| 设置项 | 两列表单网格 | **左标签 / 右控件**的 `fieldRow`（agent 映射、策略都是这个形状） |
-| 字号 | 11–12px 自造刻度 | 14px 标签 / 14px meta / 13px micro（对齐宿主的 `typography-*`） |
-| 行内动作 | "删除"文字按钮、`换模型` 大按钮 | ghost `xs` + kit 图标（× = close）；键盘路径不变 |
-| 面板标题 | 面板内再来一行粗体 "REEVE" | 宿主 chrome 已有标题 → 面板只留一行小灰字状态与读数 |
-| 分组 | 处处卡片 | 只在"确实要分组"处用 `oc-inset`（= 宿主的 `rounded-md border bg-elevated/50`），例如候选拾取器 |
-
-## 与上一版的差别（2026-10-22 重做）
-
-上一版被判定"无法融入宿主风格、文字堆砌、动线混乱"。根因与修法：
-
-| 症状 | 根因 | 修法 |
-| --- | --- | --- |
-| 看起来像另一个 app | 面板自己画了一整套配色/胶囊/延迟条/档位块（`.rv-*` 一百多行 CSS） | 配色与控件全交宿主与 kit；CSS 只剩布局（页/行/卡/表单/吸底条），与 ocrc 面板同一套 |
-| 没有重点 | 每行都是等重的等宽文字；一排同权小按钮（↑ ↓ 换 ×） | 一链一卡；卡里只有"链名 + 灰字事实 + 更多"；行级动作必须**先选中**才出现 |
-| 动线混乱 | 编辑、保存、生效三层状态混在一行文字里 | 顶部一个状态徽标（未保存 / 生效中 / 已生效）+ 只在需要时出现的吸底保存条；危险动作进菜单且按条件禁用 |
-| 信息重复 | "首选"既是序号又是标签；状态既在左又在右 | 每条事实只出现一次（首选=徽标；状态=徽标；用量=行右） |
+`report.json` 里有每项的 failures/warnings/consoleErrors；CI 上传整套图与报告。

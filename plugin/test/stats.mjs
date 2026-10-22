@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import {
-  aggregateGateRows, aggregateLedger, buildStats,fetchGateModels, mergeModelCandidates,modelRef, parseGateRow,parseTs, percentile, 
+  aggregateGateRows, aggregateLedger, buildStats,fetchGateFree, fetchGateModels, mergeModelCandidates,modelRef, parseGateRow,parseTs, percentile, 
   readLedgerTail, 
   STATS_DEFAULTS, summarizeLatency, 
 } from '../src/stats.js'
@@ -166,6 +166,21 @@ const ok = (label) => {
   const boom = await fetchGateModels({ port: 1, fetchImpl: async () => { throw new Error('boom') } })
   assert.equal(boom.error, 'boom')
   ok('fetchGateModels：目录 + 链名分离 / 坏状态与异常降级')
+}
+
+// ---- 7b. fetchGateFree：运行态透传与降级 ----
+{
+  const doc = { enabled: true, max: 3, cap: 3, providers: [{ id: 'opencode', ready: true, models: 2 }], expand: ['opencode/x-free'], cooling: [] }
+  const good = await fetchGateFree({ port: 1, fetchImpl: async () => ({ status: 200, json: async () => doc }) })
+  assert.equal(good.error, null)
+  assert.deepEqual(good.expand, ['opencode/x-free'])
+  const bad = await fetchGateFree({ port: 1, fetchImpl: async () => ({ status: 502, json: async () => ({}) }) })
+  assert.equal(bad.error, 'HTTP 502')
+  const empty = await fetchGateFree({ port: 1, fetchImpl: async () => ({ status: 200, json: async () => null }) })
+  assert.equal(empty.error, '空响应')
+  const boom = await fetchGateFree({ port: 1, fetchImpl: async () => { throw new Error('boom') } })
+  assert.equal(boom.error, 'boom')
+  ok('fetchGateFree：运行态透传 / HTTP 错 / 空响应 / 异常全部降级')
 }
 
 // ---- 8. 候选合并 ----

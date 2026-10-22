@@ -1,182 +1,84 @@
 # 控制台扩展（openchamber）
 
-> **In English:** an openchamber console with three tabs — **chain** (edit the
-> fallback chain for three tiers; the only writable place), **stats** (Bifrost
-> attribution and orchestration ledger) and **ledger** (child task list). It
-> writes exactly one file, `~/.reeve/chain.json`; the plugin hot-reloads it
-> within seconds. It never starts sessions, prompts, or touches the engine
-> config. The rest of this document is the detailed Chinese reference.
+> **In English:** an openchamber panel for REEVE — **chain** (per-chain candidates,
+> `@free` automatic rows, the free-lane card, agent mapping, policy; the only
+> writable surface), **stats** (GATE attribution from the ledger) and **ledger**
+> (child-task list). It writes exactly one file,
+> `~/.config/opencode/reeve/fallback.jsonc` (path taken from the snapshot's
+> `gate.from`), preserving comments and rewriting only the sections it changed.
+> It never starts sessions/prompts and never touches the engine config. All
+> colours/type sizes come from host tokens; controls are the host kit.
 
-面板：三个 tab —— **链**（三个档位的回退链可视化编辑，唯一会写的地方）/ **统计**（Bifrost 归因 + 编排台账）/ **台账**（子任务列表）。
-装在 openchamber 上（宿主的扩展机制）。
+面板：三个 tab —— **链**（每条链的候选、`@free` 自动行、免费车道卡、agent 映射、策略；唯一会写的地方）/
+**统计**（GATE 台账归因）/ **台账**（子任务列表）。装在 openchamber 上（宿主的扩展机制）。
 
-> **控制面不在这里。** 派活 / 中断全在模型侧（`foreman` 的 prompt + 记账插件的闸门）。
-> 这个面板**只写一个文件**：`~/.reeve/chain.json`（REEVE 自己的链配置，路径取自快照里插件正在读的那份）——
-> 引擎配置（`providers.reeve` 那两行）由插件的"端点自举"写，本面板**不碰**；
-> 它也绝不 `startSession` / `prompt` / `compose` / `attach`。`check.mjs` 里有一条静态守门盯着这两件事
-> （源码里每个 `writeFile(` 的实参都必须是 `chainPathFor(…)`）。
+> **控制面不在这里。** 派活 / 中断全在模型侧。这个面板**只写一个文件**：
+> `~/.config/opencode/reeve/fallback.jsonc`（REEVE 自己的 GATE 配置，路径取自快照 `gate.from`）——
+> 引擎配置（`providers.reeve` 那一段）由插件的"端点自举"写，本面板**不碰**；
+> 它也绝不 `startSession` / `prompt` / `compose` / `attach`。`check.mjs` 里有静态守门盯着这两件事
+> （源码里每个 `writeFile(` 的实参都必须是 `fallbackConfigPathFor(…)`）。
 
----
+## 免费车道卡
 
-## 三个 tab 与数据源
+链 tab 里的「免费车道」卡编辑配置的 `free` 节：启用、免费尝试次数（含 3+1 预算提示）、
+参与发现的 provider（opencode / openrouter / nvidia，含 key 与发现状态）、偏好顺序（置顶/排除/固定）、
+NVIDIA 白名单、发现/冷却参数、**当前展开**（运行时只读，来自插件快照）。语义见 `../../docs/FREE-LANE.md`。
 
-| tab | 数据来源 | 写不写 |
-|---|---|---|
-| **链** | 读快照的 `chain` 节（插件正在读的链文件、已生效时刻、漂移、问题） | **写** `chain.json`（唯一写路径）→ 插件 ≤5 秒热更运行时规则 → 快照 `appliedAt` 前进 = 真生效 |
-| **统计** | 读快照的 `stats` 节（插件聚合好的 Bifrost 归因 + 编排台账） | 不写 |
-| **台账** | 读快照的 `tasks` / `agentTable` / `roster` 节 | 不写 |
+链里写 `@free` 显示为「免费车道（自动）· 最多 N 个」；保存后「已生效」比较的是
+`chain_targets` + `policy` + `free` 三者的真实变化，不再只比链名。
 
-**为什么统计不自己算**：面板跑在沙箱 iframe 里（**没有网络能力**，只有宿主给的 readFile/writeFile），
-而 `/api/logs`、`/v1/models` 是本机回环的 HTTP —— 只有引擎进程里的插件够得着。所以插件取数 + 聚合，面板只读。
-**为什么台账走文件**：权威是插件的 `ctx.storage`，那份 JSON 是**投影**，面板只读、永不回写 —— 不会出现两处互相覆盖。
-
----
-
-## 装
-
-扩展是**打好的 JS**（宿主不会编译 TS）。发布包里要有：
-
-```
-package.json          # manifest（openchamber 块）
-panel/index.html
-panel/main.js         # classic IIFE —— 宿主 iframe 不能加载 ESM
-```
-
-装法（二选一）：
+## 构建与守门
 
 ```bash
-# A. 文件夹（开发时最快）：放进 openchamber 的 dataDir
-cp -r extensions/reeve ~/.config/openchamber/extensions/reeve
-
-# B. zip：设置 → 扩展 → 安装（宿主会跑 inspectGuestPackage 校验 on-disk 的完整性）
+npm install                  # 一次：devDeps 钉了宿主 SDK（2.3.2）+ esbuild
+node build.mjs               # src/panel/main.js → panel/main.js（classic IIFE）
+node check.mjs               # manifest / 打包完整性 / 写路径守门 / fallback-edit 单测
+node test/fallback-edit.test.mjs   # 纯函数单测（check.mjs 也会跑）
+node scripts/audit.mjs --fixture   # 39 项动线审计（断言 + 截图 + report.json）
+node scripts/preview.mjs           # 真面板挂假宿主：?tab=&theme=&scenario=&fixture=ci
 ```
 
-装完在 **设置 → 扩展** 里**批准两个能力**：`sessions`（读会话/项目）与 `filesystem`（读写台账与链文件这两个位置）。
-没批准的话面板会显示"权限还没批准"——它会说清楚，不会假装空数据。
+`build.mjs` 不 vendor `@openchamber/sdk`（宿主自带）；预览里除 `connectHost` 之外全是真 SDK。
+改完 `src/` 必须重建 `panel/`（CI 会逐字节比对），并重跑审计；**审计截图要逐张看**，
+结论写进 `preview/audit/README.md`（本轮还跑了多模态复审，结论同样在那张表里）。
 
-**部署对表**：插件侧 `options.snapshotPath`（默认 `~/.reeve/ledger.json`）与
-`options.chainFilePath`（默认 `~/.reeve/chain.json`）指向的位置，必须落在 manifest 的
-`contributes.filesystem` 模式里。
+## 装进宿主
 
-> EL7 staging 时引擎的 `HOME` 与 openchamber 的 `HOME` 不是同一个，所以 manifest 里
-> 多声明了 `~/.reeve-staging/...` 两条给那种隔离验证用。生产部署只留 `~/.reeve/**` 即可。
+两种方式（宿主设置 → 扩展）：
 
----
+- **zip**：发布资产 `reeve.zip`（tag `reeve-latest` / `reeve-<ver>`），设置里安装；
+- **git**：本扩展的仓库是 `BD7PIL/reeve`，用 `https://github.com/BD7PIL/reeve#main`
+  （git 装法能跟着更新；zip 装法不能）。
 
-## 改
-
-```bash
-npm install             # 一次：devDeps 钉了宿主 SDK（2.3.2，对应 openchamber 2.3.3）+ esbuild（0.28.2）
-node build.mjs          # src/panel/main.js → panel/main.js（IIFE，esbuild）
-node check.mjs          # 宿主解析器校验 manifest + 打包完整性 + 守门（禁控制调用 / 只许写链文件）
-```
-
-`build.mjs` **不 vendor** `@openchamber/sdk`（它是宿主的产物，版本跟着宿主走，这里只钉在验证过的那一档）：
-优先用本目录 `node_modules/`，找不到才回落到相邻的 ocrc 检出，再找不到就用 `--sdk=<路径>` 指定。
-`check.mjs` 同理（`--sdk=<路径>`）。
-
-**改完必跑 `check.mjs`**：它查的正是宿主 `install` 时会拒的那几项
-（manifest 合法性、`panel.entry` 存在、HTML 引的 JS 都在包里、产物是 IIFE 而不是 ESM）。
-
----
-
-## 许可
-
-本扩展**只用** openchamber 的公开 SDK（`@openchamber/sdk`，宿主自带）。
-不 vendor 宿主代码；不引入 `oh-my-openagent`（SUL-1.0）的任何代码或 prompt 字面。
-
----
-
-## 实测记录（2026-10-19，EL7 上的 openchamber 2.3.3）
-
-装法（当时用的）：
+开发机上也常用**路径安装**（安装引用路径、不复制，改完文件重开 iframe 即可）：
 
 ```bash
-# 包放在 ~/.reeve-ext-src（Install 会**引用**这个路径，不复制）
 curl -b <会话 cookie> -X POST -H 'Content-Type: application/json' \
-  -d "{\"path\":\"${HOME}/.reeve-ext-src\"}" http://127.0.0.1:2610/api/guests   # → 201
+  -d "{\"path\":\"${HOME}/.reeve-ext-src\"}" http://127.0.0.1:2610/api/guests
 curl -b <会话 cookie> -X PUT -H 'Content-Type: application/json' \
-  -d '{"granted":["sessions","filesystem"]}' \
-  http://127.0.0.1:2610/api/guests/reeve/capabilities                              # → 200
+  -d '{"granted":["sessions","filesystem"]}' http://127.0.0.1:2610/api/guests/reeve/capabilities
 ```
 
-> ⚠️ `source=path` 的安装**不复制包**，只登记这个路径 —— 所以**改完文件不用重装**
-> （但浏览器里的 iframe 要重新打开才会加载新 JS）。
+能力只要 `sessions` + `filesystem`（读快照/配置、写配置）。**不请求网络能力**：
+面板的数据全部由插件投影进快照（`~/.reeve/ledger.json`）。
 
-验证（用 EL7 上那个 headless Chrome 的 CDP，脚本就是本目录的 `cdp-panel{,2}.mjs`）：
+## 真宿主验证（CDP）
 
-| 检查 | 结果 |
-|---|---|
-| 侧栏出现入口 | ✅ 按钮 `title="REEVE 编排"`（Branch 图标） |
-| 点击后宿主建 iframe | ✅ `/api/guests/reeve/panel/index.html?oc_ui=issue-page&oc_url_token=oc_url_…` |
-| 面板渲染 | ✅ 标题 + 徽章 `0 在飞 / 4 总` + 刷新 + 两个分区；**console 无报错** |
-| **台账读到了** | ✅ `4 条记录 · 0 在飞 · 生成于 18:51:41（~/.reeve-staging/…/reeve/ledger.json）`，四行 `scout` 子任务带子会话 id 与耗时（用的是宿主套件的 `oc-sdk-list` / toned badge） |
-| 会话树 | ⚠️ 该实例**注册项目数为 0**（界面显示 "Choose project"），面板如实显示"先打开一个项目" —— 空态**是对的**，不是 bug |
+`scripts/cdp-open-panel.mjs`（可 `--app/--cdp` 重定向）会打开宿主、点侧栏入口、在 guest iframe 里
+执行断言（控制台 0 错、无横向溢出、badge/banner 文本）、切深浅主题并截图；钩子用
+`data-act`（`refresh/add/swap/remove/save/add-chain/chain-menu/free-refresh` 等）、`.oc-savebar`、
+`button[data-loading]`。其余 `cdp-panel*.mjs` 是早期探索脚本，按需改参数。
 
-两处**教训**（已写进实现）：
+写保存的安全测试用 `scripts/host-audit.mjs`：备份 `fallback.jsonc` → 加临时链 → 保存 →
+读 GATE `/gate/version` 确认 `chain_targets` 真的变了 → 删除并恢复（finally 校验 sha256）。
 
-1. 读文件失败要**把 `NOT_FOUND` / `NOT_GRANTED` / `BAD_PATH` 原样显示出来**。
-   第一版只显示一句"还没读到台账快照"，看起来像"台账是空的"——把原因摊开之后一眼就定位了。
-   **空台账与读不到是两件事，面板不许混为一谈。**
-2. 面包屑只读**自己的**数据：SDK 的 `payload: ["messages"]` 会多要一个 `conversation` 能力。
-   本面板不需要读消息内容 → 去掉，请求能力收敛到 `sessions,filesystem`。
+## 面板规范（别退回上一版）
 
----
+- 颜色/字体/圆角**只来自宿主 token**（`--surface-*` / `--interactive-*` / `--primary` / `--status-*`；
+  字阶 14/14/13px）；不自绘卡片、阴影、调色板。
+- 结构照 app 自己的 SettingsView：平铺行 + 细线分组 + 左标签/右控件；控件一律用 kit。
+- 选中行必须比未选中行**更清楚**（浅色下不能用 kit 的 selectionForeground——它偏灰，已在 index.html 覆盖）。
+- 窄栏（≤520px）标签在上、控件满宽；候选名允许换行，不许把 `-flash` 这种后缀截掉。
+- 错误/空/加载/脏态必须一眼可读，并给出下一步（刷新/重新读取/批准权限）。
 
-## 验证脚手架（`cdp-*.mjs`）
-
-这些脚本用 **EL7 上那个 headless Chrome（:9222）** 驱动真界面。
-
-**主力工具是 `cdp-open-panel.mjs`**（2026-10-20 加）：打开面板 → 读面板文本 → **真鼠标点按**（按选择器/文字）
-→ **真输入**（`Input.insertText`）→ 按 iframe 矩形裁剪截图（浅/深两版）。
-
-```bash
-# 打开面板并打印它的文本（最常用的排查手段）
-node cdp-open-panel.mjs
-# 切 tab + 浅色截图（--tab 用 data-id：chain / stats / ledger）
-node cdp-open-panel.mjs --tab=stats --shot=/tmp/p.png --shot-dark=/tmp/p-dark.png
-# 在面板里操作（按命令行顺序执行）：切 tab → 点「＋ 加回退」→ 手填模型 → 加入 → 保存并生效
-node cdp-open-panel.mjs --tab=chain "--click=[data-tier=\"flash\"] [data-act=\"add\"]" \
-  "--type=[data-tier=\"flash\"] [data-act=\"manual\"] input|deepseek-api/deepseek-v4-flash" \
-  --click-text=加入 --click-text=保存并生效 --wait=12000 --shot=/tmp/after.png
-```
-
-它踩过并写进代码的坑（都是**采集**的坑，不是面板的）：
-
-| 坑 | 现象 | 现在的做法 |
-|---|---|---|
-| 面板在 sandbox iframe 里（无 allow-same-origin） | `contentDocument === null` | 读/求值走 `Page.createIsolatedWorld(frameId)`（页面重载后上下文作废 → 缓存要能重建）；点按走 `Input.dispatchMouseEvent`（坐标在隔离世界量 + iframe 偏移） |
-| 没被选中的 section **也挂着 iframe** | 尺寸正常但看不见 → 截到"别的 section" | 用 `checkVisibility()` 判，量尺寸不算数 |
-| 宿主的 "Saving…" 抽屉 | 打开设置就会盖住面板，且长时间不消失 | 切完主题**点 `aria-label="Close settings"` 关掉**，并等"无 Saving / 无 aria-busy / 无对话框 / 面板非读取中" |
-| 主题判定 | `style.colorScheme` 切了主题也不更新；`settings.json.themeVariant` 不是运行时真相 | 读**渲染出来的背景亮度**判浅/深；切主题走 设置→外观→颜色模式 |
-| iframe 偶尔迟迟不出现 | 重载后约 1/5 概率 | 每张图带一次"重新加载再试"；**面板不在前台就拒绝出图**（宁可不产图也不产错图） |
-| 宿主提示条压住保存条 | "OpenCode update" 浮在右下 | 截图前先点 Dismiss |
-
-> 结论：**截图类验收必须有"干净度断言"**，否则会拿到"看起来像证据其实拍的是别的东西"的图（第 2 轮四张全废）。
-
-## 本地预览与动线审计（开发工具，不进发布包）
-
-面板跑在宿主的 sandbox iframe 里，没有宿主就完全打不开；每改一次都去装一遍 app 太慢。所以：
-
-| 脚本 | 干什么 |
-|---|---|
-| `scripts/preview.mjs` | 起本地预览（`127.0.0.1:5399`）：**只换 `connectHost`**（`preview/host-shim.js`）+ 真 `panel/index.html` + 真 kit —— 预览看到的就是线上那一套。读你机器上的**真**快照与真 GATE 配置；**写默认只进内存**（`--allow-write` 才落盘）。 |
-| `scripts/audit.mjs` | 按固定清单（16 项）驱动预览：点击 → 视口截图 → `preview/audit/*.png`。清单与结论表在 `preview/audit/README.md`；**弹层/吸底条是 fixed/sticky，所以默认拍视口而不是整页**（`--full` 才整页）。 |
-
-改面板之后的纪律：跑 `audit.mjs` → **逐张看过** → 更新 `preview/audit/README.md` 的结论列 →
-`npm run build` + `node check.mjs` → 提交（CI 会再验一次"产物与 src 逐字节一致"）。
-
-旧脚本（保留，做别的验证用）：
-
-| 脚本 | 干什么 |
-|---|---|
-| `cdp-panel.mjs` | 导航到 app → 点侧栏的「REEVE 编排」→ 截屏（验证面板被识别、iframe 被建） |
-| `cdp-panel2.mjs` | 进 guest iframe 的**执行上下文**读它的真实 DOM + console（验证面板渲染成什么样） |
-| `cdp-submit-project.mjs` | Projects 页 `+` → 输路径 → Add project（**面板保存 agent 需要项目上下文**） |
-| `cdp-ui-save-full.mjs --save` | 全 UI 路径：选项目 → Settings → Agents → `+` → 填名/描述/prompt → Create |
-| `cdp-capture-create-error.mjs` | 抓 `POST /api/config/agents/*` 的**请求体与响应**（比如缺项目时的 400） |
-| `cdp-delete-via-panel.mjs` | 用面板自己的 `DELETE` 端点删掉探针 agent（清理） |
-
-**面板层「零冲突」的完整复现顺序**：`cdp-submit-project.mjs` → `cdp-ui-save-full.mjs --save`
-→（外部比对配置文件的 hash/mtime）→ `cdp-delete-via-panel.mjs`。
-测量结果与留下的痕迹见 [../../docs/PROGRESS.md](../../docs/PROGRESS.md) §5.5。
+相关：`../../docs/FREE-LANE.md`、`../../docs/GATE.md`、`preview/audit/README.md`。

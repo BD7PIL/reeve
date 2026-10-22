@@ -13,15 +13,18 @@
 // 冷却跳过、上限）。**第一个尝试永远保留**：哪怕全在冷却，请求也得有人接。
 import { LANES } from './config.js'
 
-/** `"provider/model"`：只在**第一个** `/` 切分（模型名本身可以带斜杠，如 9router 的 `oc/xxx`）。 */
+/** `"provider/model"`：只在**第一个** `/` 切分（模型名本身可以带斜杠，如 9router 的 `oc/xxx`）。
+ *  `@free` 是链里的**免费车道占位符**（请求时由 free.js 展开成真实候选；不是 provider）。
+ *  `parseTarget('@free')` → `{ free: true }`。 */
 export function parseTarget(spec) {
   const s = String(spec ?? '').trim()
+  if (s === '@free') return { free: true }
   const i = s.indexOf('/')
   if (i <= 0 || i === s.length - 1) return null
   return { provider: s.slice(0, i), model: s.slice(i + 1) }
 }
 
-export const targetKey = (t) => `${t.provider}/${t.model}`
+export const targetKey = (t) => (t?.free ? '@free' : `${t.provider}/${t.model}`)
 
 /** 尝试的键（注意：attempt.provider 是**完整的 provider 对象**，要取 .id）。 */
 export const attemptKey = (attempt) => `${attempt.provider.id}/${attempt.model}`
@@ -86,6 +89,10 @@ export function planAttempts(route, { config, sessions, sessionID = null, keyPic
   const seen = new Set()
   const staticTargets = []
   for (const t of route.targets) {
+    if (t?.free) {
+      skipped.push({ target: '@free', why: 'unexpanded' })
+      continue
+    }
     const key = targetKey(t)
     if (seen.has(key)) {
       skipped.push({ target: key, why: 'no-op' })
@@ -102,10 +109,12 @@ export function planAttempts(route, { config, sessions, sessionID = null, keyPic
       skipped.push({ target: key, why: 'no-key' })
       continue
     }
-    staticTargets.push({ provider, model: t.model, key: resolved.name, authorization: resolved.key === null ? null : `Bearer ${resolved.key}` })
+    staticTargets.push({ provider, model: t.model, auto: t.auto === true, key: resolved.name, authorization: resolved.key === null ? null : `Bearer ${resolved.key}` })
   }
   const keys = staticTargets.map((t) => `${t.provider.id}/${t.model}`)
-  const start = config.chains[route.chain] && route.kind === 'chain' ? sessions.startIndex(sid, chainName, keys) : 0
+  // `@free` 展开出来的候选是**逐请求动态**的（列表会变），所以不能用按索引的粘性指针：
+  // 动态链从 0 起，靠按 ref 的冷却（会话 + 免费车道全局）跳过刚失败过的项。
+  const start = config.chains[route.chain] && route.kind === 'chain' && !route.dynamicFree ? sessions.startIndex(sid, chainName, keys) : 0
   let ordered = staticTargets.slice(start)
   const notCooling = ordered.filter((t) => !sessions.isCooling(sid, chainName, `${t.provider.id}/${t.model}`))
   if (notCooling.length > 0) ordered = notCooling
@@ -175,7 +184,7 @@ export function buildUpstreamRequest({ attempt, inHeaders, bodyText, version = '
 /** 台账一行（**不带任何密钥**：只记 provider id、模型、键的"名字"）。
  *  `req` = 本次调用在本进程内的序号（把同一请求的多次尝试串起来）；`n` = 第几次尝试（1 起）。 */
 export function attemptRow({ ts, chainName, agent, attempt, status, code, latencyMs, retries = 0, detail = null, req = null, n = null }) {
-  return {
+  const row = {
     ts,
     req,
     n,
@@ -191,4 +200,7 @@ export function attemptRow({ ts, chainName, agent, attempt, status, code, latenc
     retries,
     detail,
   }
+  // 只有 `@free` 展开出来的候选才带这个标记（面板/统计据此区分"自动免费"与显式候选）
+  if (attempt.auto === true) row.auto = true
+  return row
 }
