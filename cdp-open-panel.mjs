@@ -43,7 +43,8 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
 // ---- 连一个页面 ----
 const list = await (await fetch(`${CDP}/json/list`)).json()
-let page = list.find((t) => t.type === 'page' && String(t.url).includes('2610'))
+const appHost = new URL(APP).host
+let page = list.find((t) => t.type === 'page' && String(t.url).includes(appHost))
 if (!page) page = list.find((t) => t.type === 'page')
 if (!page) page = await (await fetch(`${CDP}/json/new?about:blank`, { method: 'PUT' })).json()
 if (!page?.webSocketDebuggerUrl) throw new Error('拿不到页面：' + JSON.stringify(list.map((t) => t.url)))
