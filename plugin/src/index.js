@@ -36,7 +36,7 @@ import { SUBAGENT_ROSTER, withRoster } from './roster.js'
 import { probeGate, startGate } from './gate/gate.js'
 import { defaultFallbackConfigPath } from './gate/config.js'
 import { REEVE_TIERS, BUILTINS_TO_HIDE, mergeTierModels, pickDefaultAgent, readEndpoint, resolveGateEndpoint } from './models.js'
-import { STATS_DEFAULTS, aggregateGateRows, aggregateLedger, buildStats, fetchGateFree, fetchGateModels, mergeModelCandidates, readLedgerTail } from './stats.js'
+import { STATS_DEFAULTS, aggregateGateRows, aggregateLedger, buildStats, fetchGateFree, fetchGateModels, fetchGateVersion, mergeModelCandidates, readLedgerTail } from './stats.js'
 import { loadAgents, loadSkills } from './register.js'
 import { ensureProviderBlock, reeveProviderBlock } from './config-write.js'
 
@@ -284,6 +284,42 @@ export default {
       statsTimer = setInterval(() => void refreshStats(), statsIntervalMs)
       statsTimer.unref?.()
       logger.debug(`[reeve] 性能统计：每 ${Math.round(statsIntervalMs / 1000)}s 刷一次（台账尾 ${statsLimit} 行 / ${Math.round(statsWindowMs / 3600000)}h 窗口）`)
+    }
+
+    // GATE 运行态独立刷新（2s）：面板的"已生效"要看到 chain_targets/policy/free 真的变了。
+    // 统计是 60s 一轮（含台账聚合），拿它当"热更已完成"的信号会让面板在 30s 超时后误报"没生效"
+    // ——真宿主保存测试抓到的：GATE 已经换链，快照还停在 60s 前。这里只读进程内 snapshot / 环回
+    // /gate/version（都很便宜），且**只在签名变化时**刷快照，稳定时不写盘。
+    let gateStateTimer = null
+    const gateSignature = () =>
+      JSON.stringify({
+        port: gateState?.port ?? null,
+        error: gateState?.error ?? null,
+        chains: gateState?.chains ?? null,
+        ct: gateState?.chain_targets ?? null,
+        policy: gateState?.policy ?? null,
+        free: gateState?.free ?? null,
+      })
+    let lastGateSig = gateSignature()
+    const refreshGateState = async () => {
+      let next = null
+      if (gateHandle) next = gateHandle.snapshot()
+      else if (gateState?.port) {
+        const { doc } = await fetchGateVersion({ port: gateState.port, host: gateState.host ?? '127.0.0.1' })
+        if (doc?.name === 'reeve-gate') next = { ...doc, reused: true }
+      }
+      if (!next) return
+      gateState = next
+      const sig = gateSignature()
+      if (sig !== lastGateSig) {
+        lastGateSig = sig
+        snapshotFlush()
+      }
+    }
+
+    if (gateHandle || gateState?.port) {
+      gateStateTimer = setInterval(() => void refreshGateState(), 2000)
+      gateStateTimer.unref?.()
     }
     const supervisor = new Supervisor({
       ledger,
@@ -565,6 +601,7 @@ export default {
       abort.abort()
       supervisor.stopAll()
       if (statsTimer) clearInterval(statsTimer)
+      if (gateStateTimer) clearInterval(gateStateTimer)
       if (snapshot) {
         snapshot.cancel()
         void snapshot.flush().catch(() => {})

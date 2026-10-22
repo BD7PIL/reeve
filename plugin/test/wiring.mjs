@@ -158,16 +158,40 @@ const CONFIG = {
     assert.equal(snap2.gate.reused, true, '标记为复用（不是自己起的）')
     assert.deepEqual(snap2.gate.chains, ['t1'], '复用者也拿到运行态（链列表）')
     assert.deepEqual(snap2.gate.chain_targets, { t1: ['p1/m1'] })
+    // 复用者没有 gateHandle：运行态靠 2s 轮询 /gate/version（这里跑过一轮，覆盖该路径）
+    await sleep(2400)
+    const snap2b = JSON.parse(await readFile(secondSnap, 'utf8'))
+    assert.equal(snap2b.gate?.port, port, '复用者的 gate 段仍带端口（轮询路径）')
     // 第二个实例卸载：**不动**别人的 GATE（自己起的才自己关）
     second()
     await sleep(150)
     const still = await fetch(`http://127.0.0.1:${port}/gate/version`).then((r) => r.ok, () => false)
     assert.equal(still, true, '复用者卸载后，原本那台 GATE 照常活着')
+    // 轮询失败兜底：owner 关掉后，另一个复用者的下一轮 fetch 会失败（catch），快照保留上一份
+    const third = await plugin.setup(
+      makeCtx({
+        gate: { enabled: true, port, configPath, ledgerPath: join(dir, 'gate.jsonl') },
+        ownEndpoint: false,
+        snapshotPath: join(dir, 'third.json'),
+        retentionDays: 0,
+        stats: { intervalMs: 0 },
+      }),
+    )
+    try {
+      await sleep(400)
+      first()
+      await sleep(2600)
+      const snap3 = JSON.parse(await readFile(join(dir, 'third.json'), 'utf8'))
+      assert.equal(snap3.gate?.port, port, 'GATE 消失后轮询失败，快照保留上一份运行态')
+    } finally {
+      third()
+      await sleep(100)
+    }
   } finally {
     first()
     await sleep(150)
     await rm(dir, { recursive: true, force: true })
-    ok('复用：第二个实例接上（不抢口/不误报/卸载不动别人的 GATE）')
+    ok('复用：第二个实例接上（不抢口/不误报/卸载不动别人的 GATE/轮询失败兜底）')
   }
 }
 
@@ -229,7 +253,17 @@ const CONFIG = {
       await sleep(200)
     }
     assert.deepEqual(chains.sort(), ['t1', 't2'], '改文件后新链生效')
-    ok('配置热更：改 fallback.jsonc → 新链生效（≤5s）')
+    // 快照的 gate 段也要跟上（面板的"已生效"读快照；统计 60s 一轮，独立 gate 刷新 2s）
+    let snapChains = []
+    const snapDeadline = Date.now() + 6000
+    while (Date.now() < snapDeadline) {
+      await sleep(300)
+      const s = JSON.parse(await readFile(snapPath, 'utf8'))
+      snapChains = s.gate?.chains ?? []
+      if (snapChains.includes('t2')) break
+    }
+    assert.ok(snapChains.includes('t2'), `快照 gate 段 ≤5s 跟上（实际：${snapChains.join('/')}）`)
+    ok('配置热更：改 fallback.jsonc → 新链生效（≤5s），快照 gate 段同步跟上')
   } finally {
     dispose()
     await sleep(100)

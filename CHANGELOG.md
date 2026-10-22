@@ -3,6 +3,18 @@
 Newest first. Versions follow the plugin package (`plugin/package.json`); the
 panel extension has its own tags (`reeve-<version>`).
 
+## 0.1.10 — 2026-10-22
+
+**Fix: the panel's "已生效" waited on the 60-second stats cadence.** The
+snapshot's gate section was only refreshed by the stats loop (60s), so a
+real-host save (GATE hot-reloaded in ~1s) showed "没生效" after the panel's 30s
+timeout — the preview harness' echoed write hid it. A lightweight gate-state
+refresh now polls the in-process snapshot (or loopback `/gate/version` for a
+reused GATE) every 2s and flushes the snapshot only when the signature changes.
+The new real-host safe save test (`scripts/host-audit.mjs --save`) caught this:
+backup → add a temp chain in the panel → save → assert GATE `chain_targets`
+changed → restore in `finally` with a sha256 check.
+
 ## 0.1.9 — 2026-10-22
 
 **Fix: OpenRouter/NVIDIA providers pointed at a doubled "/v1".** Their base URLs

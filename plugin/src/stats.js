@@ -314,6 +314,18 @@ export async function fetchGateFree({ port, host = '127.0.0.1', fetchImpl = fetc
   }
 }
 
+/** GATE 的运行态（/gate/version）：开关快照轮询用。读不到返回 {doc:null,error}，不抛。 */
+export async function fetchGateVersion({ port, host = '127.0.0.1', fetchImpl = fetch, timeoutMs = STATS_DEFAULTS.timeoutMs } = {}) {
+  try {
+    const res = await fetchImpl(`http://${host}:${port}/gate/version`, { signal: AbortSignal.timeout(timeoutMs) })
+    if (res.status !== 200) return { doc: null, error: `HTTP ${res.status}` }
+    const doc = await res.json()
+    return { doc: doc && typeof doc === 'object' ? doc : null, error: null }
+  } catch (err) {
+    return { doc: null, error: String(err?.message ?? err).slice(0, 140) }
+  }
+}
+
 /** GATE 自己的模型目录（`provider/model` ∪ 链名）—— 面板选择器的候选来源之一。 */
 export async function fetchGateModels({ port, host = '127.0.0.1', fetchImpl = fetch, timeoutMs = STATS_DEFAULTS.timeoutMs } = {}) {
   try {

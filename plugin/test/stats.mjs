@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import {
-  aggregateGateRows, aggregateLedger, buildStats,fetchGateFree, fetchGateModels, mergeModelCandidates,modelRef, parseGateRow,parseTs, percentile, 
+  aggregateGateRows, aggregateLedger, buildStats,fetchGateFree, fetchGateModels, fetchGateVersion, mergeModelCandidates,modelRef, parseGateRow,parseTs, percentile, 
   readLedgerTail, 
   STATS_DEFAULTS, summarizeLatency, 
 } from '../src/stats.js'
@@ -181,6 +181,21 @@ const ok = (label) => {
   const boom = await fetchGateFree({ port: 1, fetchImpl: async () => { throw new Error('boom') } })
   assert.equal(boom.error, 'boom')
   ok('fetchGateFree：运行态透传 / HTTP 错 / 空响应 / 异常全部降级')
+}
+
+// ---- 7c. fetchGateVersion：运行态透传与降级 ----
+{
+  const good = await fetchGateVersion({ port: 1, fetchImpl: async () => ({ status: 200, json: async () => ({ name: 'reeve-gate', port: 18080 }) }) })
+  assert.equal(good.error, null)
+  assert.equal(good.doc.name, 'reeve-gate')
+  const bad = await fetchGateVersion({ port: 1, fetchImpl: async () => ({ status: 503, json: async () => ({}) }) })
+  assert.equal(bad.doc, null)
+  assert.equal(bad.error, 'HTTP 503')
+  const empty = await fetchGateVersion({ port: 1, fetchImpl: async () => ({ status: 200, json: async () => null }) })
+  assert.equal(empty.doc, null)
+  const boom = await fetchGateVersion({ port: 1, fetchImpl: async () => { throw new Error('boom') } })
+  assert.equal(boom.error, 'boom')
+  ok('fetchGateVersion：运行态 / HTTP 错 / 空 / 异常全部不抛')
 }
 
 // ---- 8. 候选合并 ----
