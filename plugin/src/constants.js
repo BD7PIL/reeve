@@ -1,10 +1,24 @@
 // REEVE 记账层的常量与状态机定义。
 // 施工图：docs/research/opencode-v2-plugin-api.md
 
+import { readFileSync } from 'node:fs'
+
 export const PLUGIN_ID = 'reeve'
 
-/** 与 package.json 的 version 保持一致；快照文件里会带上，便于面板判断版本。 */
-export const PLUGIN_VERSION = '0.1.4'
+/**
+ * 插件版本（快照文件里会带上，便于面板/台账判断"跑的是哪一版"）。
+ *
+ * **从 package.json 读**，不再手抄一个常量：手抄的那种"保持一致"是句祝愿 ——
+ * 0.1.5 发布时就漂过（package.json 0.1.5、常量还写 0.1.4，两端快照都报了旧版本）。
+ * 读不到就退回 '0.0.0'（只影响一个字符串，别让插件起不来）。
+ */
+export const PLUGIN_VERSION = (() => {
+  try {
+    return JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version ?? '0.0.0'
+  } catch {
+    return '0.0.0'
+  }
+})()
 
 /** 工具注册的命名空间。注意：真正决定"模型能否看见"的是 codemode:false（施工图 §3.1）。 */
 export const TOOL_NAMESPACE = 'reeve'

@@ -99,3 +99,11 @@ retire + native proxy + panel UI.
   call → **Bifrost process count = 0**). `scripts/setup-9router.mjs` installs/
   supervises 9router (pinned) **without any console window** (Windows: hidden
   spawn + logon VBS; Linux: `--unit-print`).
+
+## 0.1.6 — 2026-10-22
+
+**Fix: the reported plugin version could lie.** `PLUGIN_VERSION` was a hand-copied
+constant next to `package.json`'s `version`; 0.1.5 shipped with the constant still
+saying `0.1.4`, so both ends' snapshots (and the panel's version reading) reported
+the old number. The constant is now **derived from `package.json`** at load time,
+with a unit test that fails if the two ever diverge again.

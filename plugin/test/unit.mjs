@@ -5,6 +5,7 @@
 
 import assert from 'node:assert/strict'
 import { Ledger } from '../src/ledger.js'
+import { PLUGIN_VERSION } from '../src/constants.js'
 import { Admission, _runtimes } from '../src/concurrency.js'
 import { Supervisor } from '../src/supervisor.js'
 import { decideStop, VERDICT } from '../src/terminal-gate.js'
@@ -248,6 +249,12 @@ section('名册：subagent 工具描述补名 + 与 agents/*.md 不漂移')
   ok('gate 同时给 port 与 host', JSON.stringify(e({ gate: { port: 1, host: '0.0.0.0' }, proxy: { port: 2 }, endpoint: { port: 3 } })) === JSON.stringify({ port: 1, host: '0.0.0.0' }))
 }
 
+
+// ---- 版本常量不许漂：PLUGIN_VERSION 必须等于 package.json 的 version ----
+{
+  const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'))
+  ok(`PLUGIN_VERSION 与 package.json 一致（${PLUGIN_VERSION}）`, PLUGIN_VERSION === pkg.version, `常量 ${PLUGIN_VERSION} ≠ package ${pkg.version}`)
+}
 
 console.log(`
 结果：${pass} 通过 / ${fail} 失败`)
