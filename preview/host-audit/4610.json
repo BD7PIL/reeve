@@ -1,0 +1,14 @@
+{
+  "app": "http://127.0.0.1:4610/",
+  "host": "127.0.0.1:4610",
+  "at": "2026-10-22T07:02:10.071Z",
+  "guest": "http://127.0.0.1:4610/api/guests/reeve/panel/index.html",
+  "checks": {
+    "textLen": 1770,
+    "missing": [],
+    "overflow": false,
+    "tokens": []
+  },
+  "consoleErrors": [],
+  "failures": []
+}
