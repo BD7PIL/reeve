@@ -17,7 +17,7 @@ import { join } from 'node:path'
 import { BUNDLED_FALLBACK_PATH, defaultFallbackConfigPath, loadGateConfig, normalizeGateConfig, stripLineComments, POLICY_DEFAULTS } from '../src/gate/config.js'
 import { classifyFailure, statusOf } from '../src/gate/classify.js'
 import { createSessionStore } from '../src/gate/state.js'
-import { attemptRow, buildUpstreamRequest, forwardedHeaders, modelsPathOf, parseTarget, planAttempts, resolveKeyFor, routeFor } from '../src/gate/lanes.js'
+import { IMAGE_CHAINS, attemptRow, buildUpstreamRequest, forwardedHeaders, hasImage, modelsPathOf, parseTarget, planAttempts, resolveKeyFor, routeFor } from '../src/gate/lanes.js'
 import { createLedger, probeGate, startGate } from '../src/gate/gate.js'
 
 let passed = 0
@@ -185,6 +185,36 @@ const postJson = (gate, path, body) =>
     req.end(payload)
   })
 
+// ---- 1a. 集成：图片请求从 reasoning 改道 vision（会话模型不动） ----
+{
+  const h = await harness({
+    stubs: { paid: (_req, res) => SSE_OK(res), vis: (_req, res) => SSE_OK(res) },
+    chains: { reasoning: { targets: ['paid/m1'] }, vision: { targets: ['vis/m2'] } },
+    defaultChain: 'reasoning',
+  })
+  try {
+    const text = await post(h.gate, { model: 'reasoning', stream: true, messages: [{ role: 'user', content: '只回复 ok' }] })
+    assert.equal(text.status, 200)
+    assert.equal(JSON.parse(h.up.paid.state.requests[0].body).model, 'm1', '纯文本仍走 reasoning 首跳')
+    assert.equal(h.up.vis.state.requests.length, 0, '纯文本不碰 vision')
+
+    const img = await post(h.gate, {
+      model: 'reasoning',
+      stream: true,
+      messages: [{ role: 'user', content: [{ type: 'text', text: '看图' }, { type: 'image_url', image_url: { url: 'data:image/png;base64,AAA' } }] }],
+    })
+    assert.equal(img.status, 200)
+    assert.equal(h.up.vis.state.requests.length, 1, '图片改道 vision')
+    const wire = JSON.parse(h.up.vis.state.requests[0].body)
+    assert.equal(wire.model, 'm2', '线上模型是 vision 首跳')
+    assert.ok(JSON.stringify(wire.messages).includes('image_url'), '图片原样到达 vision 上游')
+    assert.equal(img.headers['x-reeve-fallback'], '1/vis/m2', '响应头标出真实目标')
+    ok('集成·图片改道：reasoning 纯文本不变、图片走 vision 且附件送达')
+  } finally {
+    await h.close()
+  }
+}
+
 // ---- 1. 路由解析 ----
 {
   const sessions = createSessionStore({ now: () => 0, policy: {} })
@@ -222,6 +252,21 @@ const postJson = (gate, path, body) =>
   assert.equal(routeFor({ model: 'a/m1', sessionID: null }, { config: bare, sessions })?.kind, 'direct', '空链但可直投')
   assert.equal(routeFor({ model: 'nope/xx', sessionID: null }, { config: bare, sessions }), null, '都不认识 → null')
   ok('路由：agent 链 / 用户换模型直投 / 链名 / chain_for_model / default_chain / 多斜杠 / 404')
+}
+
+// ---- 1b. 图片检测与改道映射 ----
+{
+  const openai = { messages: [{ role: 'user', content: [{ type: 'text', text: '看图' }, { type: 'image_url', image_url: { url: 'data:image/png;base64,AAA' } }] }] }
+  const anthropic = { messages: [{ role: 'user', content: [{ type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'AAA' } }] }] }
+  const gemini = { contents: [{ role: 'user', parts: [{ inlineData: { mimeType: 'image/png', data: 'AAA' } }] }] }
+  const textOnly = { messages: [{ role: 'user', content: '只回复 ok' }] }
+  assert.equal(hasImage(openai), true, 'OpenAI image_url')
+  assert.equal(hasImage(anthropic), true, 'Anthropic image')
+  assert.equal(hasImage(gemini), true, 'Gemini inlineData')
+  assert.equal(hasImage(textOnly), false, '纯文本不误判')
+  assert.equal(hasImage(null), false, '空 body 不炸')
+  assert.deepEqual(IMAGE_CHAINS, { reasoning: 'vision' }, '只有 reasoning 需要改道 vision')
+  ok('图片检测：OpenAI/Anthropic/Gemini；reasoning→vision')
 }
 
 // ---- 2. 尝试计划：静态过滤、上限、冷却、多键 ----

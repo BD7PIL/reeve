@@ -3,42 +3,44 @@
   "snapshot": {
     "generatedAt": 1792646400000,
     "plugin": "reeve",
-    "version": "0.1.12",
+    "version": "0.1.13",
     "agentTable": {
-      "total": 8,
+      "total": 9,
       "visible": [{ "id": "planner", "mode": "primary" }, { "id": "foreman", "mode": "primary" }, { "id": "scout", "mode": "subagent" }],
       "hidden": 0,
-      "subagent": [{ "id": "scout" }, { "id": "librarian" }]
+      "subagent": [{ "id": "scout" }, { "id": "librarian" }, { "id": "looker" }]
     },
     "roster": { "count": 8 },
     "gate": {
       "version": "0.1.0",
       "port": 18080,
       "from": "~/.config/opencode/reeve/fallback.jsonc",
-      "chains": ["reasoning", "coding", "free-first", "vision", "fallback"],
+      "chains": ["reasoning", "standard", "free-first", "manual", "vision"],
       "chain_targets": {
-        "reasoning": ["zhipuai-coding-plan/glm-5.3", "xxyapi-deepseek/deepseek-v4.1-flash", "deepseek/deepseek-flash"],
-        "coding": ["zhipuai-coding-plan/glm-5.3-flash", "xxyapi-deepseek/deepseek-v4.1-flash", "deepseek/deepseek-flash"],
-        "free-first": ["@free", "zhipuai-coding-plan/glm-5.3-flash", "deepseek/deepseek-flash"],
-        "vision": ["xxyapi-deepseek/deepseek-v4.1-flash", "lmuai/glm-5.3-flash"],
-        "fallback": ["zhipuai-coding-plan/glm-5.3-flash", "deepseek/deepseek-flash"]
+        "reasoning": ["zhipuai-coding-plan/glm-5.3", "deepseek/deepseek-flash", "lmuai/glm-5.3-flash", "@free"],
+        "standard": ["zhipuai-coding-plan/glm-5.3-flash", "lmuai/glm-5.3-flash", "@free", "deepseek/deepseek-flash"],
+        "free-first": ["@free", "zhipuai-coding-plan/glm-5.3-flash", "lmuai/glm-5.3-flash", "deepseek/deepseek-flash"],
+        "manual": ["zhipuai-coding-plan/glm-5.3-flash"],
+        "vision": ["zhipuai-coding-plan/glm-5.3-flash", "lmuai/glm-5.3-flash", "@free", "deepseek/deepseek-flash"]
       },
-      "providers": ["opencode", "openrouter", "nvidia", "zhipuai-coding-plan", "deepseek"],
-      "policy": { "max_fallback_attempts": 4, "cooldown_seconds": 60, "restore_primary_after_cooldown": false, "provider_retries": 1 },
-      "agents": { "planner": "reasoning", "advisor": "reasoning", "foreman": "coding", "scout": "free-first", "librarian": "free-first" },
-      "chain_for_model": { "reeve/flash": "free-first", "reeve/coding": "coding", "reeve/pro": "reasoning", "reeve/multimodal": "vision" },
-      "default_chain": "fallback",
+      "providers": ["opencode", "openrouter", "zhipuai-coding-plan", "deepseek", "lmuai"],
+      "policy": { "max_fallback_attempts": 6, "cooldown_seconds": 60, "restore_primary_after_cooldown": false, "provider_retries": 1 },
+      "agents": { "planner": "reasoning", "advisor": "reasoning", "foreman": "manual", "executor": "standard", "reviewer": "standard", "scout": "free-first", "librarian": "free-first", "looker": "vision" },
+      "chain_for_model": { "reeve/flash": "free-first", "reeve/standard": "standard", "reeve/pro": "reasoning", "reeve/manual": "manual", "reeve/multimodal": "vision" },
+      "default_chain": "standard",
       "problems": [],
       "free": {
         "enabled": true,
         "max": 3,
-        "providers": ["opencode", "openrouter", "nvidia"],
+        "providers": ["opencode", "openrouter"],
         "refresh_seconds": 300,
         "failure_threshold": 3,
         "failure_cooldown_seconds": 600,
-        "prefer": ["mimo-v2.6-flash-free"],
+        "prefer": ["glm-5.3-flash-free", "mimo-v2.6-flash-free"],
         "deny": [],
-        "static": { "nvidia": ["z-ai/glm-5.2"] }
+        "require_image": true,
+        "image_models": ["glm-5.3-flash-free", "deepseek-v4.1-flash-free", "mimo-v2.6-flash-free"],
+        "static": {}
       },
       "sessions": { "sessions": 2, "cooling": 0 },
       "ledger": "~/.reeve/gate.jsonl"
@@ -55,8 +57,10 @@
         { "ref": "zhipuai-coding-plan/glm-5.3-flash", "sources": ["chain", "gate"] },
         { "ref": "deepseek/deepseek-flash", "sources": ["chain"] },
         { "ref": "reeve/flash", "sources": ["engine"] },
-        { "ref": "reeve/coding", "sources": ["engine"] },
-        { "ref": "reeve/pro", "sources": ["engine"] }
+        { "ref": "reeve/standard", "sources": ["engine"] },
+        { "ref": "reeve/pro", "sources": ["engine"] },
+        { "ref": "reeve/manual", "sources": ["engine"] },
+        { "ref": "reeve/multimodal", "sources": ["engine"] }
       ]
     },
     "free": {
@@ -151,30 +155,32 @@
     "providers": {
       "opencode": { "base_url": "https://opencode.ai/inference/openai/v1", "path": "/chat/completions", "key": "public", "lane": "passthrough", "models": ["*"] },
       "openrouter": { "base_url": "https://openrouter.ai/api/v1", "path": "/chat/completions", "auth": ["openrouter"], "models": [] },
-      "nvidia": { "base_url": "https://integrate.api.nvidia.com/v1", "path": "/chat/completions", "auth": ["nvidia"], "models": [] },
       "zhipuai-coding-plan": { "base_url": "https://open.bigmodel.cn", "path": "/api/coding/paas/v4/chat/completions", "auth": ["zhipuai-coding-plan"] },
-      "deepseek": { "base_url": "https://api.deepseek.com", "auth": ["deepseek", "deepseek-api"] }
+      "deepseek": { "base_url": "https://api.deepseek.com", "auth": ["deepseek", "deepseek-api"] },
+      "lmuai": { "base_url": "https://api.lmuai.com", "auth": ["lmuai", "lmuai-glm"] }
     },
     "chains": {
-      "reasoning": { "targets": ["zhipuai-coding-plan/glm-5.3", "xxyapi-deepseek/deepseek-v4.1-flash", "deepseek/deepseek-flash"] },
-      "coding": { "targets": ["zhipuai-coding-plan/glm-5.3-flash", "xxyapi-deepseek/deepseek-v4.1-flash", "deepseek/deepseek-flash"] },
-      "free-first": { "targets": ["@free", "zhipuai-coding-plan/glm-5.3-flash", "deepseek/deepseek-flash"] },
-      "vision": { "targets": ["xxyapi-deepseek/deepseek-v4.1-flash", "lmuai/glm-5.3-flash"] },
-      "fallback": { "targets": ["zhipuai-coding-plan/glm-5.3-flash", "deepseek/deepseek-flash"] }
+      "reasoning": { "targets": ["zhipuai-coding-plan/glm-5.3", "deepseek/deepseek-flash", "lmuai/glm-5.3-flash", "@free"] },
+      "standard": { "targets": ["zhipuai-coding-plan/glm-5.3-flash", "lmuai/glm-5.3-flash", "@free", "deepseek/deepseek-flash"] },
+      "free-first": { "targets": ["@free", "zhipuai-coding-plan/glm-5.3-flash", "lmuai/glm-5.3-flash", "deepseek/deepseek-flash"] },
+      "manual": { "targets": ["zhipuai-coding-plan/glm-5.3-flash"] },
+      "vision": { "targets": ["zhipuai-coding-plan/glm-5.3-flash", "lmuai/glm-5.3-flash", "@free", "deepseek/deepseek-flash"] }
     },
-    "agents": { "planner": "reasoning", "advisor": "reasoning", "foreman": "coding", "scout": "free-first", "librarian": "free-first" },
-    "chain_for_model": { "reeve/flash": "free-first", "reeve/coding": "coding", "reeve/pro": "reasoning", "reeve/multimodal": "vision" },
-    "default_chain": "fallback",
+    "agents": { "planner": "reasoning", "advisor": "reasoning", "foreman": "manual", "executor": "standard", "reviewer": "standard", "scout": "free-first", "librarian": "free-first", "looker": "vision" },
+    "chain_for_model": { "reeve/flash": "free-first", "reeve/standard": "standard", "reeve/pro": "reasoning", "reeve/manual": "manual", "reeve/multimodal": "vision" },
+    "default_chain": "standard",
     "free": {
       "enabled": true,
       "max": 3,
-      "providers": ["opencode", "openrouter", "nvidia"],
+      "providers": ["opencode", "openrouter"],
       "refresh_seconds": 300,
       "failure_threshold": 3,
       "failure_cooldown_seconds": 600,
-      "prefer": ["mimo-v2.6-flash-free"],
+      "prefer": ["glm-5.3-flash-free", "mimo-v2.6-flash-free"],
       "deny": [],
-      "static": { "nvidia": ["z-ai/glm-5.2"] }
+      "require_image": true,
+      "image_models": ["glm-5.3-flash-free", "deepseek-v4.1-flash-free", "mimo-v2.6-flash-free"],
+      "static": {}
     }
   }
 }

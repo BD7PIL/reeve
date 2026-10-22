@@ -1,40 +1,48 @@
 # 免费车道（`@free`）
 
-> 状态（2026-10-22，reeve 0.1.7）：GATE 原生实现；9router 已退役。
+> 状态（2026-10-22，reeve 0.1.13）：GATE 原生实现；9router 已退役。
 > 一句话：链里写 `@free`，GATE 在**请求时**把它展开成"当前可发现、未冷却、有键"的免费候选；
-> 列表变了自动跟随，文件里不写死候选。
+> 列表变了自动跟随，文件里不写死候选。免费池只保留 image-capable 模型。
 
 ## 1. 配置（`~/.config/opencode/reeve/fallback.jsonc`）
 
 ```jsonc
-"policy": { "max_fallback_attempts": 4 },
+"policy": { "max_fallback_attempts": 6 },
 "free": {
   "enabled": true,
   "max": 3,                        // 免费尝试次数（面板可改）
-  "providers": ["opencode", "openrouter", "nvidia"],
+  "providers": ["opencode", "openrouter"],
   "refresh_seconds": 300,          // 发现源 TTL
   "failure_threshold": 3,          // 同一免费模型连续失败几次进冷却
   "failure_cooldown_seconds": 600,
-  "prefer": ["mimo-v2.6-flash-free", "opencode/deepseek-v4.1-flash-free"],
+  "prefer": ["glm-5.3-flash-free", "mimo-v2.6-flash-free", "deepseek-v4.1-flash-free"],
   "deny": [],
-  "static": { "nvidia": ["z-ai/glm-5.2"] }
+  "require_image": true,           // 只选多模态免费模型
+  "image_models": ["glm-5.3-flash-free", "deepseek-v4.1-flash-free", "mimo-v2.6-flash-free", "nemotron-3.5-super-vl-free"],
+  "static": {}
 }
 ```
 
 链：
 
 ```jsonc
-"free-first": { "targets": ["@free", "zhipuai-coding-plan/glm-5.3-flash", "deepseek/deepseek-flash"] }
+"standard": { "targets": ["zhipuai-coding-plan/glm-5.3-flash", "lmuai/glm-5.3-flash", "@free", "deepseek/deepseek-flash"] }
+"free-first": { "targets": ["@free", "zhipuai-coding-plan/glm-5.3-flash", "lmuai/glm-5.3-flash", "deepseek/deepseek-flash"] }
 ```
 
-**预算规则（硬）**：`@free` 最多占 `max_fallback_attempts - 1` 跳，永远给付费兜底留一跳。
-`max=3` 且 `max_fallback_attempts=3` 时实际只展开 2 个；要 3 个免费就把总尝试数调到 4。
-面板的「免费尝试次数」下面会直接显示这条关系。
+**预算规则（硬）**：`@free` 最多占 `max_fallback_attempts - 1` 跳。
+`max=3` 且 `max_fallback_attempts=6` 时，standard 实际是 2 付费 + 3 免费 + 1 付费兜底；
+free-first 是 3 免费 + 3 付费。面板的「免费尝试次数」下面会直接显示这条关系。
 
-免费车道只挂在 `free-first` 链上，默认给 `reeve/flash`（scout / librarian）用；`reeve/pro`
-（planner / advisor / critic）走 `reasoning` 付费强推理，`reeve/coding`（foreman / executor /
-reviewer）走 `coding` 中型付费链。不要让所有 agent 都落到 `@free`，免费池里多是 flash 档，
-规划/评审质量会掉；也不要把所有 agent 都钉到最强推理，成本和延迟都没必要。
+**免费池只留 image-capable**：`require_image=true` 时，`discover` 只保留 `image_models`
+白名单里的模型（可按 full ref 或裸模型名匹配）；纯文本的 `big-pickle`/`minimax` 不进池。
+白名单为空或发现源没有 image 模型 → 没有免费候选，直接走付费，**绝不退回纯文本免费模型**。
+
+免费车道挂在 `free-first` 和 `standard`/`vision` 的尾部，默认给 `reeve/flash`（scout /
+librarian）和 `reeve/standard`（executor / reviewer）用；`reeve/pro`（planner / advisor /
+critic）走 `reasoning` 付费强推理，`reeve/manual`（foreman）单目标无 fallback。不要让所有
+agent 都落到 `@free`，免费池里多是 flash 档，规划/评审质量会掉；也不要把所有 agent 都钉到
+最强推理，成本和延迟都没必要。
 
 ## 2. 发现源
 

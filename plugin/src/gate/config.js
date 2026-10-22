@@ -45,6 +45,9 @@ export const FREE_DEFAULTS = Object.freeze({
   failure_cooldown_seconds: 600,
   prefer: Object.freeze([]),
   deny: Object.freeze([]),
+  // 免费池只要多模态模型：开启后只保留 image_models 里的 ID（纯文本免费模型不进池）
+  require_image: false,
+  image_models: Object.freeze([]),
   static: Object.freeze({}),
   sources: Object.freeze({
     // 公开模型列表（不需要键；拉不到只影响该 provider，请求照常降级到付费）
@@ -121,6 +124,8 @@ export function normalizeGateConfig(raw) {
     failure_cooldown_seconds: asInt(fSrc.failure_cooldown_seconds, 60, 86_400, FREE_DEFAULTS.failure_cooldown_seconds),
     prefer: asStrings(fSrc.prefer),
     deny: asStrings(fSrc.deny),
+    require_image: fSrc.require_image === true,
+    image_models: asStrings(fSrc.image_models),
     static: {},
     sources: { ...FREE_DEFAULTS.sources },
   }

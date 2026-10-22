@@ -3,6 +3,23 @@
 Newest first. Versions follow the plugin package (`plugin/package.json`); the
 panel extension has its own tags (`reeve-<version>`).
 
+## 0.1.13 — 2026-10-22
+
+**Five tiers, image routing, image-only free pool.** The plugin now registers
+`reeve/flash`, `reeve/standard`, `reeve/pro`, `reeve/manual`, and
+`reeve/multimodal`; all declare image input. GATE detects image parts in the
+request body and routes `reasoning` image requests to the `vision` chain for
+that request only — the session model and composer selection do not change.
+`reeve/manual` is a single-target chain for foreman (no automatic fallback).
+The free pool now requires image-capable models (`free.require_image` +
+`free.image_models`), so text-only free models such as `big-pickle` never enter
+the pool. Added a hidden `looker` subagent on `reeve/multimodal` for images/PDFs
+on disk; pasted images are handled by the GATE route. Chains: standard cost-first
+(zhipu → lmuai → @free → deepseek), reasoning reliability-first (zhipu → deepseek
+→ lmuai → @free), free-first (@free → zhipu → lmuai → deepseek), manual
+(zhipu glm-5.3-flash only), vision (same as standard). xxyapi-deepseek, nvidia,
+xiaomi, and alibaba-cn are removed from the production fallback config.
+
 ## 0.1.12 — 2026-10-22
 
 **Fix the deployable artifact: `provision.json` still pinned 0.1.10.** The

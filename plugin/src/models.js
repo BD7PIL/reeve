@@ -1,4 +1,4 @@
-// 四个档位的**模型注册** —— 让 opencode.jsonc 里不再需要一份 models 映射。
+// 五个档位的**模型注册** —— 让 opencode.jsonc 里不再需要一份 models 映射。
 //
 // 为什么能做：v2 的插件 API 有 `ctx.provider.transform(editor => editor.models.set(id, models))`
 //（`packages/plugin/src/promise/provider.ts` @v2.0.27），`Model.Info` 也能从最小形状造出来。
@@ -16,11 +16,17 @@ import { readFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 
-/** 四个档位。`images` 决定这一档声明不声明"能吃图"（只有视觉档声明）。 */
+/**
+ * 五个档位。全部声明能吃图：引擎才不会在发给 GATE 之前剥掉附件。
+ * 真正“这档能不能收图”由 GATE 的图片路由决定：
+ *   reasoning 的 glm-5.3 是纯文本 → 图片请求改走 vision；
+ *   其余档位的链目标本身就是 image-capable。
+ */
 export const REEVE_TIERS = Object.freeze([
-  { id: 'flash', modelID: 'reeve/flash', name: 'REEVE flash（免费优先链）', images: false },
-  { id: 'coding', modelID: 'reeve/coding', name: 'REEVE coding（中型链）', images: false },
-  { id: 'pro', modelID: 'reeve/pro', name: 'REEVE pro（强推理链）', images: false },
+  { id: 'flash', modelID: 'reeve/flash', name: 'REEVE flash（免费优先链）', images: true },
+  { id: 'standard', modelID: 'reeve/standard', name: 'REEVE standard（通用中型链）', images: true },
+  { id: 'pro', modelID: 'reeve/pro', name: 'REEVE pro（强推理链）', images: true },
+  { id: 'manual', modelID: 'reeve/manual', name: 'REEVE manual（单模型，无回退）', images: true },
   { id: 'multimodal', modelID: 'reeve/multimodal', name: 'REEVE multimodal（视觉链）', images: true },
 ])
 

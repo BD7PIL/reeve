@@ -126,12 +126,19 @@ export function createFreeLane({ getConfig, getAuth = () => ({}), now = Date.now
   const discovered = async () => {
     const free = freeCfg()
     if (!free.enabled) return []
+    const requireImage = free.require_image === true
+    const imageModels = new Set(asList(free.image_models))
     const out = []
     for (const id of asList(free.providers)) {
       const provider = providers()[id]
       if (!provider?.base_url || !hasKey(provider)) continue
       const st = await load(id)
-      for (const model of st.models ?? []) out.push({ provider: id, model, ref: `${id}/${model}` })
+      for (const model of st.models ?? []) {
+        // 只要多模态免费模型：纯文本的 big-pickle/minimax 等不进池。
+        // 白名单为空时按“没有可用免费候选”处理（降级到付费），绝不退回纯文本。
+        if (requireImage && !imageModels.has(model) && !imageModels.has(`${id}/${model}`)) continue
+        out.push({ provider: id, model, ref: `${id}/${model}` })
+      }
     }
     return out
   }

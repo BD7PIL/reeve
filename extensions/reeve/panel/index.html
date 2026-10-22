@@ -94,6 +94,9 @@
   /* 宿主侧栏默认 ~306px：用量/说明这类次要信息让位，否则 @free 行的标题会被挤成一字一行 */
   @media (max-width: 360px) {
     #root .oc-sdk-row-meta { display: none; }
+    /* 306px 宿主侧栏：链头左侧内容 + 「更多」只剩 1px 余量；允许右侧入口换到下一行，绝不顶出页面 */
+    .oc-bar-between { gap: 4px; flex-wrap: wrap; }
+    .oc-bar-between > .oc-bar:last-child { margin-left: auto; }
   }
 
   /* 需要分组的 inset（宿主：rounded-md border border-border bg-surface-elevated/50） */

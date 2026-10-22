@@ -18,7 +18,7 @@ import { Readable } from 'node:stream'
 import { classifyFailure } from './classify.js'
 import { BUNDLED_FALLBACK_PATH, defaultFallbackConfigPath, loadGateConfig, normalizeGateConfig, watchGateConfig } from './config.js'
 import { createFreeLane } from './free.js'
-import { attemptKey, attemptRow, buildUpstreamRequest, modelsPathOf, parseTarget, planAttempts, resolveKeyFor, routeFor } from './lanes.js'
+import { IMAGE_CHAINS, attemptKey, attemptRow, buildUpstreamRequest, hasImage, modelsPathOf, parseTarget, planAttempts, resolveKeyFor, routeFor } from './lanes.js'
 import { createSessionStore } from './state.js'
 
 export const GATE_VERSION = '0.1.0'
@@ -201,17 +201,26 @@ export async function startGate({
       return sendJson(res, err?.code === 'E_TOO_LARGE' ? 413 : 400, { error: { message: String(err?.message ?? err).slice(0, 120) } })
     }
     let model = null
+    let parsedBody = null
     try {
-      const parsed = JSON.parse(bodyText)
-      if (typeof parsed?.model === 'string') model = parsed.model
+      parsedBody = JSON.parse(bodyText)
+      if (typeof parsedBody?.model === 'string') model = parsedBody.model
     } catch {
       /* 非 JSON：下面按 400 处理 */
     }
     if (!model) return sendJson(res, 400, { error: { message: 'model 字段缺失，或 body 不是 JSON' } })
 
     const sessionID = typeof req.headers['x-opencode-session-id'] === 'string' ? req.headers['x-opencode-session-id'] : null
-    const route = routeFor({ model, sessionID }, { config, sessions })
+    let route = routeFor({ model, sessionID }, { config, sessions })
     if (!route) return sendJson(res, 404, { error: { message: `未知模型或链：${model}` } })
+    // 文本档位收到图片：只把**这一次请求**改走视觉链。会话模型/composer 不动。
+    if (hasImage(parsedBody)) {
+      const imageChain = IMAGE_CHAINS[route.chain]
+      if (imageChain && config.chains?.[imageChain]) {
+        const imageRoute = routeFor({ model: imageChain, sessionID }, { config, sessions })
+        if (imageRoute) route = { ...imageRoute, agent: route.agent, requestedModel: route.requestedModel }
+      }
+    }
     // `@free` → 当前可发现、未冷却、有键的真实候选（动态链不复用按索引的粘性指针）
     const expanded = await freeLane.expand(route.targets, { maxAttempts: config.policy.max_fallback_attempts })
     const plan = planAttempts({ ...route, targets: expanded.targets, dynamicFree: expanded.dynamic }, { config, sessions, sessionID, keyPicker })

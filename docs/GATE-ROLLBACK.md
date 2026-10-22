@@ -19,6 +19,17 @@
 > 对端 `reeve/fallback.jsonc` 与本地相同（config-diff：文件面 0 漂移）。
 > 发布被 2026-10-22T02:33Z 起的 npm registry 故障挡住约 70 分钟（先 E503、后 OIDC 交换失败报 ENEEDAUTH），恢复后重跑同一 job 成功。
 >
+> **0.1.13（已发，两端已升）**：五档位 + GATE 图片路由 + 免费池只留 image 模型。
+> 档位 `reeve/flash|standard|pro|manual|multimodal`（全部声明 image）；链 `reasoning`（3 付费 +
+> 3 免费）/ `standard`（2 付费 + 3 免费 + deepseek 兜底）/ `free-first`（3 免费 + 3 付费）/
+> `manual`（zhipu glm-5.3-flash 单目标）/ `vision`。GATE 检测 `image_url`/Anthropic image/Gemini
+> inlineData，把 reasoning 的图片请求**单次**改走 vision，会话模型/composer 不变。免费池
+> `require_image=true` + `image_models` 白名单，纯文本 big-pickle/minimax 不再进入。新增 hidden
+> `looker` 子代理（reeve/multimodal）读磁盘图片/PDF；粘贴附件由 GATE 路由处理。xxyapi-deepseek/
+> nvidia/xiaomi/alibaba-cn 从生产 fallback 移除。
+> 回滚：package/provision 回 0.1.12、公开树回 `bf4897b`、ocrc pin 回上一版；将两端
+> `opencode.jsonc`/`fallback.jsonc` 恢复 `.ocrc-bak`；0.1.12 的免费池不按 image 过滤，文本免费模型会重新进入。
+>
 > **0.1.12（已发，两端已升）**：0.1.11 的四档位/链名代码不变，只修装配清单 ——
 > `plugin/provision.json` 仍写着 `0.1.10`，导致 `ocrc remote apply --with-components` 装回旧组件。
 > 现在 provision 与 package 同为 0.1.12，并在 `plugin/test/unit.mjs` 加了 version/enginePlugin.spec 一致性断言。

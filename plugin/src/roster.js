@@ -1,6 +1,6 @@
 // subagent 名册 —— 注入到 `subagent` 工具的描述里。
 //
-// 为什么需要它：REEVE 的 7 个 subagent 都标了 `hidden: true`（前台不可见、
+// 为什么需要它：REEVE 的 8 个 subagent 都标了 `hidden: true`（前台不可见、
 // openchamber 的 @ 提及列表也不列它们）。代价是**引擎自己的
 // "Available subagents:" 宣传段也会把它们滤掉**（v2.0.32
 // `packages/core/src/tool/plugin/subagent.ts` 的 context 钩子只列 `!agent.hidden`）。
@@ -20,6 +20,7 @@ export const SUBAGENT_ROSTER = Object.freeze([
   { name: 'advisor', duty: '对抗性顾问：找出方案最可能失败的那个假设与代价。只读' },
   { name: 'executor', duty: '执行者：照实施文档干活，唯一的实现者。不重新设计、不扩大范围' },
   { name: 'reviewer', duty: '代码 diff 审查：五维 + 结构化输出（severity/category/path/行号/锚点）。只读' },
+  { name: 'looker', duty: '视觉识别：读取磁盘上的图片/PDF/截图，回答颜色、布局、OCR、图表。只读' },
 ])
 
 /**

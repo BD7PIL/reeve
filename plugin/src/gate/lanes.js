@@ -29,6 +29,47 @@ export const targetKey = (t) => (t?.free ? '@free' : `${t.provider}/${t.model}`)
 /** 尝试的键（注意：attempt.provider 是**完整的 provider 对象**，要取 .id）。 */
 export const attemptKey = (attempt) => `${attempt.provider.id}/${attempt.model}`
 
+/**
+ * 图片请求的链改道。reasoning 的首跳 glm-5.3 是纯文本；GATE 看到附件后
+ * 把**这一次请求**改走 vision，会话模型/客户端选择都不动。
+ * 其余档位的链目标本身已经是 image-capable，不需要改道。
+ */
+export const IMAGE_CHAINS = Object.freeze({ reasoning: 'vision' })
+
+/** 请求体里是否带图片附件（OpenAI image_url / Anthropic image / Gemini inlineData）。 */
+export function hasImage(body) {
+  const roots = [body?.messages, body?.contents, body?.input].filter(Array.isArray)
+  if (roots.length === 0) return false
+  const seen = new Set()
+  let found = false
+  const walk = (v, depth = 0) => {
+    if (found || depth > 10 || v === null || typeof v !== 'object') return
+    if (seen.has(v)) return
+    seen.add(v)
+    if (Array.isArray(v)) {
+      for (const x of v) walk(x, depth + 1)
+      return
+    }
+    const type = typeof v.type === 'string' ? v.type.toLowerCase() : ''
+    if (type === 'image_url' || type === 'image' || type === 'input_image') {
+      found = true
+      return
+    }
+    if (v.image_url || v.inlineData || v.inline_data) {
+      found = true
+      return
+    }
+    const mime = v.mimeType ?? v.mime_type
+    if (typeof mime === 'string' && mime.toLowerCase().startsWith('image/')) {
+      found = true
+      return
+    }
+    for (const k of Object.keys(v)) walk(v[k], depth + 1)
+  }
+  for (const root of roots) walk(root)
+  return found
+}
+
 /** provider 的键：`none` = 不需要；`env.X` = 环境变量；其它 = 字面量（只允许本来就是公开的）；否则按 auth 列表找 auth.json。 */
 export function resolveKeyFor(provider, { env = process.env, auth = {} } = {}) {
   if (provider.key === 'none') return { key: null, name: null }

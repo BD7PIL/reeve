@@ -196,6 +196,46 @@ const OPENROUTER_FREE = ['vendor/a:free', 'vendor/b', 'vendor/c:free']
   }
 }
 
+// ---- 1b. 免费池只留 image-capable ----
+{
+  const h = await harness({
+    discovery: { opencode: ['mimo-v2.6-flash-free', 'big-pickle', 'deepseek-v4.1-flash-free'] },
+    free: {
+      require_image: true,
+      image_models: ['mimo-v2.6-flash-free', 'deepseek-v4.1-flash-free'],
+    },
+  })
+  try {
+    const snap = await getJson(h.gate, '/gate/free')
+    assert.deepEqual(
+      snap.expand,
+      ['opencode/mimo-v2.6-flash-free', 'opencode/deepseek-v4.1-flash-free'],
+      '纯文本 big-pickle 不进免费池',
+    )
+    ok('免费过滤：require_image + image_models 排除纯文本模型')
+  } finally {
+    await h.close()
+  }
+}
+
+// ---- 1c. require_image 但白名单为空 → 没有免费候选，直接付费 ----
+{
+  const h = await harness({
+    discovery: { opencode: ['big-pickle', 'mimo-v2.6-flash-free'] },
+    free: { require_image: true, image_models: [] },
+  })
+  try {
+    const snap = await getJson(h.gate, '/gate/free')
+    assert.deepEqual(snap.expand, [], '白名单为空 → 一个免费都不展开')
+    const r = await post(h.gate, { model: 'reeve/flash', stream: false, messages: [{ role: 'user', content: 'hi' }] })
+    assert.equal(r.status, 200)
+    assert.equal(r.fallback, '1/paid/paid-ok', '没有可用免费候选 → 顺位付费')
+    ok('免费过滤：白名单为空不退回纯文本，直接付费')
+  } finally {
+    await h.close()
+  }
+}
+
 // ---- 2. TTL 缓存 + 发现失败保留上一份 ----
 {
   const h = await harness({ discovery: { opencode: OPCODE_FREE, openrouter: OPENROUTER_FREE }, watchMs: 20 })

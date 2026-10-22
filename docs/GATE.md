@@ -1,9 +1,9 @@
-# GATE —— reeve 的代理层（0.1.11：四档位 + 策略链名）
+# GATE —— reeve 的代理层（0.1.13：五档位 + 图片路由）
 
-> 状态（2026-10-22）：**0.1.11 交付** —— 四档位 `reeve/flash|coding|pro|multimodal`，
-> 链名从历史编号改为策略名（`reasoning` / `coding` / `free-first` / `vision` / `fallback`），
-> 只有规划/评审用强推理，编排/执行/审查走中型链，侦察/检索免费优先。
-> 0.1.10 及以前见 `docs/GATE-ROLLBACK.md`；免费车道语义：`docs/FREE-LANE.md`。
+> 状态（2026-10-22）：**0.1.13 交付** —— 五档位 `reeve/flash|standard|pro|manual|multimodal`，
+> 链名 `reasoning` / `standard` / `free-first` / `manual` / `vision`；文本档位收到图片时由 GATE
+> 只把这一次请求改走 `vision`（会话模型/composer 不动）；免费池只保留 image-capable 模型。
+> 0.1.12 及以前见 `docs/GATE-ROLLBACK.md`；免费车道语义：`docs/FREE-LANE.md`。
 
 ## 1. 交付物（本次）
 
@@ -16,19 +16,23 @@
 | `plugin/src/gate/free.js` | **免费车道**：发现（opencode/openrouter 公开列表 + nvidia 白名单）、TTL、失败保留上一份、`@free` 展开（prefer/deny/预算）、按模型的全局冷却 |
 | `plugin/src/gate/gate.js` | HTTP 服务：`/v1/chat/completions`、`/v1/models`、`/gate/session`、`/gate/session/:id/next`、`/gate/version`、**`/gate/free`**；台账 JSONL（不带密钥、超限轮转） |
 | `plugin/default-fallback.json` | 打包兜底配置（付费候选；免费车道由用户配置决定） |
-| `plugin/test/gate.mjs` | 26 项离线验收（单元 + 集成 + 并发 + detach） |
-| `plugin/test/free.mjs` | 15 项免费车道验收（发现/TTL/展开/预算/冷却/热更/并发/无键/空目录） |
+| `plugin/test/gate.mjs` | 28 项离线验收（单元 + 集成 + 图片路由 + 并发 + detach） |
+| `plugin/test/free.mjs` | 17 项免费车道验收（发现/TTL/展开/预算/冷却/热更/并发/无键/空目录/image 过滤） |
 | `~/.config/opencode/reeve/fallback.jsonc` | 机器上的用户配置（三端共享；开发机是 junction，对端由 ocrc sync） |
 
 ## 2. 语义（实现即规格）
 
 - 触发分类顺序：硬拒绝 → 语义必换 → 状态码白名单（`policy.retry_on_errors`）→ 显式 `isRetryable`（安全阀）→ 文本兜底。
 - 候选遍历：单向推进；失败候选进冷却（默认 60s，按 session）；跳 no-op/不可达/冷却中；
-  `max_fallback_attempts`（默认 4）；**全在冷却也保留第一个尝试**。
+  `max_fallback_attempts`（默认 6）；**全在冷却也保留第一个尝试**。
 - **只在首字节前换**；流已开始的错误原样透给调用方（交给插件侧的重放）。
 - 路由：`provider/model` 写了前缀却没人认识 → **404**；裸模型名才走 `default_chain`；agent 链与显式换模型的优先级见 `lanes.js`。
+- **图片路由**：`hasImage(body)` 检测 OpenAI `image_url` / Anthropic `image` / Gemini `inlineData`；
+  `IMAGE_CHAINS = { reasoning: 'vision' }`。文本档位收到图片时只把本次请求改走 `vision`，会话模型不变。
+  standard/manual/flash 的普通链目标本身都是 image-capable，不需要改道。GATE 关闭时图片会按原模型能力被剥。
 - **免费车道**：链里 `@free` 在请求时展开成当前可发现、未冷却、有键的候选；免费最多占
-  `max_fallback_attempts - 1` 跳（默认 3 free + 1 paid）；全部冷却/不可用 → 直接付费；
+  `max_fallback_attempts - 1` 跳；`free.require_image=true` 时只保留 `free.image_models` 白名单里的
+  image-capable 模型（纯文本免费模型不进池，白名单为空则直接付费）；全部冷却/不可用 → 直接付费；
   失败按模型全局冷却（阈值/时长可配）；动态链不使用按索引的粘性指针。详见 `docs/FREE-LANE.md`。
 - 车道：`passthrough`（头逐字转发，含 UA 与 `x-opencode-session*`）｜`native`（最小头集）。
 - 密钥：`key:'none'` / `env.X` / 公开字面量 / `auth` 列表（auth.json，按序取第一个有键的）；
@@ -41,24 +45,27 @@
 
 | 档位 | 链 | agent | 说明 |
 | --- | --- | --- | --- |
-| `reeve/pro` | `reasoning` | planner / advisor / critic | 强推理；glm-5.3 打头，后接中型/廉价兜底 |
-| `reeve/coding` | `coding` | foreman / executor / reviewer | 中型；glm-5.3-flash 打头，日常执行/审查不烧强推理 |
-| `reeve/flash` | `free-first` | scout / librarian | `@free` 免费优先，失败顺位付费 |
-| `reeve/multimodal` | `vision` | 无（UI 手动选） | 只放声明能吃图的上游 |
+| `reeve/pro` | `reasoning` | planner / advisor / critic | 强推理；glm-5.3 打头；图片请求改道 vision |
+| `reeve/standard` | `standard` | executor / reviewer | 通用中型；glm-5.3-flash → lmuai → @free → deepseek |
+| `reeve/manual` | `manual` | foreman | 单目标 glm-5.3-flash，无 fallback；失败 502，手动换 |
+| `reeve/flash` | `free-first` | scout / librarian | `@free`（只 image 模型）→ 中型/中转/官方 |
+| `reeve/multimodal` | `vision` | looker | 视觉链；GATE 图片改道与 looker 子代理共用 |
 
-`fallback` 链给"没有 agent/模型信息"的裸模型请求兜底，同样是中型链。引擎配置里**不要再覆盖
-`agents.model`**；删掉覆盖后插件会注册上表。GATE 的 `agents` 段（session→agent 桥）目前没有生产调用方，
+`standard` 是成本优先（2 付费 + 3 免费 + deepseek 兜底）；`reasoning` 是可靠性优先
+（3 付费 + 3 免费）；`manual` 只有 1 个目标。引擎配置里**不要再覆盖 `agents.model`**；
+删掉覆盖后插件会注册上表。GATE 的 `agents` 段（session→agent 桥）目前没有生产调用方，
 实际路由按请求的档位模型走 `chain_for_model`；改 `fallback.jsonc` 的 `agents` 段不会影响当前请求。
+`looker` 只能读磁盘路径；粘贴的内联图片由 GATE 图片路由直接交给 vision 链，不经过子代理。
 
 ## 3. 验收
 
-- 离线：`plugin/test/gate.mjs` 26 项、`plugin/test/free.mjs` 15 项；插件全量（unit 74 / reconcile 30 /
+- 离线：`plugin/test/gate.mjs` 28 项、`plugin/test/free.mjs` 17 项；插件全量（unit 79 / reconcile 30 /
   snapshot 9 / stats 9 / entry 4 / wiring 6 / runtime 6 / guard 2）。
 - 覆盖率门槛：global 95/79/95 + `src/index.js` 97/67/93 + `src/gate/` 97/84/96（只升不降）。
 - 真机：`scripts/accept-gate.sh` ①–⑨（①/② 免费车道、④ 关闭免费→付费、④b 死免费候选→付费、
   ⑤ 粘性、⑥ 冷却、⑦ 热更、⑧ 付费直连、⑨ Bifrost=0）；`scripts/accept-lifecycle.mjs`（DELETE 驱逐）+
   `--idle`（真 60 分钟 TTL：日志见到驱逐后再断言 GATE 仍在）。
-- 面板：`extensions/reeve/scripts/audit.mjs --fixture` 39 项（断言 + 截图 + report.json）；
+- 面板：`extensions/reeve/scripts/audit.mjs --fixture` 40 项（断言 + 截图 + report.json）；
   截图经多模态复审（结论表在 `extensions/reeve/preview/audit/README.md`）。
 
 ## 4. 与邻居的关系
