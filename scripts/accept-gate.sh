@@ -192,7 +192,11 @@ else
 fi
 
 # ── ⑨ Bifrost 已退役：进程必须是 0（拆完之后这条是硬断言，不再是 INFO）──
-bf=$(tasklist //FI "IMAGENAME eq bifrost-http.exe" //FO CSV 2>/dev/null | grep -c bifrost || true)
+if command -v tasklist >/dev/null 2>&1; then
+  bf=$(tasklist //FI "IMAGENAME eq bifrost-http.exe" //FO CSV 2>/dev/null | grep -c bifrost || true)
+else
+  bf=$(pgrep -fc 'bifrost-http' 2>/dev/null || true)   # Linux 对端：按进程名数
+fi
 [ "${bf:-0}" -eq 0 ] && pass ⑨ "Bifrost 进程 = 0" "进程表里没有 bifrost-http（代理层只剩 GATE）" || fail ⑨ "Bifrost 进程 = 0" "还有 ${bf} 个 bifrost-http 在跑（旧层没清干净）"
 if [ -d "$HOME/.reeve/proxy" ]; then echo "INFO ⑨b ~/.reeve/proxy 还在（$(ls "$HOME/.reeve/proxy" | tr '\n' ' ' | head -c 80)）—— 机器上的旧工件，删掉不影响运行"; fi
 
