@@ -88,6 +88,7 @@ const PLAN = [
   { id: '36-stats-stale', tab: 'stats', scenario: 'stale', note: '台账旧行的窗口放宽提示', expect: ['台账都是旧行'] },
   { id: '37-ledger-dark', tab: 'ledger', theme: 'dark', note: '台账 · 深色' },
   { id: '38-chain-loading', tab: 'chain', scenario: 'slow-config', skipReady: true, settle: 1200, note: '读取中的加载态', expect: ['正在读 GATE 配置'] },
+  { id: '40-chain-narrow-306', tab: 'chain', width: 306, note: '宿主侧栏 306px：不溢出、徽标与更多可见、免费行仍可读', expect: ['免费车道（自动）'] },
   { id: '39-gate-running', tab: 'chain', scenario: 'gate-running', note: '主徽标：在飞 + 排队（primary 色）', expect: ['2 在飞'] },
 ]
 

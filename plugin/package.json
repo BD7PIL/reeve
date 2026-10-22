@@ -1,6 +1,6 @@
 {
   "name": "@bd7pil/reeve",
-  "version": "0.1.8",
+  "version": "0.1.9",
   "description": "REEVE 编排层（opencode v2 插件）：agent/skill 注册 + 子任务台账 + GATE 代理层（路由/回退/台账）+ 性能统计",
   "type": "module",
   "main": "index.js",

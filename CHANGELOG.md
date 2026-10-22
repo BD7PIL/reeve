@@ -3,6 +3,15 @@
 Newest first. Versions follow the plugin package (`plugin/package.json`); the
 panel extension has its own tags (`reeve-<version>`).
 
+## 0.1.9 — 2026-10-22
+
+**Fix: OpenRouter/NVIDIA providers pointed at a doubled "/v1".** Their base URLs
+already end in `/v1`, but the provider blocks did not set `path`, so GATE called
+`https://openrouter.ai/api/v1/v1/chat/completions` (404). The bundled default now
+sets `"path": "/chat/completions"` for both; the user config was updated in the
+same commit. Ops: the extension is 0.1.4 (306px host-sidebar layout: secondary row
+meta is hidden so the `@free` title/badge stay one line).
+
 ## 0.1.8 — 2026-10-22
 
 **Fix: a 400 from zen meaning "model unavailable" is now a failover, not a caller error.**
