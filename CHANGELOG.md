@@ -24,10 +24,9 @@ whose direct-connect model shows 1M, triggering compaction far too early.
 Tiers now declare 1,000,000 / 131,072 — the minimum across paid candidates
 (the dynamic free pool does not participate in static limits).
 
-Panel extension 0.1.7 (same release): full redesign to OpenChamber's settings
-language — technical identifiers (chains, agents, providers, tier models) keep
-their original English IDs so the panel matches the config, while explanatory
-copy stays Chinese; chain cards, an editable `chain_for_model` surface replacing
+Panel extension 0.1.9 (same release): full redesign to OpenChamber's settings
+language — the panel UI is English; technical identifiers (chains, agents, providers,
+tier models) keep their original IDs so the panel matches the config; chain cards, an editable `chain_for_model` surface replacing
 the non-functional `agent → chain` section, advanced fields folded away, a
 diagnostics disclosure, and save-fidelity fixes (unknown policy/chain keys are
 preserved, only changed sections are rewritten, `chain_for_model` is compared
