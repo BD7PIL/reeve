@@ -25,12 +25,17 @@ on:
         default: true
 
 permissions:
-  contents: write   # 发布成功后补打标签（仅派发路径需要）
+  contents: write   # 发布成功后补打标签 / 创建 GitHub Release
   id-token: write   # OIDC：Trusted Publishing 与 provenance 都要它
+
+concurrency:
+  group: publish-reeve-plugin
+  cancel-in-progress: false
 
 jobs:
   publish:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
 
@@ -56,7 +61,8 @@ jobs:
           fi
           echo "本次版本：$V"
 
-      - name: 这个版本必须还没发过
+      - name: 这个版本必须还没发过（彩排跳过）
+        if: ${{ inputs.dry_run != true }}
         run: |
           set -euo pipefail
           if npm view "@bd7pil/reeve@${{ steps.ver.outputs.version }}" version >/dev/null 2>&1; then
@@ -82,7 +88,17 @@ jobs:
             echo "彩排：只打包，不发布"
             npm publish --access public --dry-run
           else
-            npm publish --access public --provenance
+            V="${{ steps.ver.outputs.version }}"
+            for i in 1 2 3; do
+              if npm publish --access public --provenance; then exit 0; fi
+              if npm view "@bd7pil/reeve@$V" version >/dev/null 2>&1; then
+                echo "publish 实际已落地（客户端报错但 registry 有版本）"
+                exit 0
+              fi
+              if [ "$i" -eq 3 ]; then exit 1; fi
+              echo "publish 第 $i 次失败；$((i * 15))s 后重试"
+              sleep $((i * 15))
+            done
           fi
 
       - name: 派发路径补打标签（保持"标签↔版本"始终成立）
@@ -92,6 +108,27 @@ jobs:
           V="${{ steps.ver.outputs.version }}"
           git tag "v$V"
           git push origin "v$V"
+
+      - name: 创建 GitHub Release（从 CHANGELOG 提取）
+        if: ${{ inputs.dry_run != true }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          V="${{ steps.ver.outputs.version }}"
+          awk -v v="$V" '
+            $0 ~ "^## " v "([ —-]|$)" { on=1; next }
+            on && /^## / { exit }
+            on { print }
+          ' CHANGELOG.md > /tmp/release-notes.md
+          test -s /tmp/release-notes.md
+          if gh release view "v$V" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "GitHub Release v$V 已存在，跳过"
+          else
+            gh release create "v$V" -R "$GITHUB_REPOSITORY" \
+              --verify-tag --latest \
+              --title "reeve $V" --notes-file /tmp/release-notes.md
+          fi
 
       - name: 收尾说明
         run: |

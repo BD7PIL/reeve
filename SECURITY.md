@@ -35,11 +35,11 @@ fixed in a patch release and credited unless you ask otherwise.
 
 - The plugin must never write `agents.*.model` or the `plugins` array. Model
   ownership belongs to the user / openchamber.
-- The extension has exactly one write path: `chainPathFor(…)`. `check.mjs`
+- The extension has exactly one write path: `fallbackConfigPathFor(…)`. `check.mjs`
   enforces this statically; do not weaken the gate.
 - No secret may be written into a tracked file. Provider keys belong in the
   engine's own credential store.
 - **No code or prompt literal from `oh-my-openagent` may ever be introduced**
   (SUL-1.0, non-relicensable). Ideas may be re-expressed; text may not be
-  copied. See `NOTICE.md` and `docs/PLAN.md`.
+  copied. See `NOTICE.md` and `README.md`.
 - Remote/CI runs must not contact a real provider; all tests are offline.

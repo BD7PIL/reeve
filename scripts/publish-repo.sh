@@ -58,6 +58,10 @@ node "$OUT/scripts/check-public-tree.mjs" --root "$OUT" || {
   echo "✗ 公开树过不了 check-public-tree —— 中止"
   exit 1
 }
+node "$OUT/scripts/check-doc-links.mjs" --root "$OUT" || {
+  echo "✗ 公开树过不了 check-doc-links —— 中止"
+  exit 1
+}
 
 echo "=== 3. 建公开提交（单提交，无历史）==="
 cd "$OUT"

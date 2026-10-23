@@ -1,9 +1,20 @@
 {
   "name": "reeve",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "private": true,
   "type": "module",
   "description": "REEVE 编排视图 —— GATE 链 / 免费车道 / 策略编辑 + 统计 + 台账",
+  "license": "MIT",
+  "author": "bd7pil",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/BD7PIL/reeve.git",
+    "directory": "extensions/reeve"
+  },
+  "homepage": "https://github.com/BD7PIL/reeve#readme",
+  "bugs": {
+    "url": "https://github.com/BD7PIL/reeve/issues"
+  },
   "openchamber": {
     "apiVersion": 1,
     "contributes": {

@@ -6,19 +6,20 @@ console. Contributions that fit those boundaries are welcome.
 
 ## Before you start
 
-- Read [docs/PLAN.md](docs/PLAN.md) (ownership, step order, hard gates) and
-  [NOTICE.md](NOTICE.md) (license boundaries).
+- Read [README.md](README.md) (architecture, install, tiers) and
+  [NOTICE.md](NOTICE.md) (license boundaries). The public tree does not contain
+  development records; those stay in the private development repository.
 - **Never introduce code or prompt literals from `oh-my-openagent` (SUL-1.0).**
   Ideas can be re-expressed; text cannot be copied.
-- The public tree (GitHub `main`, npm) does not contain `docs/`; development
-  records stay in the development repository and are cut on export.
+- The public tree (GitHub `main`, npm) does not contain development records;
+  they stay in the development repository and are cut on export.
 
 ## Setup
 
 Requirements: Node.js >= 22 (the engine version measured on EL7 is 24).
 
 ```bash
-npm --prefix plugin test          # 140 ledger/gate/proxy tests, zero runtime dependencies
+npm --prefix plugin test          # 194 plugin assertions, zero runtime dependencies
 npm run test:coverage             # c8 over the plugin suite + the hard floor gate below
 node scripts/check-plugin-pack.mjs
 node scripts/check-config-sample.mjs

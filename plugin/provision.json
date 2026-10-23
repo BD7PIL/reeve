@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "name": "reeve",
-  "version": "0.1.14",
+  "version": "0.1.15",
   "license": "MIT",
   "//": "REEVE 在 ocrc 实例里的装配说明。**没有二进制工件** —— 代理层是插件内的 GATE（纯 JS），不需要任何本地服务（Bifrost 时代已结束）。",
   "host": {
@@ -15,7 +15,7 @@
     ]
   },
   "enginePlugin": {
-    "spec": "@bd7pil/reeve@0.1.14",
+    "spec": "@bd7pil/reeve@0.1.15",
     "kind": "package",
     "entry": "~/.ocrc/components/reeve/node_modules/@bd7pil/reeve",
     "requiresPeer": []
@@ -38,10 +38,8 @@
       "~/.reeve-staging/.config/opencode/reeve/**"
     ]
   },
-  "//configSync": "GATE 的 fallback 配置（链/策略）由 ocrc 的 sync 推；reeve.jsonc 与 agents 是插件自身的配置面。",
+  "//configSync": "GATE 的 fallback 配置（链/策略）由 ocrc 的 sync 推；agent 定义在插件包里，不再写配置目录。",
   "configSync": [
-    "reeve.jsonc",
-    "agents",
     ".config/opencode/reeve"
   ],
   "verify": [

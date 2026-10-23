@@ -33,7 +33,8 @@ provider keys and hostnames. -->
 
 ## Config
 
-<!-- The smallest opencode config / reeve.jsonc that shows the problem.
+<!-- The smallest opencode.jsonc and, if relevant,
+~/.config/opencode/reeve/fallback.jsonc that show the problem.
 Never paste API keys. -->
 
 ```jsonc

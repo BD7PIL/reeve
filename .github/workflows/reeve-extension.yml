@@ -36,12 +36,17 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: reeve-extension-publish
+  cancel-in-progress: false
+
 jobs:
   # ===========================================================================
   # 1. Rebuild the panel, prove the committed artifact matches, then pack.
   # ===========================================================================
   bundle:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
 
@@ -67,6 +72,7 @@ jobs:
           rm -rf stage "$EXT.zip"
           mkdir -p "stage/$EXT"
           cp "extensions/$EXT/package.json" "stage/$EXT/"
+          cp extensions/$EXT/LICENSE "stage/$EXT/" 2>/dev/null || cp LICENSE "stage/$EXT/"
           # Ship exactly the directory the manifest points into.
           node --input-type=module -e '
             import { readFileSync } from "node:fs";
@@ -81,8 +87,10 @@ jobs:
           # Reproducible archive: fixed mtimes, sorted entries, no extra attrs.
           find "stage" -exec touch -t 198001010000 {} +
           ( cd stage && find "$EXT" -type f | LC_ALL=C sort | zip -qX "../$EXT.zip" -@ )
+          sha256sum "$EXT.zip" > "$EXT.zip.sha256"
           echo "--- $EXT.zip ---"
           unzip -l "$EXT.zip"
+          cat "$EXT.zip.sha256"
 
       - name: Assert the install shape
         run: |
@@ -105,7 +113,9 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: reeve-zip
-          path: reeve.zip
+          path: |
+            reeve.zip
+            reeve.zip.sha256
           if-no-files-found: error
           retention-days: 7
 
@@ -116,6 +126,7 @@ jobs:
     needs: bundle
     if: inputs.publish
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
@@ -134,21 +145,26 @@ jobs:
           if gh release view "$PIN" -R "$GITHUB_REPOSITORY" --json assets \
                --jq '.assets[].name' 2>/dev/null | grep -qx "reeve.zip"; then
             echo "$PIN already carries reeve.zip — pinned, nothing to do"
+            gh release view "$PIN" -R "$GITHUB_REPOSITORY" --json assets \
+              --jq '.assets[].name' 2>/dev/null | grep -qx "reeve.zip.sha256" || \
+              gh release upload "$PIN" reeve.zip.sha256 -R "$GITHUB_REPOSITORY"
           else
             gh release view "$PIN" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1 || \
               gh release create "$PIN" -R "$GITHUB_REPOSITORY" \
-                --title "reeve extension $VER" \
-                --notes "openchamber extension bundle reeve $VER. Install: Settings -> Extensions -> paste $URL_BASE/$PIN/reeve.zip"
-            gh release upload "$PIN" "reeve.zip#reeve $VER" -R "$GITHUB_REPOSITORY"
+                --title "reeve extension $VER" --latest=false \
+                --notes "openchamber extension bundle reeve $VER. Install: Settings -> Extensions -> paste $URL_BASE/$PIN/reeve.zip"$'\n'"Changelog: https://github.com/$GITHUB_REPOSITORY/blob/main/CHANGELOG.md"
+            gh release upload "$PIN" "reeve.zip#reeve $VER" reeve.zip.sha256 -R "$GITHUB_REPOSITORY"
             echo "published $PIN/reeve.zip"
           fi
 
           gh release view "$CHANNEL" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1 || \
             gh release create "$CHANNEL" -R "$GITHUB_REPOSITORY" \
-              --title "reeve (latest)" \
+              --title "reeve (latest)" --latest=false \
               --notes "Channel pointer: always the newest reeve bundle. Stable install URL $URL_BASE/$CHANNEL/reeve.zip ; pin a version with the reeve-<version> tag."
-          gh release upload "$CHANNEL" "reeve.zip#reeve $VER" -R "$GITHUB_REPOSITORY" --clobber
-          echo "channel $CHANNEL now serves reeve $VER"
+          gh release upload "$CHANNEL" "reeve.zip#reeve $VER" reeve.zip.sha256 -R "$GITHUB_REPOSITORY" --clobber
+          gh release download "$CHANNEL" -p reeve.zip -D verify --clobber
+          ( cd verify && sha256sum -c ../reeve.zip.sha256 )
+          echo "channel $CHANNEL now serves reeve $VER (sha256 verified)"
 
   # ===========================================================================
   # 3. Mirror to the `reeve` branch (the only git-install shape openchamber
@@ -156,7 +172,9 @@ jobs:
   # ===========================================================================
   mirror:
     needs: bundle
+    if: inputs.publish
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
         with:

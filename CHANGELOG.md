@@ -3,6 +3,18 @@
 Newest first. Versions follow the plugin package (`plugin/package.json`); the
 panel extension has its own tags (`reeve-<version>`).
 
+## 0.1.15 — 2026-10-23
+
+**Open-source release readiness: documentation, CI reliability, and release notes.**
+No runtime behavior change. The public READMEs now describe 0.1.14/0.1.15
+accurately (five tiers, `reeve/manual`, GATE image routing, dynamic models.dev
+free filtering, 9 agents/8 subagents), and no longer link to development records
+that are excluded from the public tree. `plugin/README.md` was rewritten for the
+current GATE architecture (no Bifrost/proxy/chain.json). CI retries only the
+known CDP-startup flake, publishes create a GitHub Release from this changelog,
+and the extension release (0.1.6) carries its license, a checksum, and release
+notes; extension/pack releases no longer take the repository "Latest" badge.
+
 ## 0.1.14 — 2026-10-23
 
 **Free image filtering is dynamic now, not a static allowlist.** `free.require_image`
