@@ -1,27 +1,15 @@
 {
   "app": "http://127.0.0.1:4610/",
   "host": "127.0.0.1:4610",
-  "at": "2026-10-22T09:01:06.687Z",
+  "at": "2026-10-23T17:22:46.180Z",
   "guest": "http://127.0.0.1:4610/api/guests/reeve/panel/index.html",
   "checks": {
-    "textLen": 1801,
+    "textLen": 1643,
     "missing": [],
     "overflow": false,
     "tokens": []
   },
-  "save": {
-    "enabled": true,
-    "chain": "host-audit-mvjb9sfr",
-    "applied": true,
-    "targets": [
-      "deepseek/deepseek-flash"
-    ],
-    "restored": true,
-    "sha256Before": "a134a3887817d28c5dd9481e2bfd3d712993043833b95b13f9331a00ff7441a4",
-    "sha256After": "a134a3887817d28c5dd9481e2bfd3d712993043833b95b13f9331a00ff7441a4",
-    "gateDropped": true,
-    "error": null
-  },
+  "save": null,
   "consoleErrors": [],
   "failures": []
 }
