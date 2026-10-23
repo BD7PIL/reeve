@@ -1,12 +1,7 @@
 ---
 name: review
-description: >
-  代码审查的规则与输出契约。在审查代码 diff 时使用：五维 rubric（正确性 / 安全 / 性能 / 可维护性 /
-  测试覆盖）、按语言选规则文档、结构化输出契约（severity 与 category 必填，外加 path、行号、
-  existing_code 锚点片段、suggestion_code）、多轮评审时撤掉计划的做法、以及最后一轮的误报过滤。
-  不用于审查实施计划（那是 critic 的活）。
-description_en: >
-  Code review rules and output contract: five-axis rubric (correctness, security, performance, maintainability, test coverage), per-language rule docs, structured output (severity, category, path, line, existing_code anchor, suggestion_code), dropping the plan during review rounds, and a final false-positive pass. Not for reviewing implementation plans (that is critic's job).
+description: 代码审查的规则与输出契约。在审查代码 diff 时使用：五维 rubric（正确性 / 安全 / 性能 / 可维护性 / 测试覆盖）、按语言选规则文档、结构化输出契约（severity 与 category 必填，外加 path、行号、existing_code 锚点片段、suggestion_code）、多轮评审时撤掉计划的做法、以及最后一轮的误报过滤。不用于审查实施计划（那是 critic 的活）。
+description_en: Code review rules and output contract: five-axis rubric (correctness, security, performance, maintainability, test coverage), per-language rule docs, structured output (severity, category, path, line, existing_code anchor, suggestion_code), dropping the plan during review rounds, and a final false-positive pass. Not for reviewing implementation plans (that is critic's job).
 license: Apache-2.0
 metadata:
   source: alibaba/open-code-review

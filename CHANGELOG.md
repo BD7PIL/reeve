@@ -3,6 +3,16 @@
 Newest first. Versions follow the plugin package (`plugin/package.json`); the
 panel extension has its own tags (`reeve-<version>`).
 
+## 0.2.3 — 2026-10-23
+
+**Skill descriptions are real text again.** The review skill's frontmatter used
+YAML folded scalars (`description: >`), but the tiny frontmatter parser only
+understood single-line values, so the engine (and the host's skill list) saw the
+literal string `>`. The parser is unchanged; both descriptions are now
+single-line. Added a unit test that fails if any bundled agent/skill description
+is missing, a placeholder, or not localized (English host → `description_en`,
+Chinese host → `description`).
+
 ## 0.2.2 — 2026-10-23
 
 **The panel follows OpenChamber's language now.** Every host-visible string in the

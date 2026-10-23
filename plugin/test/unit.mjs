@@ -289,5 +289,22 @@ section('名册：subagent 工具描述补名 + 与 agents/*.md 不漂移')
   ok('provision.json 的 enginePlugin.spec 指向当前版本', provision.enginePlugin?.spec === `${pkg.name}@${pkg.version}`, `spec ${provision.enginePlugin?.spec} ≠ ${pkg.name}@${pkg.version}`)
 }
 
+// ---- agent / skill 描述：跟随 locale，且不能是 YAML 折叠符占位（'>'）----
+{
+  const { loadAgents, loadSkills } = await import('../src/register.js')
+  const { setLocale, getLocale } = await import('../src/locale.js')
+  const prev = getLocale()
+  setLocale('en')
+  const agentsEn = await loadAgents()
+  const skillsEn = await loadSkills()
+  ok('英文 agent 描述不是占位符', agentsEn.every((a) => typeof a.description === 'string' && a.description !== '>' && a.description.length > 10))
+  ok('英文 skill 描述不是占位符', skillsEn.every((x) => typeof x.description === 'string' && x.description !== '>' && x.description.length > 10))
+  ok('英文宿主拿到 description_en', /Orchestrator/.test(agentsEn.find((a) => a.id === 'foreman')?.description ?? ''))
+  setLocale('zh-CN')
+  const agentsZh = await loadAgents()
+  ok('中文宿主拿到中文描述', /编排者/.test(agentsZh.find((a) => a.id === 'foreman')?.description ?? ''))
+  setLocale(prev)
+}
+
 console.log(`
 结果：${pass} 通过 / ${fail} 失败`)
