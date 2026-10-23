@@ -154,10 +154,25 @@ const CONFIG = {
     }),
   )
   try {
-    await sleep(400)
-    const snap2 = JSON.parse(await readFile(secondSnap, 'utf8'))
+    // 两个实例的 setup 都是异步的；Windows runner 上 400ms 不够（快照里 gate 还可能是 null）。
+    // 等到复用标记真的出现再断言，避免把"还没写"误判成"没复用"。
+    const waitFor = async (path, predicate, timeoutMs = 8000) => {
+      const deadline = Date.now() + timeoutMs
+      let last = {}
+      while (Date.now() < deadline) {
+        try {
+          last = JSON.parse(await readFile(path, 'utf8'))
+          if (predicate(last)) return last
+        } catch {
+          /* 文件还没写 */
+        }
+        await sleep(100)
+      }
+      return last
+    }
+    const snap2 = await waitFor(secondSnap, (s) => s?.gate?.reused === true)
     assert.equal(snap2.gate?.error ?? null, null, `第二个实例不该报错（实际：${JSON.stringify(snap2.gate?.error)}）`)
-    assert.equal(snap2.gate.reused, true, '标记为复用（不是自己起的）')
+    assert.equal(snap2.gate?.reused, true, '标记为复用（不是自己起的）')
     assert.deepEqual(snap2.gate.chains, ['t1'], '复用者也拿到运行态（链列表）')
     assert.deepEqual(snap2.gate.chain_targets, { t1: ['p1/m1'] })
     // 复用者没有 gateHandle：运行态靠 2s 轮询 /gate/version（这里跑过一轮，覆盖该路径）
