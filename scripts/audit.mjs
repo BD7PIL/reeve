@@ -56,7 +56,7 @@ const typeSel = (selector, text) => ({ typeSel: selector, text })
  * `scenario` 走 preview/host-shim.js 的注入（不动真实文件）；`expect` 是必须出现的文本。
  */
 const PLAN = [
-  { id: '01-chain-default', tab: 'chain', note: '路由链首屏：链卡（含免费兜底行）+ 档位/模型/更多', expect: [L('Free lane', '免费车道'), L('Total attempts 4 = free 3 + paid 1', '总尝试 4 次 = 免费 3 + 付费 1')] },
+  { id: '01-chain-default', tab: 'chain', note: '路由链首屏：链卡（含免费兜底行）+ 档位/模型/更多', expect: [L('Free pool', '免费模型池'), L('Total attempts 4 = free 3 + paid 1', '总尝试 4 次 = 免费 3 + 付费 1')] },
   { id: '02-chain-row-selected', tab: 'chain', note: '选中模型 → 动作条（上移/下移/更换模型/移除）', steps: [clickSel('.oc-sdk-row', 1)], expect: [L('Selected: ', '已选：')] },
   { id: '03-chain-picker', tab: 'chain', note: '「更换模型」→ 搜索 + 模型列表 + 手填', steps: [clickSel('.oc-sdk-row', 1), click(L('Replace', '替换'))], expect: [L('Replace ', '替换 ')] },
   { id: '04-chain-picker-search', tab: 'chain', note: '搜索 deepseek → 只留命中的模型', steps: [clickSel('.oc-sdk-row', 1), click(L('Replace', '替换')), { type: 'deepseek' }] },
@@ -74,10 +74,10 @@ const PLAN = [
   { id: '16-chain-dirty-discard', tab: 'chain', note: '删模型 →「丢弃改动」→ 回到改动前', steps: [clickSel('.oc-sdk-row', 1), clickSel('[data-act="remove"]', 0), click(L('Discard', '放弃修改'))] },
   { id: '17-chain-keyboard', tab: 'chain', note: '键盘：选中后 Alt+↓ 换位（W3C APG）', steps: [clickSel('.oc-sdk-row', 1), { key: 'ArrowDown', alt: true }] },
   { id: '18-chain-selected-dark', tab: 'chain', theme: 'dark', note: '深色下的选中行 + 动作条', steps: [clickSel('.oc-sdk-row', 1)] },
-  { id: '19-free-default', tab: 'chain', note: '免费车道：开关/模型数/发现源 + 展开摘要', steps: [{ scrollSel: '[data-section="free"]', block: 'start' }], expect: [L('Free models', '免费模型数'), L('Expandable now', '当前可展开'), L('10 free models', '10 个免费模型')] },
+  { id: '19-free-default', tab: 'chain', note: '免费模型池：开关/模型数/发现源 + 展开摘要', steps: [{ scrollSel: '[data-section="free"]', block: 'start' }], expect: [L('Free models', '免费模型数'), L('Expandable now', '当前可展开'), L('10 free models', '10 个免费模型')] },
   { id: '20-free-cooling', tab: 'chain', scenario: 'free-cooling', note: '免费模型冷却中（摘要行）', steps: [clickSel('[data-act="free-refresh"]'), { scrollSel: '[data-free="expand"]', block: 'center' }], expect: [L('cooling', '冷却')] },
   { id: '21-free-empty', tab: 'chain', scenario: 'free-empty', note: '没有可展开的免费模型（空态）', steps: [{ scrollSel: '[data-section="free"]', block: 'start' }], expect: [L('No free models to expand right now', '当前没有可展开的免费模型')] },
-  { id: '22-free-error', tab: 'chain', scenario: 'free-error', note: '免费车道运行态读取失败', steps: [{ scrollSel: '[data-section="free"]', block: 'start' }], expect: [L('Runtime read failed', '运行态读取失败')] },
+  { id: '22-free-error', tab: 'chain', scenario: 'free-error', note: '免费模型池运行态读取失败', steps: [{ scrollSel: '[data-section="free"]', block: 'start' }], expect: [L('Runtime read failed', '运行态读取失败')] },
   { id: '23-free-max-dirty', tab: 'chain', note: '改免费模型数 → 未保存徽标（即时出现，不重绘）', steps: [typeSel('[data-free="max"] input', '1')], settle: 600, expect: [L('Unsaved', '未保存')] },
   { id: '24-free-prefer-add', tab: 'chain', note: '固定一个免费模型进偏好（高级折叠内）', steps: [clickSel('[data-section="free"] details.oc-advanced > summary'), typeSel('[data-free="prefer-add"] input', 'deepseek-v4.1-flash-free'), clickSel('[data-act="free-add"]'), { scrollSel: '[data-free-prefer="deepseek-v4.1-flash-free"]', block: 'center' }], expect: ['deepseek-v4.1-flash-free'] },
   { id: '25-gate-down', tab: 'chain', scenario: 'gate-down', note: '路由引擎没起：徽标 + 横幅 + 页签仍可用', expect: [L('Router is not running', '路由未运行'), L('Router not ready', '路由未就绪')] },
@@ -94,11 +94,11 @@ const PLAN = [
   { id: '36-stats-stale', tab: 'stats', scenario: 'stale', note: '台账旧行的窗口放宽提示', expect: [L('All rows are older than', '所有记录都早于')] },
   { id: '37-ledger-dark', tab: 'ledger', theme: 'dark', note: '任务记录 · 深色' },
   { id: '38-chain-loading', tab: 'chain', scenario: 'slow-config', skipReady: true, settle: 1200, note: '读取中的加载态', expect: [L('Reading router config', '正在读取路由配置')] },
-  { id: '40-chain-narrow-306', tab: 'chain', width: 306, note: '宿主侧栏 306px：不溢出、徽标与更多可见、免费行仍可读', expect: [L('Free lane', '免费车道')] },
+  { id: '40-chain-narrow-306', tab: 'chain', width: 306, note: '宿主侧栏 306px：不溢出、徽标与更多可见、免费行仍可读', expect: [L('Free pool', '免费模型池')] },
   { id: '39-gate-running', tab: 'chain', scenario: 'gate-running', note: '主徽标：运行中 + 排队（primary 色）', expect: [L('2 running', '2 个运行中')] },
   { id: '41-chain-selected-306', tab: 'chain', width: 306, note: '306px：选中行 + 动作条（Selected 前缀收起，按钮仍在）', steps: [clickSel('.oc-sdk-row', 1)], expect: [L('Replace', '替换'), L('Remove', '移除')] },
   { id: '42-stats-306', tab: 'stats', width: 306, note: '306px：统计行拆两行，不溢出', expect: [L('By chain', '按链')] },
-  { id: '43-free-advanced-306', tab: 'chain', width: 306, note: '306px：免费车道高级折叠（偏好/禁用/白名单）', steps: [clickSel('[data-section="free"] details.oc-advanced > summary'), { scrollSel: '[data-free="prefer"]', block: 'center' }], expect: [L('Preference order', '偏好顺序')] },
+  { id: '43-free-advanced-306', tab: 'chain', width: 306, note: '306px：免费模型池高级折叠（偏好/禁用/白名单）', steps: [clickSel('[data-section="free"] details.oc-advanced > summary'), { scrollSel: '[data-free="prefer"]', block: 'center' }], expect: [L('Preference order', '偏好顺序')] },
   { id: '44-gate-down-306', tab: 'chain', width: 306, scenario: 'gate-down', note: '306px + 路由没起：徽标与横幅都不挤坏', expect: [L('Router is not running', '路由未运行'), L('Router not ready', '路由未就绪')] },
 ]
 

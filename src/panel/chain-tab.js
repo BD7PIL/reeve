@@ -281,7 +281,7 @@ export function createChainTab({ host, onNeedPoll, readInfo = null, onStateChang
     render(section, snapshot)
   }
 
-  /** 保存是否真的到了 GATE：比的是链的**目标全集**（chain_targets与档位映射/策略/Free lane，
+  /** 保存是否真的到了 GATE：比的是链的**目标全集**（chain_targets与档位映射/策略/Free pool，
    *  不再只比链名 —— 只比名字会把"加了候选但 GATE 没变"误判成Applied（预览是内存写，以前就这样假绿。
    *  策略只比面板暴露的四个键（快照的 gate.policy 只投影这四个；planned 里带着未知键，直接比永远不等。 */
   function syncSave(snapshot) {
@@ -601,7 +601,7 @@ export function createChainTab({ host, onNeedPoll, readInfo = null, onStateChang
     return policySection
   }
 
-  /** Free lane：链里的 `@free` 展开成什么、几个、谁优先、谁Deny。写的是配置里的 `free` 节。
+  /** Free pool：链里的 `@free` 展开成什么、几个、谁优先、谁Deny。写的是配置里的 `free` 节。
    *  常用项只有开关/预算/发现源；调参（偏好/Deny/白名单/Refresh/cooling收进「Advanced」；
    *  Current expansion只留一行摘要（逐models列表在「Diagnostics」。 */
   function renderFree(section, snapshot) {
@@ -825,7 +825,7 @@ export function createChainTab({ host, onNeedPoll, readInfo = null, onStateChang
     return node
   }
 
-  /** Diagnostics：路径、原始错误码、编排面事实、Free lane展开明细 —— 都是要"能查到"而非"常看"的东西。 */
+  /** Diagnostics：路径、原始错误码、编排面事实、Free pool 展开明细 —— 都是要"能查到"而非"常看"的东西。 */
   function renderDiagnostics(section, snapshot) {
     const gate = snapshot?.gate ?? null
     const path = state.path ?? fallbackConfigPathFor(snapshot)

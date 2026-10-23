@@ -9,7 +9,7 @@
 //   · 词表是 flat key：拼错 key 会在英文源文案里显示 key 本身（一眼能看出来），
 //     zh-CN 缺项自动回退英文，不会出现空白。
 //
-// 术语（zh-CN）：provider=提供商 · agent=智能体 · chain=链 · tier=档位 · free lane=免费车道 ·
+// 术语（zh-CN）：provider=提供商 · agent=智能体 · chain=链 · tier=档位 · free pool=免费模型池 ·
 // retry policy=重试策略 · attempts=尝试 · switches=切换 · fallback=回退 · diagnostics=诊断信息。
 
 const EN = {
@@ -71,7 +71,7 @@ const EN = {
   'config.reading': 'Reading router config…',
   'config.cannotReadTitle': 'Cannot read router config',
   'config.cannotReadBody': '{error} (details under Diagnostics)',
-  'config.retryHint': 'Fix the file, then retry. Chains, policy and free lane are read-only while config is unavailable.',
+  'config.retryHint': 'Fix the file, then retry. Chains, policy and free pool are read-only while config is unavailable.',
   'config.problemsTitle.one': 'Config has 1 problem',
   'config.problemsTitle.other': 'Config has {n} problems',
   'snapshot.unavailableTitle': 'Snapshot unavailable',
@@ -79,7 +79,7 @@ const EN = {
   'snapshot.hint.notFound': 'The plugin has not written a snapshot yet; run a model call and it will.',
   'snapshot.hint.retry': 'Refresh to retry.',
   'gate.notRunningTitle': 'Router is not running',
-  'gate.notReadyTitle': 'Free lane runtime read error',
+  'gate.notReadyTitle': 'Free pool runtime read error',
   'gate.notReadyBody': '{error}. Expansion falls back to configured preferences and paid models; click Refresh to retry.',
   'diag.configFile': 'Config file',
   'diag.snapshot': 'Snapshot',
@@ -110,7 +110,7 @@ const EN = {
   'chain.deleteInUse': 'Delete ({tiers} in use)',
   'chain.modelsAria': '{chain} models (↑/↓ select · Alt+↑/↓ move · Enter replace · Delete remove)',
   'chain.modelsListAria': '{chain} models',
-  'chain.freeTitle': 'Free lane',
+  'chain.freeTitle': 'Free pool',
   'chain.freeDisabled': 'Disabled',
   'chain.freeUpTo': 'up to {n}',
   'chain.autoBadge': 'auto',
@@ -153,14 +153,14 @@ const EN = {
   'policy.restore': 'Return to primary after cooldown',
   'policy.restoreDesc': 'Default off: stay on the fallback model after a switch',
 
-  // ---- 免费车道 ----
-  'free.title': 'Free lane',
+  // ---- 免费模型池 ----
+  'free.title': 'Free pool',
   'free.hint': 'Controls how @free expands (save to apply)',
-  'free.enable': 'Enable free lane',
+  'free.enable': 'Enable free pool',
   'free.enableDesc': 'When off, @free expands to nothing and chains go straight to paid models',
   'free.models': 'Free models',
   'free.maxPlaceholder': 'default 3',
-  'free.off': 'Free lane is off',
+  'free.off': 'Free pool is off',
   'free.capped': 'Total attempts {total}: free capped at {cap}',
   'free.split': 'Total attempts {total} = free {cap} + paid {paid}',
   'free.runtimeReadFailed': 'Runtime unknown (read failed)',
@@ -316,7 +316,7 @@ const ZH = {
   'config.reading': '正在读取路由配置…',
   'config.cannotReadTitle': '读不到路由配置',
   'config.cannotReadBody': '{error}（详情见「诊断信息」）',
-  'config.retryHint': '修好文件后重试。配置不可用时，链、策略和免费车道为只读。',
+  'config.retryHint': '修好文件后重试。配置不可用时，链、策略和免费模型池为只读。',
   'config.problemsTitle.one': '配置有 1 个问题',
   'config.problemsTitle.other': '配置有 {n} 个问题',
   'snapshot.unavailableTitle': '快照不可用',
@@ -324,7 +324,7 @@ const ZH = {
   'snapshot.hint.notFound': '插件还没有写入快照；发起一次模型调用后就会有。',
   'snapshot.hint.retry': '刷新重试。',
   'gate.notRunningTitle': '路由未运行',
-  'gate.notReadyTitle': '免费车道运行态读取失败',
+  'gate.notReadyTitle': '免费模型池运行态读取失败',
   'gate.notReadyBody': '{error}。展开会退回配置里的偏好与付费模型；点「刷新」重试。',
   'diag.configFile': '配置文件',
   'diag.snapshot': '快照',
@@ -354,7 +354,7 @@ const ZH = {
   'chain.deleteInUse': '删除（{tiers} 正在使用）',
   'chain.modelsAria': '{chain} 的模型（↑/↓ 选择 · Alt+↑/↓ 移动 · Enter 替换 · Delete 移除）',
   'chain.modelsListAria': '{chain} 的模型',
-  'chain.freeTitle': '免费车道',
+  'chain.freeTitle': '免费模型池',
   'chain.freeDisabled': '已停用',
   'chain.freeUpTo': '最多 {n} 个',
   'chain.autoBadge': '自动',
@@ -395,13 +395,13 @@ const ZH = {
   'policy.restore': '冷却结束后回到首选',
   'policy.restoreDesc': '默认关闭：切换后继续使用备用模型',
 
-  'free.title': '免费车道',
+  'free.title': '免费模型池',
   'free.hint': '控制 @free 如何展开（保存后生效）',
-  'free.enable': '启用免费车道',
+  'free.enable': '启用免费模型池',
   'free.enableDesc': '关闭后 @free 不展开，链直接走付费模型',
   'free.models': '免费模型数',
   'free.maxPlaceholder': '默认 3',
-  'free.off': '免费车道已关闭',
+  'free.off': '免费模型池已关闭',
   'free.capped': '总尝试 {total} 次：免费最多 {cap} 个',
   'free.split': '总尝试 {total} 次 = 免费 {cap} + 付费 {paid}',
   'free.runtimeReadFailed': '运行态未知（读取失败）',

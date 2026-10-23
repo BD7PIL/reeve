@@ -9,7 +9,7 @@
 > it changed. It never starts sessions/prompts and never touches the engine
 > config. All colours/type sizes come from host tokens; controls are the host kit.
 
-面板：三个 tab —— **路由链**（每条链的模型、`@free` 免费兜底行、档位映射、重试与回退、免费车道；唯一会写的地方）/
+面板：三个 tab —— **路由链**（每条链的模型、`@free` 免费兜底行、档位映射、重试与回退、免费模型池；唯一会写的地方）/
 **调用统计**（代理台账归因）/ **任务记录**（子任务列表）。装在 openchamber 上（宿主的扩展机制）。
 
 > **控制面不在这里。** 派活 / 中断全在模型侧。这个面板**只写一个文件**：
@@ -18,15 +18,15 @@
 > 它也绝不 `startSession` / `prompt` / `compose` / `attach`。`check.mjs` 里有静态守门盯着这两件事
 > （源码里每个 `writeFile(` 的实参都必须是 `fallbackConfigPathFor(…)`）。
 
-## 免费车道卡
+## 免费模型池卡
 
-路由链 tab 里的「免费车道」卡编辑配置的 `free` 节：启用、免费模型数（含预算提示）、
+路由链 tab 里的「免费模型池」卡编辑配置的 `free` 节：启用、免费模型数（含预算提示）、
 参与发现的来源（OpenCode / OpenRouter / NVIDIA，含发现状态）、「当前可展开 N 个」一行摘要。
 偏好顺序、排除、NVIDIA 白名单、刷新/冷却参数收在「高级」折叠里。
 动态 image 过滤（`require_image` + models.dev modalities）在插件侧，面板只显示结果。
 纯文本免费模型不会进入展开。
 
-链里写 `@free` 显示为「免费车道 · 自动 · 最多 N 个」；保存后「已生效」比较的是
+链里写 `@free` 显示为「免费模型池 · 自动 · 最多 N 个」；保存后「已生效」比较的是
 `chain_targets` + `chain_for_model` + `policy` + `free` 的真实变化，不再只比链名。
 
 ## 档位映射（0.1.7 起替代 agent → 链）
@@ -93,4 +93,4 @@ curl -b <会话 cookie> -X PUT -H 'Content-Type: application/json' \
 - 错误/空/加载/脏态必须一眼可读，并给出下一步（刷新/重新读取/批准权限）；
   文本编辑即时点亮保存条（不重绘，不打断输入）。
 
-相关：`preview/audit/README.md`（44 项审计与结论）、`plugin/src/gate/free.js`（免费车道的实现与注释）。
+相关：`preview/audit/README.md`（44 项审计与结论）、`plugin/src/gate/free.js`（免费模型池的实现与注释）。
