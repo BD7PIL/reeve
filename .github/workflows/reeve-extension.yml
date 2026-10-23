@@ -1,0 +1,192 @@
+# reeve-extension — publish the openchamber console bundle.
+#
+# Install shape (verified against @openchamber/web 2.3.3): Settings → Extensions
+# accepts a public https `.zip` whose path ends in `.zip`, and the installer
+# unwraps a root only when the archive has exactly one top-level directory that
+# contains package.json. So the bundle is:
+#
+#   reeve.zip
+#     └── reeve/
+#           ├── package.json
+#           └── panel/…
+#
+# Naming: the asset is constant (`reeve.zip`) and the tag carries the version.
+#   tag reeve-<version>  immutable pin, created once
+#   tag reeve-latest     channel pointer, overwritten on purpose so the install
+#                        URL never changes
+#
+# The same run also pushes `extensions/reeve` to the `reeve` branch via
+# `git subtree split`. That shape (`https://github.com/BD7PIL/reeve#reeve`) is
+# the only one openchamber can self-update: zip installs answer "not-git" to
+# the panel's update check.
+#
+# Publishing is deliberate — workflow_dispatch only. A re-dispatch skips an
+# existing pin tag; bump `extensions/reeve/package.json` to publish a new one.
+
+name: reeve-extension
+
+on:
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: 'upload the bundle to its release tags'
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: reeve-extension-publish
+  cancel-in-progress: false
+
+jobs:
+  # ===========================================================================
+  # 1. Rebuild the panel, prove the committed artifact matches, then pack.
+  # ===========================================================================
+  bundle:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Install pinned build deps (host SDK + esbuild)
+        run: npm --prefix extensions/reeve ci
+
+      - name: Host manifest and panel gate
+        run: node extensions/reeve/check.mjs
+
+      - name: Committed panel must match src byte for byte
+        run: |
+          npm --prefix extensions/reeve run build
+          git diff --exit-code -- extensions/reeve/panel
+
+      - name: Pack the install shape
+        run: |
+          set -euo pipefail
+          EXT=reeve
+          rm -rf stage "$EXT.zip"
+          mkdir -p "stage/$EXT"
+          cp "extensions/$EXT/package.json" "stage/$EXT/"
+          cp extensions/$EXT/LICENSE "stage/$EXT/" 2>/dev/null || cp LICENSE "stage/$EXT/"
+          # Ship exactly the directory the manifest points into.
+          node --input-type=module -e '
+            import { readFileSync } from "node:fs";
+            const c = JSON.parse(readFileSync("extensions/reeve/package.json", "utf8")).openchamber.contributes;
+            const dirs = [...new Set([c.panel?.entry].filter(Boolean).map((p) => p.split("/")[0]))];
+            console.log(dirs.join("\n"));
+          ' > dirs.txt
+          while read -r d; do
+            cp -r "extensions/$EXT/$d" "stage/$EXT/"
+          done < dirs.txt
+          echo "payload dirs: $(tr '\n' ' ' < dirs.txt)"
+          # Reproducible archive: fixed mtimes, sorted entries, no extra attrs.
+          find "stage" -exec touch -t 198001010000 {} +
+          ( cd stage && find "$EXT" -type f | LC_ALL=C sort | zip -qX "../$EXT.zip" -@ )
+          sha256sum "$EXT.zip" > "$EXT.zip.sha256"
+          echo "--- $EXT.zip ---"
+          unzip -l "$EXT.zip"
+          cat "$EXT.zip.sha256"
+
+      - name: Assert the install shape
+        run: |
+          set -euo pipefail
+          node --input-type=module -e '
+            import { readFileSync, existsSync } from "node:fs";
+            const pkg = JSON.parse(readFileSync("extensions/reeve/package.json", "utf8"));
+            const c = pkg.openchamber?.contributes;
+            if (!c?.panel?.entry) throw new Error("no contributes.panel.entry");
+            if (c.panel.id !== "reeve") throw new Error(`panel.id ${c.panel.id} != reeve`);
+            if (!/^[a-z][a-z0-9-]*$/.test(c.panel.id)) throw new Error("panel.id fails the SDK pattern");
+            if (!existsSync(`extensions/reeve/${c.panel.entry}`)) throw new Error(`manifest entry missing: ${c.panel.entry}`);
+            if (!(c.capabilities ?? []).includes("sessions")) throw new Error("capabilities must include sessions");
+            console.log(`reeve ${pkg.version}: manifest ok (panel.id ${c.panel.id})`);
+          '
+          TOPS="$(unzip -Z1 reeve.zip | cut -d/ -f1 | sort -u)"
+          [ "$TOPS" = "reeve" ] || { echo "::error::reeve.zip must hold exactly one top-level directory, got: $TOPS"; exit 1; }
+          unzip -Z1 reeve.zip | grep -qx "reeve/package.json" || { echo "::error::package.json must be at the archive root"; exit 1; }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: reeve-zip
+          path: |
+            reeve.zip
+            reeve.zip.sha256
+          if-no-files-found: error
+          retention-days: 7
+
+  # ===========================================================================
+  # 2. Pin once, move the channel pointer every time.
+  # ===========================================================================
+  publish:
+    needs: bundle
+    if: inputs.publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: reeve-zip
+      - name: Publish bundle
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          VER="$(node -p "require('./extensions/reeve/package.json').version")"
+          PIN="reeve-$VER"
+          CHANNEL="reeve-latest"
+          URL_BASE="https://github.com/$GITHUB_REPOSITORY/releases/download"
+
+          if gh release view "$PIN" -R "$GITHUB_REPOSITORY" --json assets \
+               --jq '.assets[].name' 2>/dev/null | grep -qx "reeve.zip"; then
+            echo "$PIN already carries reeve.zip — pinned, nothing to do"
+            gh release view "$PIN" -R "$GITHUB_REPOSITORY" --json assets \
+              --jq '.assets[].name' 2>/dev/null | grep -qx "reeve.zip.sha256" || \
+              gh release upload "$PIN" reeve.zip.sha256 -R "$GITHUB_REPOSITORY"
+          else
+            gh release view "$PIN" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1 || \
+              gh release create "$PIN" -R "$GITHUB_REPOSITORY" \
+                --title "reeve extension $VER" --latest=false \
+                --notes "openchamber extension bundle reeve $VER. Install: Settings -> Extensions -> paste $URL_BASE/$PIN/reeve.zip"$'\n'"Changelog: https://github.com/$GITHUB_REPOSITORY/blob/main/CHANGELOG.md"
+            gh release upload "$PIN" "reeve.zip#reeve $VER" reeve.zip.sha256 -R "$GITHUB_REPOSITORY"
+            echo "published $PIN/reeve.zip"
+          fi
+
+          gh release view "$CHANNEL" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1 || \
+            gh release create "$CHANNEL" -R "$GITHUB_REPOSITORY" \
+              --title "reeve (latest)" --latest=false \
+              --notes "Channel pointer: always the newest reeve bundle. Stable install URL $URL_BASE/$CHANNEL/reeve.zip ; pin a version with the reeve-<version> tag."
+          gh release upload "$CHANNEL" "reeve.zip#reeve $VER" reeve.zip.sha256 -R "$GITHUB_REPOSITORY" --clobber
+          gh release download "$CHANNEL" -p reeve.zip -D verify --clobber
+          ( cd verify && sha256sum -c ../reeve.zip.sha256 )
+          echo "channel $CHANNEL now serves reeve $VER (sha256 verified)"
+
+  # ===========================================================================
+  # 3. Mirror to the `reeve` branch (the only git-install shape openchamber
+  #    accepts; the clone root must be the guest root).
+  # ===========================================================================
+  mirror:
+    needs: bundle
+    if: inputs.publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Push extensions/reeve to the reeve branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git config user.name "reeve-extension"
+          git config user.email "reeve-extension@users.noreply.github.com"
+          git subtree split --prefix=extensions/reeve -b split-reeve HEAD >/dev/null
+          git push --force "https://x-access-token:$GH_TOKEN@github.com/$GITHUB_REPOSITORY.git" \
+            "split-reeve:refs/heads/reeve"
+          echo "reeve ← extensions/reeve (guest root = repo root of that branch)"

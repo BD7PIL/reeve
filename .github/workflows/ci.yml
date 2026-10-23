@@ -1,0 +1,159 @@
+# CI —— 三道闸门。全部离线可跑（不碰网络、不碰任何 provider）。
+#
+#   ① 插件：194 项断言，纯 Node、零依赖。两条 Node 线（22 = engines 地线下限，
+#      只跑测试；24 = 统一主线——三仓（ocrc / reeve / deep-memory）的门槛腿、
+#      本机开发机与引擎实跑都在这条，覆盖率锚定 24）
+#   ② 插件：npm 包内容断言（许可文本要在、docs/ 与密钥不许在）—— 见 scripts/check-plugin-pack.mjs
+#   ③ 扩展：用宿主自己的解析器校验 manifest 与打包完整性，**再重建一次**确认提交的
+#      panel/main.js 与 src 同步（产物入库就必须与源同步，否则装到机器上是旧面板）
+#   ④ 引擎配置样板：整行注释 + 合法 JSON（部署脚本会把它当 JSON 派生）
+#   ⑤ 公开树：内网地址/个人路径/凭据形状 + README 链接（docs/ 不发布）
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: lint（biome，只查不格式化）
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: npm ci
+      - run: npm run lint
+
+  plugin:
+    name: plugin 测试（${{ matrix.os }} / node ${{ matrix.node }}）
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        # ubuntu 是主跑；windows 一条腿只验证"测试自称跨平台"（路径用 path.join、
+        # 临时目录用 tmpdir）不是谎话——出红就修断言，不是跳过。
+        include:
+          - os: ubuntu-latest
+            node: 22
+          - os: ubuntu-latest
+            node: 24
+          - os: windows-latest
+            node: 24
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      # c8 是 plugin 的 devDependency（运行时仍然零依赖）；测试本身只用 node。
+      - name: 装测试依赖（c8）
+        run: npm --prefix plugin ci
+      - name: 测试
+        run: npm --prefix plugin test
+      # 覆盖率只在一个腿上看（数字对平台/node 行敏感，基线锚定 ubuntu/node24）。
+      - name: 覆盖率硬门槛
+        if: matrix.os == 'ubuntu-latest' && matrix.node == 24
+        run: |
+          npm --prefix plugin run test:coverage
+          node scripts/check-coverage.mjs
+      - name: 上传覆盖率
+        if: always() && matrix.os == 'ubuntu-latest' && matrix.node == 24
+        uses: actions/upload-artifact@v4
+        with:
+          name: reeve-coverage
+          path: plugin/coverage/
+          if-no-files-found: warn
+          retention-days: 7
+      - name: npm 包内容断言
+        run: node scripts/check-plugin-pack.mjs
+
+  extension:
+    name: 扩展（构建 + 产物一致性）
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: 装构建依赖（宿主 SDK + esbuild，版本已钉）
+        run: npm --prefix extensions/reeve ci
+      - name: 守门：manifest / 打包完整性 / 禁控制器动作 / 单一写路径
+        run: node extensions/reeve/check.mjs
+      - name: 重建面板
+        run: npm --prefix extensions/reeve run build
+      - name: 提交的产物必须与 src 逐字节一致
+        run: git diff --exit-code -- extensions/reeve/panel
+
+  ui-audit:
+    name: 面板 UI 审计（headless Chrome，断言门）
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      # 断言看 innerText，不依赖字体；装中文字体是为了 artifact 里的截图可读
+      - name: 中文字体（artifact 可读性）
+        run: sudo apt-get update && sudo apt-get install -y fonts-noto-cjk
+      - name: 装构建依赖（宿主 SDK + esbuild）
+        run: npm --prefix extensions/reeve ci
+      - name: 审计（CI 夹具；控制台/溢出/关键文本/token/对比度 + 40 项截图）
+        run: |
+          set -u
+          for attempt in 1 2; do
+            if node extensions/reeve/scripts/audit.mjs --fixture; then exit 0; else code=$?; fi
+            # exit 3 = CDP 页面目标没起来（已知 Chrome 启动 flake）；断言失败不重试。
+            if [ "$code" -ne 3 ] || [ "$attempt" -eq 2 ]; then exit "$code"; fi
+            echo "CDP did not start (attempt $attempt); retrying once"
+            sleep 3
+          done
+          exit 1
+      - name: 上传截图与报告
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reeve-panel-audit
+          path: |
+            extensions/reeve/preview/audit/*.png
+            extensions/reeve/preview/audit/report.json
+          if-no-files-found: error
+
+  config:
+    name: 引擎配置样板
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: node scripts/check-config-sample.mjs
+
+  public-tree:
+    name: 公开树门禁（内网地址 / 个人路径 / 凭据形状 / 文档链接）
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      # docs/ 与 .zcode/ 不随公开树发布，导出时会被剪掉；其余文件必须干净。
+      - run: node scripts/check-public-tree.mjs --root . --exclude docs --exclude .zcode
+      - run: node scripts/check-doc-links.mjs --root .
