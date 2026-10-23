@@ -69,6 +69,8 @@ const sha256 = (text) => createHash('sha256').update(text).digest('hex')
 const list = await (await fetch(`${CDP}/json/list`)).json()
 const appHost = new URL(APP).host
 let page = list.find((t) => t.type === 'page' && String(t.url).includes(appHost))
+// 桌面客户端的顶层页是 openchamber-ui://app/index.html（不包含 HTTP host）——退回唯一的 page target
+if (!page) page = list.find((t) => t.type === 'page')
 if (!page && LOGIN) {
   page = await (await fetch(`${CDP}/json/new?${encodeURIComponent(APP)}`, { method: 'PUT' })).json()
   await sleep(3000)
@@ -123,13 +125,19 @@ if (LOGIN) {
 // 面板已经开着（比如刚抓过图）就别再点：入口是 toggle，会把它关掉。
 const hasPanel = async () => {
   const t = await send('Target.getTargets')
-  return Boolean(t.result?.targetInfos?.some((x) => x.type === 'iframe' && String(x.url).includes('/api/guests/reeve/') && String(x.url).includes(appHost)))
+  return Boolean(
+    t.result?.targetInfos?.some(
+      (x) => x.type === 'iframe' && String(x.url).includes('/panel/index.html') && (String(x.url).includes('/api/guest-files/') || String(x.url).includes('/api/guests/reeve/')),
+    ),
+  )
 }
 let clicked = await hasPanel()
 for (let i = 0; i < 10 && !clicked; i++) {
   const r = await send('Runtime.evaluate', {
     expression: `(() => {
-      const el = [...document.querySelectorAll('button,[role=button],a')].find((e) => /REEVE|编排/.test((e.getAttribute('aria-label') || '') + (e.getAttribute('title') || '') + (e.textContent || '')))
+      // 侧栏入口的 aria-label 正好是 REEVE；别点模型选择器上的 "REEVE standard"
+      const exact = [...document.querySelectorAll('button,[role=button],a')].find((e) => (e.getAttribute('aria-label') || '').trim() === 'REEVE')
+      const el = exact || [...document.querySelectorAll('button,[role=button],a')].find((e) => /REEVE|编排/.test((e.getAttribute('title') || '') + (e.textContent || '')))
       if (!el) return false
       el.click()
       return true
@@ -149,7 +157,12 @@ await sleep(1200)
 let frame = null
 for (let i = 0; i < 20 && !frame; i++) {
   const t = await send('Target.getTargets')
-  frame = t.result?.targetInfos?.find((x) => x.type === 'iframe' && String(x.url).includes('/api/guests/reeve/') && String(x.url).includes(appHost))
+  frame = t.result?.targetInfos?.find(
+    (x) =>
+      x.type === 'iframe' &&
+      String(x.url).includes('/panel/index.html') &&
+      (String(x.url).includes('/api/guest-files/') || String(x.url).includes('/api/guests/reeve/')),
+  )
   if (!frame) await sleep(500)
 }
 if (!frame) {
@@ -168,6 +181,12 @@ for (let i = 0; i < 24 && ready < 200; i++) {
   ready = Number(probe.result?.result?.value ?? 0)
 }
 
+// 面板语言跟随宿主：按它自己的 <html lang> 选断言文案（中文宿主/英文宿主都要能验收）
+const langProbe = await send('Runtime.evaluate', { expression: 'document.documentElement.lang', returnByValue: true }, sid)
+const zh = /^zh/i.test(String(langProbe.result?.result?.value ?? ''))
+const L = (en, zhText) => (zh ? zhText : en)
+const MUST = zh ? ['免费车道', '总尝试', '链', '统计', '任务'] : ['Free lane', 'Total attempts', 'Chains', 'Stats', 'Tasks']
+
 const checks = await send(
   'Runtime.evaluate',
   {
@@ -176,7 +195,7 @@ const checks = await send(
       const rs = getComputedStyle(de)
       const tokens = ['--surface-background', '--surface-elevated', '--surface-subtle', '--interactive-border', '--status-error'].filter((n) => !rs.getPropertyValue(n).trim())
       const text = document.body.innerText
-      const must = ['免费车道', '免费车道', '总尝试', '路由链', '调用统计', '任务记录']
+      const must = ${JSON.stringify(MUST)}
       return {
         textLen: text.length,
         missing: must.filter((s) => !text.includes(s)),
@@ -216,27 +235,27 @@ if (SAVE_TEST) {
     `(() => { const b = [...${scope}.querySelectorAll('button,[role=button]')].find((b) => ((b.textContent || '').trim()).includes(${JSON.stringify(text)})); if (!b) return false; b.click(); return true })()`
   try {
     if (!backup) throw new Error(`读不到配置：${CONFIG}`)
-    await step('新增链', clickBtn('+ 新增链'))
+    await step('new chain', clickBtn(L('+ New chain', '+ 新建链')))
     await step(
       '填链名',
       `(() => { const i = document.querySelector('[data-act="new-chain-row"] input'); if (!i) return false; const s = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set; s.call(i, ${JSON.stringify(chainName)}); i.dispatchEvent(new Event('input', { bubbles: true })); return true })()`,
     )
     await step(
       '创建',
-      `(() => { const b = [...document.querySelectorAll('[data-act="new-chain-row"] button')].find((b) => (b.textContent || '').trim() === '创建'); if (!b) return false; b.click(); return true })()`,
+      `(() => { const b = [...document.querySelectorAll('[data-act="new-chain-row"] button')].find((b) => (b.textContent || '').trim() === ${JSON.stringify(L('Create', '创建'))}); if (!b) return false; b.click(); return true })()`,
     )
     await step(
       '添加模型',
-      `(() => { const card = document.querySelector('[data-chain="${chainName}"]'); if (!card) return false; const b = [...card.querySelectorAll('button')].find((b) => (b.textContent || '').includes('添加模型')); if (!b) return false; b.click(); return true })()`,
+      `(() => { const card = document.querySelector('[data-chain="${chainName}"]'); if (!card) return false; const b = [...card.querySelectorAll('button')].find((b) => (b.textContent || '').includes(${JSON.stringify(L('+ Add model', '+ 添加模型'))})); if (!b) return false; b.click(); return true })()`,
     )
     await step(
       '选一个模型',
       `(() => { const rows = [...document.querySelectorAll('[data-chain="${chainName}"] .oc-sdk-row')]; const r = rows[0]; if (!r) return false; r.click(); return true })()`,
     )
-    await step('保存并应用', clickBtn('保存并应用'))
+    await step('save', clickBtn(L('Save & apply', '保存并应用')))
     for (let i = 0; i < 20 && !applied; i++) {
       await sleep(1000)
-      applied = String(await panelEval('document.body.innerText')).includes('已生效')
+      applied = String(await panelEval('document.body.innerText')).includes(L('Applied', '已生效'))
     }
     for (let i = 0; i < 10 && !targets; i++) {
       await sleep(1000)
@@ -278,7 +297,7 @@ if (SAVE_TEST) {
       error,
     }
     if (error) failures.push(`保存测试：${error}`)
-    if (!applied) failures.push('保存测试：面板没有出现「已生效」')
+    if (!applied) failures.push(`保存测试：面板没有出现「${L('Applied', '已生效')}」`)
     if (!targets) failures.push('保存测试：GATE chain_targets 里没有临时链')
     if (!restored) failures.push('保存测试：配置没有原样恢复（sha256 不一致）')
     if (!dropped) failures.push('保存测试：恢复后 GATE 仍带着临时链')

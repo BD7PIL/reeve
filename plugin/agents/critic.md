@@ -1,5 +1,6 @@
 ---
 description: 计划评审者（严格版）。多轮 × 多角度，默认立场是不通过。不改文件、不跑命令。
+description_en: Plan reviewer (strict). Multiple rounds and angles; defaults to rejecting. Read-only: no edits, no commands.
 mode: subagent
 hidden: true
 model: reeve/pro

@@ -1,5 +1,6 @@
 ---
 description: 视觉识别者。读取磁盘上的图片/PDF/截图，回答颜色、布局、OCR、图表问题。只读，不改文件、不跑命令。
+description_en: Vision. Reads images, PDFs and screenshots from disk and answers color, layout, OCR and chart questions. Read-only.
 mode: subagent
 hidden: true
 model: reeve/multimodal

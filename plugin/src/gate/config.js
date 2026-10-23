@@ -8,6 +8,8 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
+import { t } from '../locale.js'
+
 /** 打包的兜底配置（无用户配置时用它）。 */
 export const BUNDLED_FALLBACK_PATH = fileURLToPath(new URL('../../default-fallback.json', import.meta.url))
 
@@ -79,7 +81,7 @@ export function normalizeGateConfig(raw) {
     const v = pSrc[key]
     if (v === undefined) continue
     if (typeof v !== typeof POLICY_DEFAULTS[key] && !(Array.isArray(v) && Array.isArray(POLICY_DEFAULTS[key]))) {
-      problems.push(`policy.${key} 类型不对（忽略）`)
+      problems.push(t('gate.problem.policyType', { key }))
       continue
     }
     policy[key] = v
@@ -90,11 +92,11 @@ export function normalizeGateConfig(raw) {
   for (const [id, v] of Object.entries(asRecord(src.providers) ?? {})) {
     const p = asRecord(v)
     if (!p) {
-      problems.push(`providers.${id} 不是对象（忽略）`)
+      problems.push(t('gate.problem.providerNotObject', { id }))
       continue
     }
     if (typeof p.base_url !== 'string' || p.base_url.length === 0) {
-      problems.push(`providers.${id} 缺 base_url（不可达，候选会被跳过）`)
+      problems.push(t('gate.problem.providerNoBaseUrl', { id }))
     }
     providers[id] = {
       id,
@@ -133,7 +135,7 @@ export function normalizeGateConfig(raw) {
   }
   for (const [id, list] of Object.entries(asRecord(fSrc.static) ?? {})) {
     if (!Array.isArray(list)) {
-      problems.push(`free.static.${id} 不是数组（忽略）`)
+      problems.push(t('gate.problem.freeStaticNotArray', { id }))
       continue
     }
     free.static[id] = asStrings(list)
@@ -141,20 +143,20 @@ export function normalizeGateConfig(raw) {
   for (const [id, v] of Object.entries(asRecord(fSrc.sources) ?? {})) {
     const s = asRecord(v)
     if (!s || typeof s.url !== 'string' || s.url.length === 0) {
-      problems.push(`free.sources.${id} 缺 url（忽略）`)
+      problems.push(t('gate.problem.freeSourceNoUrl', { id }))
       continue
     }
     free.sources[id] = { url: s.url, filter: typeof s.filter === 'string' && s.filter.length > 0 ? s.filter : FREE_DEFAULTS.sources[id]?.filter ?? 'opencode-free' }
   }
   for (const id of free.providers) {
-    if (!providers[id]) problems.push(`free.providers 含未配置的 provider：${id}（会被跳过）`)
+    if (!providers[id]) problems.push(t('gate.problem.freeProviderUnconfigured', { id }))
   }
 
   const chains = {}
   for (const [name, v] of Object.entries(asRecord(src.chains) ?? {})) {
     const targets = asStrings(asRecord(v)?.targets)
     if (targets.length === 0) {
-      problems.push(`chains.${name} 没有 targets（忽略）`)
+      problems.push(t('gate.problem.chainNoTargets', { name }))
       continue
     }
     chains[name] = { targets }
@@ -163,7 +165,7 @@ export function normalizeGateConfig(raw) {
   const agents = {}
   for (const [agent, chain] of Object.entries(asRecord(src.agents) ?? {})) {
     if (typeof chain !== 'string' || !chains[chain]) {
-      problems.push(`agents.${agent} 指向的链不存在：${String(chain)}（忽略）`)
+      problems.push(t('gate.problem.agentMissingChain', { agent, chain: String(chain) }))
       continue
     }
     agents[agent] = chain
@@ -172,14 +174,14 @@ export function normalizeGateConfig(raw) {
   const chainForModel = {}
   for (const [model, chain] of Object.entries(asRecord(src.chain_for_model) ?? {})) {
     if (typeof chain !== 'string' || !chains[chain]) {
-      problems.push(`chain_for_model.${model} 指向的链不存在：${String(chain)}（忽略）`)
+      problems.push(t('gate.problem.chainForModelMissingChain', { model, chain: String(chain) }))
       continue
     }
     chainForModel[model] = chain
   }
 
   const defaultChain = typeof src.default_chain === 'string' && chains[src.default_chain] ? src.default_chain : Object.keys(chains)[0] ?? null
-  if (defaultChain === null) problems.push('没有可用的链（default_chain 缺失）')
+  if (defaultChain === null) problems.push(t('gate.problem.noChains'))
 
   return { schema: 1, policy, providers, chains, agents, chain_for_model: chainForModel, default_chain: defaultChain, free, problems }
 }
@@ -198,10 +200,10 @@ export async function loadGateConfig({ path = defaultFallbackConfigPath(), bundl
       return { config, from: p, problems: config.problems, error: null }
     } catch (err) {
       // 用户配置读不动 → 试打包默认；打包默认也读不动 → 报错（调用方保留上一份）
-      if (p === bundledPath) return { config: null, from: null, problems: [], error: `配置读不动：${String(err).slice(0, 160)}` }
+      if (p === bundledPath) return { config: null, from: null, problems: [], error: t('gate.error.readFailed', { error: String(err).slice(0, 160) }) }
     }
   }
-  return { config: null, from: null, problems: [], error: '没有可读的配置（用户配置与打包默认都失败）' }
+  return { config: null, from: null, problems: [], error: t('gate.error.noConfig') }
 }
 
 /**

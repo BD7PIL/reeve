@@ -23,6 +23,8 @@ if (!sdkPkg) {
 const sdk = await import(pathToFileURL(join(sdkPkg, 'dist/index.js')).href)
 // 解析器在 `dist/parse.js`（根 index 没有再导出它）—— 这是宿主 install 时用的同一个解析器。
 const parse = await import(pathToFileURL(join(sdkPkg, 'dist/parse.js')).href)
+// 面板词表（纯数据，无 DOM 依赖）—— 语言门禁直接在这里查
+const i18n = await import(pathToFileURL(join(here, 'src/panel/i18n.js')).href)
 
 let failed = 0
 const check = (label, fn) => {
@@ -124,6 +126,40 @@ check('守门：只允许写 GATE 配置（writeFile 必须走 fallbackConfigPat
   const util = readFileSync(join(srcDir, 'util.js'), 'utf8')
   if (!util.includes("'~/.config/opencode/reeve/fallback.jsonc'")) throw new Error('fallbackConfigPathFor 的兜底路径不是 GATE 的配置')
   return `${files.length} 个源文件，写调用 ${writes} 处（都写 GATE 配置）`
+})
+
+check('i18n：en / zh-CN 词表 key 完全一致，未知语言回退英文', () => {
+  const en = Object.keys(i18n.CATALOGS.en).sort()
+  const zh = Object.keys(i18n.CATALOGS['zh-CN']).sort()
+  const missing = en.filter((k) => !zh.includes(k))
+  const extra = zh.filter((k) => !en.includes(k))
+  if (missing.length || extra.length) {
+    throw new Error(`词表不一致：zh 缺 ${missing.join(',') || '无'}；zh 多 ${extra.join(',') || '无'}`)
+  }
+  i18n.setLocale('fr-FR')
+  if (i18n.t('tab.chains') !== 'Chains') throw new Error('未知语言没有回退英文')
+  i18n.setLocale('zh-CN')
+  if (!/[\u4e00-\u9fff]/.test(i18n.t('tab.chains'))) throw new Error('zh-CN 没取到中文')
+  return `${en.length} 个 key × 2 种语言`
+})
+
+check('语言门禁：面板 UI 源码（剥注释）不含 CJK；action label / lang 中立', () => {
+  const srcDir = join(here, 'src/panel')
+  const stripComments = (src) =>
+    src
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .split('\n')
+      .map((l) => (l.includes('//') ? l.slice(0, l.indexOf('//')) : l))
+      .join('\n')
+  for (const f of readdirSync(srcDir).filter((n) => n.endsWith('.js') && n !== 'i18n.js')) {
+    const body = stripComments(readFileSync(join(srcDir, f), 'utf8'))
+    if (/[\u4e00-\u9fff]/.test(body)) throw new Error(`${f} 里还有中文 UI 文案（应进 i18n 词表）`)
+  }
+  const label = pkg.openchamber.contributes.actions?.find((a) => a.id === 'reeve-inspect')?.label ?? ''
+  if (/[\u4e00-\u9fff]/.test(label)) throw new Error(`action label 不能是中文：${label}`)
+  const html = readFileSync(join(here, pkg.openchamber.contributes.panel.entry), 'utf8')
+  if (!/<html lang="en">/.test(html)) throw new Error('panel/index.html 的默认 lang 不是 en')
+  return '干净'
 })
 
 check('fallback-edit（配置编辑引擎）单测：注释保留 / 只改该改的节 / 写前自校验', () => {

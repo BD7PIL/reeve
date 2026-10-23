@@ -14,6 +14,8 @@ import { readFile, rename, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 
+import { t } from './locale.js'
+
 /** 引擎配置里我们那一块（三行端点）。 */
 export function reeveProviderBlock({ port = 8080, host = '127.0.0.1', packageId = '@ai-sdk/openai-compatible' } = {}) {
   return { package: packageId, settings: { baseURL: `http://${host}:${port}/v1` } }
@@ -38,10 +40,10 @@ export function planProviderInsertion(text, providerId = 'reeve', block = reeveP
   try {
     doc = parseJsonc(src)
   } catch (err) {
-    return { changed: false, text: src, reason: `配置不是合法 JSON（不碰）：${String(err).slice(0, 80)}` }
+    return { changed: false, text: src, reason: t('endpoint.invalidJson', { error: String(err).slice(0, 80) }) }
   }
   if (doc?.providers?.[providerId] !== undefined) {
-    return { changed: false, text: src, reason: 'providers.reeve 已存在（只加不改）' }
+    return { changed: false, text: src, reason: t('endpoint.exists') }
   }
 
   const entry = `"${providerId}": ${JSON.stringify(block, null, 2).replace(/\n/g, '\n  ')}`
@@ -57,29 +59,29 @@ export function planProviderInsertion(text, providerId = 'reeve', block = reeveP
       ? `\n${indent}${entry.replace(/\n/g, `\n${indent}`)}\n  `
       : `\n${indent}${entry.replace(/\n/g, `\n${indent}`)},`
     out = src.slice(0, open) + body + after
-    where = 'providers 对象里'
+    where = 'providers'
   } else {
     const open = src.indexOf('{')
-    if (open < 0) return { changed: false, text: src, reason: '找不到顶层对象（不碰）' }
+    if (open < 0) return { changed: false, text: src, reason: t('endpoint.noRoot') }
     const after = src.slice(open + 1)
     const isEmpty = /^\s*\}/.test(after)
     const body = isEmpty
       ? `\n  "providers": { ${entry} }\n`
       : `\n  "providers": { ${entry} },`
     out = src.slice(0, open + 1) + body + after
-    where = '新建 providers 键'
+    where = 'new-key'
   }
 
   // 自校验：插完之后必须是合法 JSON，且我们那块在
   try {
     const check = parseJsonc(out)
     if (check?.providers?.[providerId]?.settings?.baseURL === undefined) {
-      return { changed: false, text: src, reason: '插入后校验不到 baseURL（不写）' }
+      return { changed: false, text: src, reason: t('endpoint.verifyFailed') }
     }
   } catch (err) {
-    return { changed: false, text: src, reason: `插入后不是合法 JSON（不写）：${String(err).slice(0, 80)}` }
+    return { changed: false, text: src, reason: t('endpoint.insertedInvalid', { error: String(err).slice(0, 80) }) }
   }
-  return { changed: true, text: out, reason: `在 ${where}新增 providers.${providerId}` }
+  return { changed: true, text: out, reason: t(where === 'providers' ? 'endpoint.addedInProviders' : 'endpoint.addedNewKey', { id: providerId }) }
 }
 
 /**
@@ -123,13 +125,13 @@ export async function ensureProviderBlock({
       return { status: 'rolled-back', path, detail: String(err).slice(0, 160) }
     }
   }
-  if (!createIfMissing) return { status: 'no-file', path: join(dir, 'opencode.jsonc'), detail: '没有配置文件可改（由使用者/启动器创建）' }
+  if (!createIfMissing) return { status: 'no-file', path: join(dir, 'opencode.jsonc'), detail: t('endpoint.noFile') }
   const path = join(dir, 'opencode.jsonc')
   const body = `{\n  "providers": { "${providerId}": ${JSON.stringify(block, null, 2).replace(/\n/g, '\n  ')} }\n}\n`
   try {
     await writeFileImpl(path, body, 'utf8')
     logger.debug(`[reeve] 新建了 ${path} 并写入 providers.${providerId}`)
-    return { status: 'added', path, detail: '新建配置文件' }
+    return { status: 'added', path, detail: t('endpoint.created') }
   } catch (err) {
     return { status: 'skipped', path, detail: String(err).slice(0, 160) }
   }

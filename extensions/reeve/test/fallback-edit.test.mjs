@@ -65,11 +65,11 @@ export function run() {
     const openAt = text.indexOf('{')
     assert.equal(matchBrace(text, openAt), text.length - 1, '字符串里的 } 不算数')
     assert.equal(matchBrace('{"s":"\\\\"}', 0), 9, '转义反斜杠后才是真引号（\\ 先吃掉一个转义）')
-    assert.throws(() => matchBrace('{"s":"\\"}', 0), /不配对/, '被转义的引号不算收尾 → 扫不到配对就抛')
+    assert.throws(() => matchBrace('{"s":"\\"}', 0), /unbalanced/, '被转义的引号不算收尾 → 扫不到配对就抛')
     assert.equal(depthAt('{"k": {"x": 1}', 1), 1, '根对象的键 = 深度 1')
     assert.equal(depthAt('{"k": {"x": 1}', 7), 2, '嵌套对象里的键 = 深度 2')
     assert.equal(depthAt('{"s": "{{{", "k": 1}', 13), 1, '字符串里的花括号不加深')
-    assert.throws(() => matchBrace('{"a":1', 0), /不配对/)
+    assert.throws(() => matchBrace('{"a":1', 0), /unbalanced/)
     ok('matchBrace / depthAt')
   }
 
@@ -120,8 +120,8 @@ export function run() {
     assert.equal(view.default_chain, 'reasoning')
     assert.equal(problems.length, 0)
     const bad = viewOf({ chains: { empty: { targets: [] } }, agents: { a: 42 } })
-    assert.ok(bad.problems.some((p) => p.includes('chains.empty')))
-    assert.ok(bad.problems.some((p) => p.includes('agents.a')))
+    assert.ok(bad.problems.some((p) => p.code === 'problem.chain.emptyTargets' && p.params.chain === 'empty'))
+    assert.ok(bad.problems.some((p) => p.code === 'problem.agents.notString' && p.params.agent === 'a'))
     ok('viewOf：视图 + problems')
   }
 
@@ -134,12 +134,12 @@ export function run() {
       default_chain: 'c1',
       policy: { max_fallback_attempts: '5', cooldown_seconds: -3, restore_primary_after_cooldown: 'yes', provider_retries: null },
     })
-    const joined = planned.problems.join('\n')
-    assert.ok(joined.includes('重复'), '重复候选报出来')
+    const joined = planned.problems.map((p) => `${p.code}:${JSON.stringify(p.params)}`).join('\n')
+    assert.ok(joined.includes('problem.chain.duplicate'), '重复候选报出来')
     assert.ok(joined.includes('noslash'), '坏引用报出来')
-    assert.ok(joined.includes('chains.c2'), '空链报出来')
-    assert.ok(joined.includes('agents.ghost'), '悬空 agent 指向报出来')
-    assert.ok(joined.includes('chain_for_model.x/y'), '悬空 chain_for_model 报出来')
+    assert.ok(joined.includes('problem.chain.emptyTargets') && joined.includes('c2'), '空链报出来')
+    assert.ok(joined.includes('problem.agents.dangling') && joined.includes('ghost'), '悬空 agent 指向报出来')
+    assert.ok(joined.includes('problem.chainForModel.dangling') && joined.includes('x/y'), '悬空 chain_for_model 报出来')
     assert.deepEqual(planned.chains.c1.targets, ['a/m'], '坏行被剔除')
     assert.deepEqual(planned.policy, { max_fallback_attempts: 5, cooldown_seconds: 0, restore_primary_after_cooldown: false, provider_retries: 1 }, 'policy 强制类型与下限')
     assert.equal(defaultIsRef('a/m'), true)
@@ -168,10 +168,16 @@ export function run() {
     assert.equal(doc.default_chain, 'reasoning')
     assert.equal(doc.policy.restore_primary_after_cooldown, true)
     assert.deepEqual(doc.providers['9router'].base_url, 'http://127.0.0.1:20128', 'providers 节原样')
-    // 有问题 → 拒绝写
-    assert.throws(() => applySave(CONFIG, { problems: ['x'], chains: {} }), /先改掉再保存/)
-    // 自校验兜底：写出去解析不了就抛（这里用函数值伪造"渲染出坏 JSON"）
-    assert.throws(() => applySave('{ "a": 1 }\n', { ok: undefined }, { sections: ['ok'] }) === undefined ? null : (() => { throw new Error('x') })(), /x/)
+    // 有问题 → 拒绝写（错误带 code，面板据此本地化）
+    assert.throws(
+      () => applySave(CONFIG, { problems: [{ code: 'problem.chains.none', params: {} }], chains: {} }),
+      (err) => err.code === 'problem.save.refused' && err.problems.length === 1,
+    )
+    // 自校验兜底：渲染出非法 JSON（undefined 值）→ 抛 selfCheck，盘上文件不动
+    assert.throws(
+      () => applySave('{ "a": 1 }\n', { x: { y: undefined } }, { sections: ['x'] }),
+      (err) => err.code === 'problem.save.selfCheck' && /undefined/.test(err.detail),
+    )
     ok('applySave：往返 / 注释保留 / 拒绝与兜底')
   }
 
@@ -181,7 +187,7 @@ export function run() {
     assert.deepEqual(agentsForChain(view, 'reasoning'), ['planner'])
     assert.deepEqual(agentsForChain(view, 'free-first'), [])
     const cands = candidateList({ models: { candidates: [{ ref: 'a/m', sources: ['gate'] }, { ref: 'b/m', sources: ['chain'] }] } }, { exclude: ['b/m'] })
-    assert.deepEqual(cands, [{ ref: 'a/m', hint: 'GATE 目录' }])
+    assert.deepEqual(cands, [{ ref: 'a/m', hint: 'gate catalog' }])
     ok('agentsForChain / candidateList')
   }
 
@@ -222,7 +228,7 @@ export function run() {
     assert.ok(r.text.includes('// 头注释'), '别的节/注释原样')
     assert.equal(defaultIsRef('@free'), true)
     const dup = planSave({ chains: { c: { targets: ['@free', 'a/m', '@free'] } }, free: {} })
-    assert.ok(dup.problems.some((p) => p.includes('重复')), '重复 @free 报出来')
+    assert.ok(dup.problems.some((p) => p.code === 'problem.chain.duplicate' && p.params.ref === '@free'), '重复 @free 报出来')
     ok('free 节：view/plan/apply（保留 sources 与注释）+ @free 合法')
   }
 

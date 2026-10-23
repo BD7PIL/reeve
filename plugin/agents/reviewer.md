@@ -1,5 +1,6 @@
 ---
 description: 代码审查者。审查代码 diff（不是计划），输出必填字段的结构化评论。只读。
+description_en: Code reviewer. Reviews diffs (not plans) and returns structured comments with required fields. Read-only.
 mode: subagent
 hidden: true
 model: reeve/standard

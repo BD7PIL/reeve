@@ -16,6 +16,8 @@ import { readdir, readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
+import { getLocale } from './locale.js'
+
 export const PLUGIN_ROOT = fileURLToPath(new URL('..', import.meta.url))
 export const AGENTS_DIR = join(PLUGIN_ROOT, 'agents')
 export const SKILLS_DIR = join(PLUGIN_ROOT, 'skills')
@@ -66,10 +68,13 @@ export function parseFrontmatter(text) {
 /** md → 引擎要的 agent 形状（`ctx.agent.transform` 里 `editor.update(id, a => Object.assign(a, ...))`）。 */
 export function toAgentInfo(id, text) {
   const { data, body } = parseFrontmatter(text)
+  // 描述进宿主的 agent 列表：跟随宿主语言（正文提示词保持原样）
+  const description =
+    getLocale() === 'en' && typeof data.description_en === 'string' ? data.description_en : data.description
   const info = {
     id,
     name: id,
-    description: typeof data.description === 'string' ? data.description : undefined,
+    description: typeof description === 'string' ? description : undefined,
     system: body.length > 0 ? body : undefined,
     mode: ['primary', 'subagent', 'all'].includes(data.mode) ? data.mode : 'subagent',
   }
@@ -124,7 +129,10 @@ export async function loadSkills({ dir = SKILLS_DIR, readdirImpl = readdir, read
       out.push({
         id: e.name,
         name: typeof data.name === 'string' ? data.name : e.name,
-        description: typeof data.description === 'string' ? data.description.replace(/\s+/g, ' ').trim() : undefined,
+        description: (() => {
+          const raw = getLocale() === 'en' && typeof data.description_en === 'string' ? data.description_en : data.description
+          return typeof raw === 'string' ? raw.replace(/\s+/g, ' ').trim() : undefined
+        })(),
         path: file,
         // 把 skill 自己的目录塞进正文 —— rubric 文件住在插件包里，模型得知道绝对路径
         content: `（本 skill 的目录：${join(dir, e.name)}）\n\n${body}`,

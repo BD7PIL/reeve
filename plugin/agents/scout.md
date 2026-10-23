@@ -1,5 +1,6 @@
 ---
 description: 代码库侦察者。回答"X 在哪里、怎么工作的"，每条结论带 路径:行号。只读。
+description_en: Codebase scout. Answers where X lives and how it works, with path:line for every claim. Read-only.
 mode: subagent
 hidden: true
 model: reeve/flash

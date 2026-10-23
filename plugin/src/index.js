@@ -38,6 +38,7 @@ import { defaultFallbackConfigPath } from './gate/config.js'
 import { REEVE_TIERS, BUILTINS_TO_HIDE, mergeTierModels, pickDefaultAgent, readEndpoint, resolveGateEndpoint } from './models.js'
 import { STATS_DEFAULTS, aggregateGateRows, aggregateLedger, buildStats, fetchGateFree, fetchGateModels, fetchGateVersion, mergeModelCandidates, readLedgerTail } from './stats.js'
 import { loadAgents, loadSkills } from './register.js'
+import { detectLocale, setLocale, t } from './locale.js'
 import { ensureProviderBlock, reeveProviderBlock } from './config-write.js'
 
 const SUBAGENT_TOOL = 'subagent'
@@ -50,6 +51,8 @@ export default {
   async setup(ctx) {
     const logger = makeLogger()
     const options = ctx.options ?? {}
+    // 语言跟随 OpenChamber（面板文案也是这套）；settings 读不到就按环境变量/英文。
+    setLocale(detectLocale(options))
     const limits = options.limits ?? {}
     const wallClockMs = options.wallClockMs ?? 0
     const abortGraceMs = options.abortGraceMs
@@ -249,7 +252,7 @@ export default {
           checkedAt: nowMs,
           windowMs: statsWindowMs,
           source: gateAgg ? 'gate.ledger' : 'unavailable',
-          error: tail.error ? `读台账失败：${tail.error}` : null,
+          error: tail.error ? t('stats.error.readLedger', { error: tail.error }) : null,
           gate: gateAgg,
           orchestrate: {
             ...ledgerAgg,
@@ -397,10 +400,7 @@ export default {
         // 让使用者把配置里的 `model: reeve/manual` / manual 链清掉（换 standard）。
         const stale = list.filter((m) => m?.id === 'manual')
         if (stale.length > 0) {
-          logger.warn(
-            '[reeve] reeve/manual 已在 0.2.0 移除（单目标档位；会话里直接选模型即可）。' +
-              '请把配置里的 "model": "reeve/manual" 改成 "reeve/standard"，并删掉 fallback 配置里的 manual 链。',
-          )
+          logger.warn(`[reeve] ${t('manual.warning')}`)
         }
         const merged = mergeTierModels(list.filter((m) => m?.id !== 'manual'), REEVE_TIERS, 'reeve')
         if (merged.length !== list.length || stale.length > 0) editor.models.set('reeve', merged)

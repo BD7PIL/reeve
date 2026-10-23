@@ -11,6 +11,7 @@ import {
   readLedgerTail, 
   STATS_DEFAULTS, summarizeLatency, 
 } from '../src/stats.js'
+import { t } from '../src/locale.js'
 
 let passed = 0
 const ok = (label) => {
@@ -177,7 +178,7 @@ const ok = (label) => {
   const bad = await fetchGateFree({ port: 1, fetchImpl: async () => ({ status: 502, json: async () => ({}) }) })
   assert.equal(bad.error, 'HTTP 502')
   const empty = await fetchGateFree({ port: 1, fetchImpl: async () => ({ status: 200, json: async () => null }) })
-  assert.equal(empty.error, '空响应')
+  assert.equal(empty.error, t('free.error.emptyResponse'))
   const boom = await fetchGateFree({ port: 1, fetchImpl: async () => { throw new Error('boom') } })
   assert.equal(boom.error, 'boom')
   ok('fetchGateFree：运行态透传 / HTTP 错 / 空响应 / 异常全部降级')

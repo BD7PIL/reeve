@@ -110,11 +110,12 @@ jobs:
           node-version: 24
       - name: 装构建依赖（宿主 SDK + esbuild）
         run: npm --prefix extensions/reeve ci
-      - name: 审计（CI 夹具；控制台/溢出/关键文本/token/对比度 + 40 项截图）
+      - name: 审计（CI 夹具；控制台/溢出/关键文本/token/对比度 + 44 项截图）
         run: |
           set -u
+          # CI 用英文矩阵：runner 没有 CJK 字体，中文截图会是豆腐块（本机主套跑 --locale=zh-CN）
           for attempt in 1 2; do
-            if node extensions/reeve/scripts/audit.mjs --fixture; then exit 0; else code=$?; fi
+            if node extensions/reeve/scripts/audit.mjs --fixture --locale=en; then exit 0; else code=$?; fi
             # exit 3 = CDP 页面目标没起来（已知 Chrome 启动 flake）；断言失败不重试。
             if [ "$code" -ne 3 ] || [ "$attempt" -eq 2 ]; then exit "$code"; fi
             echo "CDP did not start (attempt $attempt); retrying once"

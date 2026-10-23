@@ -16,6 +16,7 @@ import { join } from 'node:path'
 
 import { startGate } from '../src/gate/gate.js'
 import { BUNDLED_FALLBACK_PATH } from '../src/gate/config.js'
+import { t } from '../src/locale.js'
 
 let passed = 0
 const ok = (label) => {
@@ -449,7 +450,7 @@ const OPENROUTER_FREE = ['vendor/a:free', 'vendor/b', 'vendor/c:free']
     const custom = snap.providers.find((p) => p.id === 'custom')
     const ghost = snap.providers.find((p) => p.id === 'ghost')
     assert.equal(custom.ready, true)
-    assert.equal(custom.error, '没有发现源（static 或 sources）', '有 provider 但没 static/sources 时如实报')
+    assert.equal(custom.error, t('free.error.noSource'), '有 provider 但没 static/sources 时如实报')
     assert.equal(ghost.ready, false, '未配置的 provider 标记为未就绪')
     assert.ok(!snap.expand.some((r) => r.startsWith('custom/') || r.startsWith('ghost/')), '它们不参与展开')
     ok('发现源缺失 / provider 未配置：进运行态但不参与展开')

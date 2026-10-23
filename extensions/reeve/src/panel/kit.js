@@ -32,11 +32,12 @@ export function button({ data, ...props }) {
   return { node, handle, btn }
 }
 
-export function menu({ data, ...props }) {
+export function menu({ data, iconName, ...props }) {
   const node = host()
   const handle = mountMenu(node, props)
   const btn = node.querySelector('button')
   if (btn && data) for (const [k, v] of Object.entries(data)) btn.setAttribute(k, v)
+  if (btn && iconName) btn.append(icon(iconName, 12))
   return { node, handle, btn }
 }
 
@@ -133,9 +134,9 @@ export function iconButton({ iconName, label, ...props }) {
   return b
 }
 
-/** 分区：标题行（小字灰色说明在右）+ 一组行。 */
-export function section({ title, hint, body = [], headRight = null }) {
-  const node = el('div', { class: 'oc-section oc-card' })
+/** 分区：**宿主式分隔带**（标题行 + 一组行），不是一张卡片。 */
+export function section({ title, hint, body = [], headRight = null, divided = true }) {
+  const node = el('div', { class: 'oc-section' })
   const head = el('div', { class: 'oc-section-head' })
   head.append(el('span', { class: 'oc-label', text: title }))
   if (hint) head.append(el('span', { class: 'oc-micro oc-muted', text: hint }))
@@ -144,20 +145,20 @@ export function section({ title, hint, body = [], headRight = null }) {
     head.append(headRight)
   }
   node.append(head)
-  const box = el('div', { class: 'oc-section-body oc-divide' })
+  const box = el('div', { class: `oc-section-body${divided ? ' oc-divide' : ''}` })
   for (const child of body) box.append(child)
   node.append(box)
   return node
 }
 
-/** 设置行：左（标签 + 说明）/ 右（控件）。 */
-export function fieldRow({ label, description = null, control, extra = null }) {
+/** 设置行：左（标签 + 说明）/ 右（控件）。`controlClass` 决定控件列的宽度（数字/下拉/文本）。 */
+export function fieldRow({ label, description = null, control, extra = null, controlClass = '' }) {
   const row = el('div', { class: 'oc-field-row' })
   const main = el('div', { class: 'oc-field-main' })
   main.append(el('label', { class: 'oc-label oc-truncate', text: label }))
   if (description) main.append(el('span', { class: 'oc-micro oc-muted', text: description }))
   row.append(main)
-  const right = el('div', { class: 'oc-field-control' })
+  const right = el('div', { class: `oc-field-control${controlClass ? ` ${controlClass}` : ''}` })
   if (control) right.append(control)
   if (extra) right.append(extra)
   row.append(right)

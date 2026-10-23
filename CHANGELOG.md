@@ -3,6 +3,35 @@
 Newest first. Versions follow the plugin package (`plugin/package.json`); the
 panel extension has its own tags (`reeve-<version>`).
 
+## 0.2.2 — 2026-10-23
+
+**The panel follows OpenChamber's language now.** Every host-visible string in the
+panel comes from one catalog (`en` source + `zh-CN` translation) keyed on
+`ctx.locale`; technical identifiers (chain names, agent/provider/tier IDs,
+`provider/model`, config keys, `@free`) are never translated. There is no
+"English shell with Chinese errors" mode left: validation errors carry codes and
+are rendered in the host language, and the HTML `lang` attribute follows the
+host. Unknown locales fall back to English.
+
+**Host-style layout (extension 0.1.11).** Section cards are gone — sections are
+divider bands and only chains are raised cards. The type scale is 14/13/12.5/11.5,
+model rows are single-line (provider ID hidden at 306px width, full ref kept in
+`title`), controls size to their content (numeric 5.5rem, selects 14rem), booleans
+are checkbox rows, and the save bar is page-level so switching to Stats/Tasks
+never loses an unsaved edit. Stats rows stack into two lines at 306px; the
+task filter bar and free-lane provider status use host tokens and status dots.
+Fixed a `[hidden]`-vs-`display:flex` bug that showed inactive tabs, a collapsed
+tier-mapping select (percentage width resolved against a shrink-to-fit parent),
+and a first-paint race that could render the free lane as "runtime not ready".
+
+**Plugin-visible strings follow the same locale.** GATE config problems, config
+read errors, free-lane discovery errors, ledger read errors, endpoint bootstrap
+details and the manual-tier migration warning are localized from
+`options.locale` (default `auto`): OpenChamber `settings.json` → `REEVE_LOCALE` /
+`OPENCODE_LOCALE` / `LANG` → English. Agent and skill descriptions use
+`description_en` when the host is English; prompt bodies stay unchanged. Upstream
+provider errors are still passed through verbatim.
+
 ## 0.2.1 — 2026-10-23
 
 English tier labels and panel identity. The four engine-visible model names are now

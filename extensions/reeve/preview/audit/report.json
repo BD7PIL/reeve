@@ -1,8 +1,9 @@
 {
-  "generatedAt": "2026-10-23T10:19:24.163Z",
+  "generatedAt": "2026-10-23T12:23:35.113Z",
+  "locale": "zh-CN",
   "fixture": true,
   "strictContrast": false,
-  "total": 40,
+  "total": 44,
   "failed": 0,
   "warned": 0,
   "items": [
@@ -44,7 +45,7 @@
     },
     {
       "id": "05-chain-added",
-      "note": "加进链尾 → 未保存徽标 + 底部保存条",
+      "note": "加进链尾 → 未保存徽标 + 页面级保存条",
       "file": "05-chain-added.png",
       "scenario": null,
       "failures": [],
@@ -362,6 +363,42 @@
       "note": "主徽标：运行中 + 排队（primary 色）",
       "file": "39-gate-running.png",
       "scenario": "gate-running",
+      "failures": [],
+      "warnings": [],
+      "consoleErrors": []
+    },
+    {
+      "id": "41-chain-selected-306",
+      "note": "306px：选中行 + 动作条（Selected 前缀收起，按钮仍在）",
+      "file": "41-chain-selected-306.png",
+      "scenario": null,
+      "failures": [],
+      "warnings": [],
+      "consoleErrors": []
+    },
+    {
+      "id": "42-stats-306",
+      "note": "306px：统计行拆两行，不溢出",
+      "file": "42-stats-306.png",
+      "scenario": null,
+      "failures": [],
+      "warnings": [],
+      "consoleErrors": []
+    },
+    {
+      "id": "43-free-advanced-306",
+      "note": "306px：免费车道高级折叠（偏好/禁用/白名单）",
+      "file": "43-free-advanced-306.png",
+      "scenario": null,
+      "failures": [],
+      "warnings": [],
+      "consoleErrors": []
+    },
+    {
+      "id": "44-gate-down-306",
+      "note": "306px + 路由没起：徽标与横幅都不挤坏",
+      "file": "44-gate-down-306.png",
+      "scenario": "gate-down",
       "failures": [],
       "warnings": [],
       "consoleErrors": []

@@ -14,6 +14,8 @@
 //   ts, req, n, chain, agent, provider, model, lane, key(键的"名字"), status('ok'|'error'),
 //   code, latency_ms, retries, detail
 
+import { t } from './locale.js'
+
 export const STATS_DEFAULTS = Object.freeze({
   /** 轮询间隔（unref 定时器，失败只记日志） */
   intervalMs: 60_000,
@@ -109,7 +111,7 @@ export function aggregateGateRows(rows, { now = Date.now(), windowMs = STATS_DEF
     const nIdx = Number.isFinite(n) && n >= 1 ? n : 1
     byAttemptIndex[nIdx] = (byAttemptIndex[nIdx] ?? 0) + 1
 
-    const chainKey = row.chain ?? '(未标链)'
+    const chainKey = row.chain ?? t('stats.unknownChain')
     const bucket =
       chains.get(chainKey) ??
       { chain: chainKey, agent: null, n: 0, ok: 0, error: 0, hops: 0, latency: [], providers: new Map() }
@@ -123,7 +125,7 @@ export function aggregateGateRows(rows, { now = Date.now(), windowMs = STATS_DEF
     if (ref) bucket.providers.set(ref, (bucket.providers.get(ref) ?? 0) + 1)
     chains.set(chainKey, bucket)
 
-    const p = providers.get(row.provider ?? '(未知)') ?? { provider: row.provider ?? '(未知)', n: 0, ok: 0, error: 0, latency: [], lastAt: null }
+    const p = providers.get(row.provider ?? t('stats.unknownProvider')) ?? { provider: row.provider ?? '(未知)', n: 0, ok: 0, error: 0, latency: [], lastAt: null }
     p.n += 1
     if (isOk) p.ok += 1
     else p.error += 1
@@ -213,7 +215,7 @@ export function aggregateLedger(records, { now = Date.now() } = {}) {
   let firstAt = null
   let lastAt = null
   for (const r of records ?? []) {
-    const agent = r.agent ?? '(未标注)'
+    const agent = r.agent ?? t('stats.unknownAgent')
     const b = byAgent.get(agent) ?? { agent, n: 0, ok: 0, error: 0, stopped: 0, running: 0, uncertain: 0, timedOut: 0, durations: [] }
     b.n += 1
     totals.n += 1
@@ -308,7 +310,7 @@ export async function fetchGateFree({ port, host = '127.0.0.1', fetchImpl = fetc
     const res = await fetchImpl(`http://${host}:${port}/gate/free`, { signal: AbortSignal.timeout(timeoutMs) })
     if (res.status !== 200) return { error: `HTTP ${res.status}` }
     const doc = await res.json()
-    return doc && typeof doc === 'object' ? { ...doc, error: null } : { error: '空响应' }
+    return doc && typeof doc === 'object' ? { ...doc, error: null } : { error: t('free.error.emptyResponse') }
   } catch (err) {
     return { error: String(err?.message ?? err).slice(0, 140) }
   }

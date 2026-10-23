@@ -68,7 +68,7 @@ composer 里直接选（直连模型绕过 GATE，reeve/* 走链）。引擎配�
 - 真机：`scripts/accept-gate.sh` ①–⑨（①/② 免费车道、④ 关闭免费→付费、④b 死免费候选→付费、
   ⑤ 粘性、⑥ 冷却、⑦ 热更、⑧ 付费直连、⑨ Bifrost=0）；`scripts/accept-lifecycle.mjs`（DELETE 驱逐）+
   `--idle`（真 60 分钟 TTL：日志见到驱逐后再断言 GATE 仍在）。
-- 面板：`extensions/reeve/scripts/audit.mjs --fixture` 40 项（断言 + 截图 + report.json）；
+- 面板：`extensions/reeve/scripts/audit.mjs --fixture` 44 项（断言 + 截图 + report.json）；
   截图经多模态复审（结论表在 `extensions/reeve/preview/audit/README.md`）。
 
 ## 4. 与邻居的关系

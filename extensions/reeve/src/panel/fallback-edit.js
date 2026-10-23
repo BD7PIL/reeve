@@ -24,7 +24,7 @@ export function parseJsonc(text) {
 
 /** 字符串感知的"从这个 `{` 找到它的配对 `}`"；返回 `}` 的下标。 */
 export function matchBrace(text, openIndex) {
-  if (text[openIndex] !== '{' && text[openIndex] !== '[') throw new Error('matchBrace：起点不是 { 或 [')
+  if (text[openIndex] !== '{' && text[openIndex] !== '[') throw new Error('matchBrace: start is not { or [')
   const open = text[openIndex]
   const close = open === '{' ? '}' : ']'
   let depth = 0
@@ -45,7 +45,7 @@ export function matchBrace(text, openIndex) {
       if (depth === 0) return i
     }
   }
-  throw new Error('matchBrace：括号不配对')
+  throw new Error('matchBrace: unbalanced brackets')
 }
 
 /** 字符串感知的括号深度（`index` 之前已开、未闭的 `{`/`[` 数）。 */
@@ -142,7 +142,7 @@ export function replaceSection(text, key, value) {
   }
   // 追加：找一个能插的根对象收尾 `}`（文件最后一个 `}`）
   const closeAt = text.lastIndexOf('}')
-  if (closeAt < 0) throw new Error('配置文件里没有根对象收尾的 } —— 不猜，拒绝写入')
+  if (closeAt < 0) throw new Error('No closing } for the root object; refusing to write')
   const before = text.slice(0, closeAt)
   const after = text.slice(closeAt)
   const needsComma = /[^{[\s,]\s*$/.test(before.replace(/\/\/[^\n]*\n?/g, ''))
@@ -157,13 +157,13 @@ export function viewOf(doc) {
   const asRecord = (v) => (v && typeof v === 'object' && !Array.isArray(v) ? v : null)
   for (const [name, spec] of Object.entries(asRecord(doc?.chains) ?? {})) {
     const targets = Array.isArray(spec?.targets) ? spec.targets.map((t) => String(t)) : []
-    if (targets.length === 0) problems.push(`chains.${name} 没有 targets（GATE 会忽略这一条链）`)
+    if (targets.length === 0) problems.push({ code: 'problem.chain.emptyTargets', params: { chain: name } })
     // 未知键原样保留（GATE 将来加的每链字段，面板一保存不能把它吃掉）
     out.chains[name] = { ...asRecord(spec), targets }
   }
   for (const [agent, chain] of Object.entries(asRecord(doc?.agents) ?? {})) {
     if (typeof chain === 'string' && chain) out.agents[agent] = chain
-    else problems.push(`agents.${agent} 不是链名（忽略）`)
+    else problems.push({ code: 'problem.agents.notString', params: { agent } })
   }
   for (const [model, chain] of Object.entries(asRecord(doc?.chain_for_model) ?? {})) {
     if (typeof chain === 'string' && chain) out.chain_for_model[model] = chain
@@ -188,38 +188,38 @@ export function planSave(view, { isRef = defaultIsRef } = {}) {
       const ref = String(t ?? '').trim()
       if (!ref) continue
       if (!isRef(ref)) {
-        problems.push(`chains.${name}：认不出的候选 ${ref}（要写成 provider/model）`)
+        problems.push({ code: 'problem.chain.badRef', params: { chain: name, ref } })
         continue
       }
       if (seen.has(ref)) {
-        problems.push(`chains.${name}：候选 ${ref} 重复（GATE 会当 no-op 跳过）`)
+        problems.push({ code: 'problem.chain.duplicate', params: { chain: name, ref } })
         continue
       }
       seen.add(ref)
       targets.push(ref)
     }
     if (targets.length === 0) {
-      problems.push(`chains.${name}：一条候选都没有（GATE 会忽略这条链）`)
+      problems.push({ code: 'problem.chain.emptyTargets', params: { chain: name } })
       continue
     }
     // spec 里的未知键原样保留（viewOf 也是这么读进来的）；面板只编辑 targets
     chains[name] = { ...asRecord(spec), targets }
   }
-  if (Object.keys(chains).length === 0) problems.push('至少要有一条链')
+  if (Object.keys(chains).length === 0) problems.push({ code: 'problem.chains.none', params: {} })
   const agents = {}
   for (const [agent, chain] of Object.entries(view?.agents ?? {})) {
     if (!chain) continue
-    if (!chains[chain] && chain !== view?.default_chain) problems.push(`agents.${agent}：指向不存在的链 ${chain}`)
+    if (!chains[chain] && chain !== view?.default_chain) problems.push({ code: 'problem.agents.dangling', params: { agent, chain } })
     agents[agent] = chain
   }
   const chainForModel = {}
   for (const [model, chain] of Object.entries(view?.chain_for_model ?? {})) {
     if (!chain) continue
-    if (!chains[chain]) problems.push(`chain_for_model.${model}：指向不存在的链 ${chain}`)
+    if (!chains[chain]) problems.push({ code: 'problem.chainForModel.dangling', params: { model, chain } })
     chainForModel[model] = chain
   }
   const defaultChain = view?.default_chain ?? null
-  if (defaultChain && !chains[defaultChain]) problems.push(`default_chain 指向不存在的链 ${defaultChain}`)
+  if (defaultChain && !chains[defaultChain]) problems.push({ code: 'problem.defaultChain.dangling', params: { chain: defaultChain } })
   // policy 面板只编辑四个键，但**保存时必须带着其它键一起写**——否则一次保存就把
   // retry_on_errors / watchdog / TTL 这些使用者手写的键静默删掉（0.1.x 的真实缺陷）。
   const p = view?.policy ?? {}
@@ -281,7 +281,12 @@ export function freeViewOf(raw) {
  * 注意 `policy` 是整体替换（它的键少，整体写更好读）；`chains`/`agents`/`chain_for_model` 同理。
  */
 export function applySave(text, planned, { sections = ['chains', 'agents', 'chain_for_model', 'policy', 'free', 'default_chain'] } = {}) {
-  if (planned?.problems?.length) throw new Error(`配置有 ${planned.problems.length} 个问题，先改掉再保存：\n  ${planned.problems.join('\n  ')}`)
+  if (planned?.problems?.length) {
+    const err = new Error('Config validation failed; fix the problems before saving')
+    err.code = 'problem.save.refused'
+    err.problems = planned.problems
+    throw err
+  }
   let out = text
   let replaced = 0
   let appended = 0
@@ -297,7 +302,10 @@ export function applySave(text, planned, { sections = ['chains', 'agents', 'chai
   try {
     parseJsonc(out)
   } catch (err) {
-    throw new Error(`写入前的自校验失败（配置仍原样保留）：${String(err?.message ?? err)}`)
+    const failure = new Error('Pre-write validation failed (the file was left untouched)')
+    failure.code = 'problem.save.selfCheck'
+    failure.detail = String(err?.message ?? err)
+    throw failure
   }
   return { text: out, replaced, appended }
 }
@@ -318,6 +326,6 @@ export function candidateList(snapshot, { exclude = [] } = {}) {
     seen.add(ref)
     out.push({ ref, hint })
   }
-  for (const c of snapshot?.models?.candidates ?? []) push(c.ref, c.sources?.includes('gate') ? 'GATE 目录' : '链上/引擎')
+  for (const c of snapshot?.models?.candidates ?? []) push(c.ref, c.sources?.includes('gate') ? 'gate catalog' : 'chain/engine')
   return out
 }

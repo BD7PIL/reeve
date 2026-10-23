@@ -10,6 +10,7 @@
 //
 // 时间与 IO 全部注入（`now` / `fetchImpl`），测试用假时钟 + 发现源 stub，不 sleep、不出网。
 import { parseTarget, resolveKeyFor, targetKey } from './lanes.js'
+import { t } from '../locale.js'
 
 export const FREE_TOKEN = '@free'
 
@@ -71,7 +72,7 @@ export function createFreeLane({ getConfig, getAuth = () => ({}), now = Date.now
     // 调用方（discovered/warm）已保证 provider 存在且带 base_url；这里不再重复判空（否则是测不到的死分支）
     const src = sourceOf(free, id)
     if (!src) {
-      const st = { at: now(), models: [], error: '没有发现源（static 或 sources）', from: null, sig: `none:${id}` }
+      const st = { at: now(), models: [], error: t('free.error.noSource'), from: null, sig: `none:${id}` }
       cache.set(id, st)
       return st
     }

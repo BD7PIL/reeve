@@ -55,6 +55,9 @@ const OPENCHAMBER_DARK = {
 }
 
 const theme = params.get('theme') === 'dark' ? OPENCHAMBER_DARK : OPENCHAMBER_LIGHT
+// 语言：默认与宿主当前设置一致（zh-CN）；`?locale=en` 用英文矩阵跑审计
+const locale = params.get('locale') === 'en' ? 'en' : 'zh-CN'
+const L = (zh, en) => (locale === 'zh-CN' ? zh : en)
 const readyListeners = new Set()
 const directoryListeners = new Set()
 const sessionListeners = new Set()
@@ -62,7 +65,7 @@ const writes = []
 
 const readyCtx = {
   theme,
-  locale: 'zh-CN',
+  locale,
   directory: null,
   session: null,
   surface: 'panel',
@@ -142,9 +145,15 @@ function applyScenario(snapshot) {
       if (out.stats.gate) out.stats.gate = { ...out.stats.gate, window: { ...(out.stats.gate.window ?? {}), relaxed: true } }
     }
   }
-  if (scenario === 'gate-down') out.gate = { error: 'GATE 起不来（模拟：端口被占）' }
+  if (scenario === 'gate-down') out.gate = { error: L('GATE 起不来（模拟：端口被占）', 'GATE failed to start (simulated: port in use)') }
   if (scenario === 'gate-problems' && out.gate) {
-    out.gate = { ...out.gate, problems: ['chains.demo 没有 targets（模拟）', 'agents.scout 指向的链不存在（模拟）'] }
+    out.gate = {
+      ...out.gate,
+      problems: L(
+        ['chains.demo 没有 targets（模拟）', 'agents.scout 指向的链不存在（模拟）'],
+        ['chains.demo has no targets (simulated)', 'agents.scout points at a missing chain (simulated)'],
+      ),
+    }
   }
   if (scenario === 'empty-stats') out.stats = null
   if (scenario === 'empty-tasks') out.tasks = []
@@ -161,7 +170,7 @@ function applyScenario(snapshot) {
       cooling: [{ ref: 'opencode/mimo-v2.6-flash-free', fails: 3, until: Date.now() + 240_000 }],
     }
   }
-  if (scenario === 'free-error') out.free = { error: '读不到免费车道运行态（模拟）' }
+  if (scenario === 'free-error') out.free = { error: L('读不到免费车道运行态（模拟）', 'Cannot read free lane runtime (simulated)') }
   return out
 }
 
@@ -240,7 +249,7 @@ const client = {
   writeFile: async (path, content) => {
     if (scenario === 'save-fail') {
       await delay(500)
-      throw err('写入失败（模拟：配置文件只读）', 'UNKNOWN')
+      throw err(L('配置文件只读（模拟）', 'config file is read-only (simulated)'), 'UNKNOWN')
     }
     const res = await fetch('/api/write', {
       method: 'POST',
