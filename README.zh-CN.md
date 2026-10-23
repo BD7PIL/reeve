@@ -46,7 +46,7 @@ GATE 是插件里的纯 JS：**没有代理二进制、没有独立服务、没�
 ```jsonc
 {
   "model": "reeve/standard",
-  "plugins": ["@bd7pil/reeve@0.2.0"]
+  "plugins": ["@bd7pil/reeve@0.2.1"]
 }
 ```
 
@@ -62,7 +62,7 @@ GATE 是插件里的纯 JS：**没有代理二进制、没有独立服务、没�
 {
   "model": "reeve/standard",
   "plugins": [
-    { "package": "@bd7pil/reeve@0.2.0", "options": { "gate": { "enabled": true, "port": 18080 } } }
+    { "package": "@bd7pil/reeve@0.2.1", "options": { "gate": { "enabled": true, "port": 18080 } } }
   ],
   "providers": {
     "reeve": {

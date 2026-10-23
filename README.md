@@ -49,7 +49,7 @@ Add the plugin to `~/.config/opencode/opencode.jsonc` (or `opencode.json`):
 ```jsonc
 {
   "model": "reeve/standard",
-  "plugins": ["@bd7pil/reeve@0.2.0"]
+  "plugins": ["@bd7pil/reeve@0.2.1"]
 }
 ```
 
@@ -68,7 +68,7 @@ Add the plugin to `~/.config/opencode/opencode.jsonc` (or `opencode.json`):
 {
   "model": "reeve/standard",
   "plugins": [
-    { "package": "@bd7pil/reeve@0.2.0", "options": { "gate": { "enabled": true, "port": 18080 } } }
+    { "package": "@bd7pil/reeve@0.2.1", "options": { "gate": { "enabled": true, "port": 18080 } } }
   ],
   "providers": {
     "reeve": {
