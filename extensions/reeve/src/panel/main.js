@@ -212,7 +212,7 @@ function main() {
       paintBadge()
       paintFoot()
     } catch (err) {
-      foot.textContent = t('panel.startFailed', { error: err instanceof Error ? err.message : String(err) })
+      foot.textContent = t('refresh.error', { error: err instanceof Error ? err.message : String(err) })
     } finally {
       busy = false
       refreshBtn.handle.update({ label: t('action.refresh'), loading: false })

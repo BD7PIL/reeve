@@ -9,7 +9,7 @@
 > 断言（任一失败 CI 红）：步骤必须点到；控制台 error/异常 = 0；关键态文本；无横向溢出；
 > 宿主 token 存在；可见按钮有可访问名；对比度 <3 硬失败 / 3–4.5 警告；保存类动线写入次数。
 
-> 0.1.11 面板（配插件 0.2.2）：**语言真正跟随 OpenChamber**（`ctx.locale` → en / zh-CN 两套词表；
+> 0.1.12 面板（配插件 0.2.2）：**语言真正跟随 OpenChamber**（`ctx.locale` → en / zh-CN 两套词表；
 > 技术标识永不翻译）；版式改成宿主式 —— 分区是分隔带，**只有链是卡片**，模型行单行，
 > 布尔项是 checkbox row，保存条在页面级（切 tab 不丢）。主套 44 项跑 `--locale=zh-CN`；
 > 英文矩阵（01/09/19/22/24/25/28/40/41/42/43）输出 `*-en.png` 与 `report-en.json`。
@@ -18,7 +18,7 @@
 > 档位下拉的百分比宽度按 shrink-to-fit 父级解析（塌成 1–2 个字）、首帧闭包用旧快照
 > （免费车道误报"运行态未就绪"）。
 
-| # | 项 | 结论（2026-10-23，0.1.11 双语 + 宿主式版式） |
+| # | 项 | 结论（2026-10-23，0.1.12 双语 + 宿主式版式） |
 | --- | --- | --- |
 | 01 | `chain-default` | ✅ 链卡只此一层；分区是分隔带；模型行单行（短名 + provider ID）；空闲时无保存条 |
 | 02 | `chain-row-selected` | ✅ 选中行主色底 + 左竖条；动作条 Up/Down/Replace/Remove（Remove 为 destructive） |
@@ -78,7 +78,7 @@
   （顶层页是 `openchamber-ui://`，面板 OOPIF 在 `http://127.0.0.1:<port>/api/guest-files/…/panel/index.html`；
   脚本按 `<html lang>` 自动选中/英文断言）。
 - 抓图：`node scripts/host-shot.mjs --app=openchamber-ui://app/index.html --cdp=http://127.0.0.1:9222 --out=…`。
-- 0.1.11 本机真宿主：PASS（文本 1155 字、console 0、无溢出）；面板显示中文（宿主 locale=zh-CN），
+- 0.1.12 本机真宿主：PASS（文本 1155 字、console 0、无溢出）；面板显示中文（宿主 locale=zh-CN），
   链卡/分区/更多 chevron 与预览一致。
 - **安全保存测试**（`--save`）：备份 `fallback.jsonc` → 面板里新增链 → 加模型 → 保存 →
   等「已生效」→ 轮询 GATE `chain_targets` → `finally` 回写并比对 sha256。仅空闲时跑：它会短暂改真配置。

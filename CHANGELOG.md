@@ -13,7 +13,7 @@ panel comes from one catalog (`en` source + `zh-CN` translation) keyed on
 are rendered in the host language, and the HTML `lang` attribute follows the
 host. Unknown locales fall back to English.
 
-**Host-style layout (extension 0.1.11).** Section cards are gone — sections are
+**Host-style layout (extension 0.1.12).** Section cards are gone — sections are
 divider bands and only chains are raised cards. The type scale is 14/13/12.5/11.5,
 model rows are single-line (provider ID hidden at 306px width, full ref kept in
 `title`), controls size to their content (numeric 5.5rem, selects 14rem), booleans
@@ -31,6 +31,9 @@ details and the manual-tier migration warning are localized from
 `OPENCODE_LOCALE` / `LANG` → English. Agent and skill descriptions use
 `description_en` when the host is English; prompt bodies stay unchanged. Upstream
 provider errors are still passed through verbatim.
+
+Extension 0.1.12 fixes one host-visible label: a failed refresh now reads
+"Refresh failed" instead of "Panel failed to start". No other behavior change.
 
 ## 0.2.1 — 2026-10-23
 
