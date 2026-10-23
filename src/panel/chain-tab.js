@@ -629,7 +629,7 @@ export function createChainTab({ host, onNeedPoll, readInfo = null, onStateChang
       field({
         value: f.max == null ? '' : String(f.max),
         mono: true,
-        placeholder: 'default 3',
+        placeholder: t('free.maxPlaceholder'),
         onChange: (v) => {
           state.view.free = { ...state.view.free, max: v === '' ? null : Number(v) }
           markDirty()
