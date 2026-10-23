@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>REEVE 编排</title>
+<title>REEVE</title>
 <style>
   /* 页面骨架 only —— 配色、字号、圆角、控件几何**全归宿主**。
      kit 自己注入控件样式；宿主在服务扩展文档时把它那份"外观"（GUEST_UI_LOOK_CSS）追加在后面。
@@ -46,10 +46,33 @@
   .oc-mono { font-family: var(--font-mono, ui-monospace, monospace); font-variant-numeric: tabular-nums; }
   .oc-nowrap { white-space: nowrap; }
 
-  /* ── 分区：标题行 + 一组平铺的行 ── */
+  /* ── 分区：宿主 settings 的卡片（surface + border + radius），不是裸平铺 ── */
   .oc-section { display: flex; flex-direction: column; min-width: 0; }
-  .oc-section-head { display: flex; align-items: baseline; gap: 8px; min-width: 0; padding-bottom: 6px; }
+  .oc-card {
+    padding: 10px 12px;
+    border: 1px solid var(--interactive-border, var(--surface-subtle));
+    border-radius: var(--radius, 9px);
+    background: color-mix(in srgb, var(--surface-elevated, transparent) 55%, transparent);
+  }
+  .oc-section-head { display: flex; align-items: baseline; gap: 8px; min-width: 0; padding-bottom: 4px; }
   .oc-section-body { display: flex; flex-direction: column; min-width: 0; }
+  /* 链是一张实体卡：名称/徽标/模型行/添加动作都在同一张卡里，和 OCRC 的服务器卡同构 */
+  .oc-chain-card {
+    gap: 4px;
+    padding: 8px 10px;
+    border: 1px solid var(--interactive-border, var(--surface-subtle));
+    border-radius: calc(var(--radius, 9px) - 2px);
+    background: var(--surface-background, transparent);
+  }
+  .oc-chain-card + .oc-chain-card { margin-top: 2px; }
+  .oc-chain-head { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+  .oc-chain-title { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; }
+  .oc-chain-title-main { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; min-width: 0; }
+  .oc-diag-card { padding: 8px 12px; }
+  #root .oc-sdk-row { padding: 5px 6px; gap: 6px; }
+  #root .oc-sdk-row-lead { width: 24px; }
+  #root .oc-sdk-row-title { font-size: 14px; }
+  #root .oc-sdk-row-sub { font-size: 12px; }
 
   /* 行间细线（宿主的 divide-y；用 interactive-border：surface-subtle 在深色里几乎看不见） */
   .oc-divide > * + * { border-top: 1px solid var(--interactive-border, var(--surface-subtle)); }
@@ -58,7 +81,7 @@
   .oc-section-head .oc-label { font-size: 15px; font-weight: 600; }
 
   /* 设置行：左标签/说明，右控件（控件列固定宽度 → 所有行共享同一条右边缘） */
-  .oc-field-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-width: 0; padding: 8px 0; }
+  .oc-field-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-width: 0; padding: 6px 0; }
   .oc-field-row > .oc-field-main { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
   .oc-field-row > .oc-field-control { flex: 0 0 auto; min-width: 0; width: min(240px, 48%); }
   .oc-field-row > .oc-field-control .oc-sdk-field,

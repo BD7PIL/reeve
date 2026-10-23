@@ -310,17 +310,15 @@ export function createChainTab({ host, onNeedPoll, readInfo = null }) {
   function renderChainCard(chain, snapshot, section) {
     const targets = targetsOf(chain)
     const tierUsers = tierUsersOf(chain)
-    const card = el('div', { class: 'oc-col', 'data-chain': chain, style: 'gap:6px;padding:10px 0' })
+    const card = el('div', { class: 'oc-col oc-chain-card', 'data-chain': chain })
 
-    // Chain ID + badges; the only entry on the right is More
-    const head = el('div', { class: 'oc-bar oc-bar-between' })
-    const left = el('div', { class: 'oc-bar' })
+    // Title row: chain ID + badges + More; counts on their own line (More stays on top at 306px)
+    const head = el('div', { class: 'oc-chain-head' })
+    const titleRow = el('div', { class: 'oc-chain-title' })
+    const left = el('div', { class: 'oc-chain-title-main' })
     left.append(el('span', { class: 'oc-label', text: chainLabel(chain) }))
     if (state.view.default_chain === chain) left.append(badge({ label: 'default', tone: 'primary' }).node)
     if (targets.includes('@free')) left.append(badge({ label: '@free', tone: 'info' }).node)
-    const paidCount = targets.filter((t) => t !== '@free').length
-    left.append(el('span', { class: 'oc-micro oc-muted', text: targets.includes('@free') ? `${paidCount} models + @free` : `${paidCount} models` }))
-    head.append(left)
     const right = el('div', { class: 'oc-bar' })
     right.append(
       menu({
@@ -344,7 +342,10 @@ export function createChainTab({ host, onNeedPoll, readInfo = null }) {
         },
       }).node,
     )
-    head.append(right)
+    titleRow.append(left, right)
+    const paidCount = targets.filter((t) => t !== '@free').length
+    head.append(titleRow)
+    head.append(el('span', { class: 'oc-micro oc-muted', text: targets.includes('@free') ? `${paidCount} models + @free` : `${paidCount} models` }))
     card.append(head)
 
     if (targets.length === 0) {
@@ -839,6 +840,7 @@ export function createChainTab({ host, onNeedPoll, readInfo = null }) {
       }
     }
     const diag = detailsBlock('diag', 'Diagnostics')
+    diag.classList.add('oc-card', 'oc-diag-card')
     diag.setAttribute('data-section', 'diag')
     diag.append(facts)
     return diag

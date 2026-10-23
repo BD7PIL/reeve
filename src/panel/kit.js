@@ -135,7 +135,7 @@ export function iconButton({ iconName, label, ...props }) {
 
 /** 分区：标题行（小字灰色说明在右）+ 一组行。 */
 export function section({ title, hint, body = [], headRight = null }) {
-  const node = el('div', { class: 'oc-section' })
+  const node = el('div', { class: 'oc-section oc-card' })
   const head = el('div', { class: 'oc-section-head' })
   head.append(el('span', { class: 'oc-label', text: title }))
   if (hint) head.append(el('span', { class: 'oc-micro oc-muted', text: hint }))
