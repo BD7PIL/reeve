@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security policy
+    url: https://github.com/BD7PIL/reeve/security/policy
+    about: Report vulnerabilities privately; do not open a public issue.
+  - name: Install and configuration
+    url: https://github.com/BD7PIL/reeve#install
+    about: Requirements, engine config, extension install, and GATE port notes.
+  - name: Releases and changelog
+    url: https://github.com/BD7PIL/reeve/releases
+    about: Check the current version and release notes before filing a bug.
