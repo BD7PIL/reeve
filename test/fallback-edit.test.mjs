@@ -226,6 +226,44 @@ export function run() {
     ok('free 节：view/plan/apply（保留 sources 与注释）+ @free 合法')
   }
 
+  // 11. 保存保真（0.1.7 修的真实缺陷）：policy/链的未知键不丢 + 只重写改过的节
+  {
+    const RICH = `// 头注释
+{
+  // 策略
+  "policy": {
+    "retry_on_errors": [429, 500],
+    "max_fallback_attempts": 3,
+    "cooldown_seconds": 60,
+    "first_prompt_watchdog_ms": 90000,
+    "session_ttl_seconds": 1800
+  },
+  "chains": {
+    // 链注释
+    "c": { "targets": ["a/m"], "sticky": true }
+  },
+  "default_chain": "c"
+}
+`
+    const doc = parseJsonc(RICH)
+    const { view } = viewOf(doc)
+    const planned = planSave({ ...view, policy: { ...view.policy, cooldown_seconds: 120 } })
+    assert.deepEqual(planned.policy.retry_on_errors, [429, 500], '未知键 retry_on_errors 保留')
+    assert.equal(planned.policy.first_prompt_watchdog_ms, 90000, '未知键 watchdog 保留')
+    assert.equal(planned.policy.session_ttl_seconds, 1800, '未知键 ttl 保留')
+    assert.equal(planned.policy.cooldown_seconds, 120, '编辑过的键生效')
+    // 链 spec 的未知键：只编辑 targets 时，同链的其它键原样回来
+    const planned2 = planSave(viewOf(parseJsonc('{"chains":{"c":{"targets":["a/m"],"sticky":true}}}')).view)
+    assert.equal(planned2.chains.c.sticky, true, '链 spec 未知键保留')
+    // 只重写改过的节：没改的节（含注释）一个字节不动
+    const r = applySave(RICH, planned, { sections: ['policy'] })
+    assert.ok(r.text.includes('// 头注释'), '头注释还在')
+    assert.ok(r.text.includes('// 链注释'), '没改的 chains 节文本原样（注释仍在）')
+    assert.equal(parseJsonc(r.text).chains.c.sticky, true, '链的未知键在盘上也没动')
+    assert.equal(parseJsonc(r.text).policy.cooldown_seconds, 120)
+    ok('保存保真：policy/链未知键不丢 + changed-only 重写')
+  }
+
   return `${n} 组断言全过`
 }
 

@@ -158,7 +158,8 @@ export function viewOf(doc) {
   for (const [name, spec] of Object.entries(asRecord(doc?.chains) ?? {})) {
     const targets = Array.isArray(spec?.targets) ? spec.targets.map((t) => String(t)) : []
     if (targets.length === 0) problems.push(`chains.${name} 没有 targets（GATE 会忽略这一条链）`)
-    out.chains[name] = { targets }
+    // 未知键原样保留（GATE 将来加的每链字段，面板一保存不能把它吃掉）
+    out.chains[name] = { ...asRecord(spec), targets }
   }
   for (const [agent, chain] of Object.entries(asRecord(doc?.agents) ?? {})) {
     if (typeof chain === 'string' && chain) out.agents[agent] = chain
@@ -201,7 +202,8 @@ export function planSave(view, { isRef = defaultIsRef } = {}) {
       problems.push(`chains.${name}：一条候选都没有（GATE 会忽略这条链）`)
       continue
     }
-    chains[name] = { targets }
+    // spec 里的未知键原样保留（viewOf 也是这么读进来的）；面板只编辑 targets
+    chains[name] = { ...asRecord(spec), targets }
   }
   if (Object.keys(chains).length === 0) problems.push('至少要有一条链')
   const agents = {}
@@ -218,9 +220,14 @@ export function planSave(view, { isRef = defaultIsRef } = {}) {
   }
   const defaultChain = view?.default_chain ?? null
   if (defaultChain && !chains[defaultChain]) problems.push(`default_chain 指向不存在的链 ${defaultChain}`)
+  // policy 面板只编辑四个键，但**保存时必须带着其它键一起写**——否则一次保存就把
+  // retry_on_errors / watchdog / TTL 这些使用者手写的键静默删掉（0.1.x 的真实缺陷）。
   const p = view?.policy ?? {}
+  const EDITED_POLICY_KEYS = ['max_fallback_attempts', 'cooldown_seconds', 'restore_primary_after_cooldown', 'provider_retries']
+  const unknownPolicy = Object.fromEntries(Object.entries(p).filter(([k]) => !EDITED_POLICY_KEYS.includes(k)))
   const num = (v, d) => (v === null || v === undefined || v === '' || !Number.isFinite(Number(v)) ? d : Number(v))
   const policy = {
+    ...unknownPolicy,
     max_fallback_attempts: Math.max(1, num(p.max_fallback_attempts, 3)),
     cooldown_seconds: Math.max(0, num(p.cooldown_seconds, 60)),
     restore_primary_after_cooldown: p.restore_primary_after_cooldown === true,
@@ -229,6 +236,8 @@ export function planSave(view, { isRef = defaultIsRef } = {}) {
   const free = freeViewOf(view?.free)
   return { chains, agents, chain_for_model: chainForModel, default_chain: defaultChain, policy, free, problems }
 }
+
+const asRecord = (v) => (v && typeof v === 'object' && !Array.isArray(v) ? v : null)
 
 /** `provider/model`（模型名可带斜杠）；没有斜杠或斜杠在首尾都不算。`@free` 是链里的自动占位符。 */
 export function defaultIsRef(ref) {

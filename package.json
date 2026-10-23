@@ -1,9 +1,9 @@
 {
   "name": "reeve",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "private": true,
   "type": "module",
-  "description": "REEVE 编排视图 —— GATE 链 / 免费车道 / 策略编辑 + 统计 + 台账",
+  "description": "REEVE 编排视图 —— 路由链 / 档位映射 / 策略 / 免费车道 + 调用统计 + 任务记录",
   "license": "MIT",
   "author": "bd7pil",
   "repository": {
