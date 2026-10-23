@@ -108,9 +108,6 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 24
-      # 断言看 innerText，不依赖字体；装中文字体是为了 artifact 里的截图可读
-      - name: 中文字体（artifact 可读性）
-        run: sudo apt-get update && sudo apt-get install -y fonts-noto-cjk
       - name: 装构建依赖（宿主 SDK + esbuild）
         run: npm --prefix extensions/reeve ci
       - name: 审计（CI 夹具；控制台/溢出/关键文本/token/对比度 + 40 项截图）
