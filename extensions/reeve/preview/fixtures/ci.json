@@ -1,0 +1,619 @@
+{
+  "//": "CI 用的确定性夹具：正常态审计（?fixture=ci）读它。不含任何密钥/内网地址；与真快照同形（plugin/src/snapshot.js）。",
+  "snapshot": {
+    "generatedAt": 1792646400000,
+    "plugin": "reeve",
+    "version": "0.2.0",
+    "agentTable": {
+      "total": 9,
+      "visible": [
+        {
+          "id": "planner",
+          "mode": "primary"
+        },
+        {
+          "id": "foreman",
+          "mode": "primary"
+        },
+        {
+          "id": "scout",
+          "mode": "subagent"
+        }
+      ],
+      "hidden": 0,
+      "subagent": [
+        {
+          "id": "scout"
+        },
+        {
+          "id": "librarian"
+        },
+        {
+          "id": "looker"
+        }
+      ]
+    },
+    "roster": {
+      "count": 8
+    },
+    "gate": {
+      "version": "0.1.0",
+      "port": 18080,
+      "from": "~/.config/opencode/reeve/fallback.jsonc",
+      "chains": [
+        "reasoning",
+        "standard",
+        "free-first",
+        "vision"
+      ],
+      "chain_targets": {
+        "reasoning": [
+          "zhipuai-coding-plan/glm-5.3",
+          "deepseek/deepseek-flash",
+          "lmuai/glm-5.3-flash",
+          "@free"
+        ],
+        "standard": [
+          "zhipuai-coding-plan/glm-5.3-flash",
+          "lmuai/glm-5.3-flash",
+          "@free",
+          "deepseek/deepseek-flash"
+        ],
+        "free-first": [
+          "@free",
+          "zhipuai-coding-plan/glm-5.3-flash",
+          "lmuai/glm-5.3-flash",
+          "deepseek/deepseek-flash"
+        ],
+        "vision": [
+          "zhipuai-coding-plan/glm-5.3-flash",
+          "lmuai/glm-5.3-flash",
+          "@free",
+          "deepseek/deepseek-flash"
+        ]
+      },
+      "providers": [
+        "opencode",
+        "openrouter",
+        "zhipuai-coding-plan",
+        "deepseek",
+        "lmuai"
+      ],
+      "policy": {
+        "max_fallback_attempts": 6,
+        "cooldown_seconds": 60,
+        "restore_primary_after_cooldown": false,
+        "provider_retries": 1
+      },
+      "agents": {
+        "planner": "reasoning",
+        "advisor": "reasoning",
+        "executor": "standard",
+        "reviewer": "standard",
+        "scout": "free-first",
+        "librarian": "free-first",
+        "looker": "vision"
+      },
+      "chain_for_model": {
+        "reeve/flash": "free-first",
+        "reeve/standard": "standard",
+        "reeve/pro": "reasoning",
+        "reeve/multimodal": "vision"
+      },
+      "default_chain": "standard",
+      "problems": [],
+      "free": {
+        "enabled": true,
+        "max": 3,
+        "providers": [
+          "opencode",
+          "openrouter"
+        ],
+        "refresh_seconds": 300,
+        "failure_threshold": 3,
+        "failure_cooldown_seconds": 600,
+        "prefer": [
+          "glm-5.3-flash-free",
+          "mimo-v2.6-flash-free"
+        ],
+        "deny": [],
+        "require_image": true,
+        "modality_url": "https://models.dev/api.json",
+        "modality_ttl_seconds": 21600,
+        "static": {}
+      },
+      "sessions": {
+        "sessions": 2,
+        "cooling": 0
+      },
+      "ledger": "~/.reeve/gate.jsonl"
+    },
+    "models": {
+      "generatedAt": 1792646400000,
+      "source": "gate",
+      "error": null,
+      "discovered": 12,
+      "candidates": [
+        {
+          "ref": "opencode/mimo-v2.6-flash-free",
+          "sources": [
+            "gate"
+          ]
+        },
+        {
+          "ref": "opencode/deepseek-v4.1-flash-free",
+          "sources": [
+            "gate"
+          ]
+        },
+        {
+          "ref": "opencode/glm-5.3-flash-free",
+          "sources": [
+            "gate"
+          ]
+        },
+        {
+          "ref": "zhipuai-coding-plan/glm-5.3-flash",
+          "sources": [
+            "chain",
+            "gate"
+          ]
+        },
+        {
+          "ref": "deepseek/deepseek-flash",
+          "sources": [
+            "chain"
+          ]
+        },
+        {
+          "ref": "reeve/flash",
+          "sources": [
+            "engine"
+          ]
+        },
+        {
+          "ref": "reeve/standard",
+          "sources": [
+            "engine"
+          ]
+        },
+        {
+          "ref": "reeve/pro",
+          "sources": [
+            "engine"
+          ]
+        },
+        {
+          "ref": "reeve/multimodal",
+          "sources": [
+            "engine"
+          ]
+        }
+      ]
+    },
+    "free": {
+      "enabled": true,
+      "max": 3,
+      "cap": 3,
+      "providers": [
+        {
+          "id": "opencode",
+          "ready": true,
+          "models": 10,
+          "error": null,
+          "at": 1792646400000,
+          "source": "https://opencode.ai/zen/v1/models"
+        },
+        {
+          "id": "openrouter",
+          "ready": false,
+          "models": 0,
+          "error": null,
+          "at": null,
+          "source": null
+        },
+        {
+          "id": "nvidia",
+          "ready": true,
+          "models": 1,
+          "error": null,
+          "at": 1792646400000,
+          "source": "static"
+        }
+      ],
+      "expand": [
+        "opencode/mimo-v2.6-flash-free",
+        "opencode/deepseek-v4.1-flash-free",
+        "opencode/glm-5.3-flash-free"
+      ],
+      "cooling": [],
+      "prefer": [
+        "mimo-v2.6-flash-free"
+      ],
+      "deny": [],
+      "chain": "free-first"
+    },
+    "stats": {
+      "generatedAt": 1792646400000,
+      "checkedAt": 1792646400000,
+      "windowMs": 86400000,
+      "source": "gate.ledger",
+      "error": null,
+      "gate": {
+        "window": {
+          "ms": 86400000,
+          "since": 1792560000000,
+          "until": 1792646400000,
+          "relaxed": false
+        },
+        "fetched": 40,
+        "used": 36,
+        "attempts": 44,
+        "requests": 38,
+        "requestsOk": 35,
+        "requestsError": 3,
+        "attemptLatency": {
+          "n": 44,
+          "avg": 1200,
+          "p50": 900,
+          "p95": 2600,
+          "max": 4100
+        },
+        "requestLatency": {
+          "n": 38,
+          "avg": 1400,
+          "p50": 1000,
+          "p95": 3000,
+          "max": 4500
+        },
+        "fallback": {
+          "requests": 6,
+          "hops": 6,
+          "byIndex": [
+            {
+              "index": 1,
+              "n": 32
+            },
+            {
+              "index": 2,
+              "n": 6
+            }
+          ]
+        },
+        "byChain": [
+          {
+            "chain": "free-first",
+            "agent": "scout",
+            "n": 18,
+            "ok": 17,
+            "error": 1,
+            "hops": 3,
+            "latency": {
+              "n": 18,
+              "avg": 900,
+              "p50": 800,
+              "p95": 1800,
+              "max": 2400
+            }
+          },
+          {
+            "chain": "standard",
+            "agent": "executor",
+            "n": 14,
+            "ok": 13,
+            "error": 1,
+            "hops": 2,
+            "latency": {
+              "n": 14,
+              "avg": 1300,
+              "p50": 1100,
+              "p95": 2200,
+              "max": 3000
+            }
+          },
+          {
+            "chain": "reasoning",
+            "agent": "planner",
+            "n": 6,
+            "ok": 5,
+            "error": 1,
+            "hops": 1,
+            "latency": {
+              "n": 6,
+              "avg": 2100,
+              "p50": 2000,
+              "p95": 3300,
+              "max": 3600
+            }
+          }
+        ],
+        "byProvider": [
+          {
+            "provider": "opencode",
+            "n": 18,
+            "ok": 17,
+            "error": 1,
+            "latency": {
+              "n": 18,
+              "avg": 900,
+              "p50": 800,
+              "p95": 1800,
+              "max": 2400
+            }
+          },
+          {
+            "provider": "zhipuai-coding-plan",
+            "n": 16,
+            "ok": 15,
+            "error": 1,
+            "latency": {
+              "n": 16,
+              "avg": 1400,
+              "p50": 1200,
+              "p95": 2400,
+              "max": 3200
+            }
+          },
+          {
+            "provider": "deepseek",
+            "n": 10,
+            "ok": 10,
+            "error": 0,
+            "latency": {
+              "n": 10,
+              "avg": 1700,
+              "p50": 1600,
+              "p95": 2600,
+              "max": 2800
+            }
+          }
+        ],
+        "byModel": [
+          {
+            "ref": "opencode/mimo-v2.6-flash-free",
+            "n": 12,
+            "ok": 12,
+            "error": 0
+          },
+          {
+            "ref": "zhipuai-coding-plan/glm-5.3-flash",
+            "n": 10,
+            "ok": 9,
+            "error": 1
+          }
+        ]
+      },
+      "orchestrate": {
+        "totals": {
+          "n": 4,
+          "ok": 3,
+          "error": 1,
+          "running": 0,
+          "timedOut": 0,
+          "stopped": 0,
+          "uncertain": 0
+        },
+        "queue": {
+          "active": 0,
+          "waiting": 0
+        },
+        "byAgent": [
+          {
+            "agent": "scout",
+            "n": 3,
+            "ok": 3,
+            "error": 0,
+            "latency": {
+              "n": 3,
+              "avg": 50000,
+              "p50": 48000,
+              "p95": 60000,
+              "max": 65000
+            }
+          }
+        ]
+      }
+    },
+    "registered": {
+      "agents": [
+        "planner",
+        "foreman",
+        "scout"
+      ],
+      "skills": [
+        "reeve-review"
+      ]
+    },
+    "endpoint": {
+      "status": "unchanged",
+      "path": "~/.config/opencode/opencode.jsonc",
+      "detail": null
+    },
+    "counts": {
+      "total": 4,
+      "running": 0,
+      "completed": 3,
+      "error": 1,
+      "stopped": 0,
+      "reconciled": 0
+    },
+    "tasks": [
+      {
+        "taskID": "t1",
+        "parentSessionID": "ses_ci_a",
+        "childSessionID": "ses_ci_b",
+        "agent": "scout",
+        "description": "列出 workspace 的脚本入口",
+        "background": true,
+        "state": "completed",
+        "reason": null,
+        "terminalSource": "notification",
+        "timedOut": false,
+        "statusUncertain": false,
+        "startedAt": 1792646000000,
+        "endedAt": 1792646050000
+      },
+      {
+        "taskID": "t2",
+        "parentSessionID": "ses_ci_a",
+        "childSessionID": null,
+        "agent": "librarian",
+        "description": "核对文档链接",
+        "background": false,
+        "state": "completed",
+        "reason": null,
+        "terminalSource": "tool",
+        "timedOut": false,
+        "statusUncertain": false,
+        "startedAt": 1792645900000,
+        "endedAt": 1792645950000
+      },
+      {
+        "taskID": "t3",
+        "parentSessionID": "ses_ci_c",
+        "childSessionID": "ses_ci_d",
+        "agent": "reviewer",
+        "description": "审阅 GATE 生命周期改动",
+        "background": true,
+        "state": "error",
+        "reason": "model_error",
+        "terminalSource": "notification",
+        "timedOut": false,
+        "statusUncertain": false,
+        "startedAt": 1792645800000,
+        "endedAt": 1792645850000
+      }
+    ]
+  },
+  "config": {
+    "schema": 1,
+    "policy": {
+      "retry_on_errors": [
+        401,
+        402,
+        403,
+        429,
+        500,
+        503,
+        529
+      ],
+      "max_fallback_attempts": 4,
+      "cooldown_seconds": 60,
+      "restore_primary_after_cooldown": false,
+      "first_prompt_watchdog_ms": 90000,
+      "provider_retries": 1,
+      "models_ttl_seconds": 300,
+      "session_ttl_seconds": 1800
+    },
+    "providers": {
+      "opencode": {
+        "base_url": "https://opencode.ai/inference/openai/v1",
+        "path": "/chat/completions",
+        "key": "public",
+        "lane": "passthrough",
+        "models": [
+          "*"
+        ]
+      },
+      "openrouter": {
+        "base_url": "https://openrouter.ai/api/v1",
+        "path": "/chat/completions",
+        "auth": [
+          "openrouter"
+        ],
+        "models": []
+      },
+      "zhipuai-coding-plan": {
+        "base_url": "https://open.bigmodel.cn",
+        "path": "/api/coding/paas/v4/chat/completions",
+        "auth": [
+          "zhipuai-coding-plan"
+        ]
+      },
+      "deepseek": {
+        "base_url": "https://api.deepseek.com",
+        "auth": [
+          "deepseek",
+          "deepseek-api"
+        ]
+      },
+      "lmuai": {
+        "base_url": "https://api.lmuai.com",
+        "auth": [
+          "lmuai",
+          "lmuai-glm"
+        ]
+      }
+    },
+    "chains": {
+      "reasoning": {
+        "targets": [
+          "zhipuai-coding-plan/glm-5.3",
+          "deepseek/deepseek-flash",
+          "lmuai/glm-5.3-flash",
+          "@free"
+        ]
+      },
+      "standard": {
+        "targets": [
+          "zhipuai-coding-plan/glm-5.3-flash",
+          "lmuai/glm-5.3-flash",
+          "@free",
+          "deepseek/deepseek-flash"
+        ]
+      },
+      "free-first": {
+        "targets": [
+          "@free",
+          "zhipuai-coding-plan/glm-5.3-flash",
+          "lmuai/glm-5.3-flash",
+          "deepseek/deepseek-flash"
+        ]
+      },
+      "vision": {
+        "targets": [
+          "zhipuai-coding-plan/glm-5.3-flash",
+          "lmuai/glm-5.3-flash",
+          "@free",
+          "deepseek/deepseek-flash"
+        ]
+      }
+    },
+    "agents": {
+      "planner": "reasoning",
+      "advisor": "reasoning",
+      "executor": "standard",
+      "reviewer": "standard",
+      "scout": "free-first",
+      "librarian": "free-first",
+      "looker": "vision"
+    },
+    "chain_for_model": {
+      "reeve/flash": "free-first",
+      "reeve/standard": "standard",
+      "reeve/pro": "reasoning",
+      "reeve/multimodal": "vision"
+    },
+    "default_chain": "standard",
+    "free": {
+      "enabled": true,
+      "max": 3,
+      "providers": [
+        "opencode",
+        "openrouter"
+      ],
+      "refresh_seconds": 300,
+      "failure_threshold": 3,
+      "failure_cooldown_seconds": 600,
+      "prefer": [
+        "glm-5.3-flash-free",
+        "mimo-v2.6-flash-free"
+      ],
+      "deny": [],
+      "require_image": true,
+      "modality_url": "https://models.dev/api.json",
+      "modality_ttl_seconds": 21600,
+      "static": {}
+    }
+  }
+}
