@@ -1,0 +1,110 @@
+{
+  "generatedAt": "2026-10-23T13:10:38.601Z",
+  "locale": "en",
+  "fixture": true,
+  "strictContrast": false,
+  "total": 11,
+  "failed": 0,
+  "warned": 0,
+  "items": [
+    {
+      "id": "01-chain-default",
+      "note": "路由链首屏：链卡（含免费兜底行）+ 档位/模型/更多",
+      "file": "01-chain-default-en.png",
+      "scenario": null,
+      "failures": [],
+      "warnings": [],
+      "consoleErrors": []
+    },
+    {
+      "id": "09-tier-mapping",
+      "note": "chain_for_model（真正生效的档位映射编辑面）",
+      "file": "09-tier-mapping-en.png",
+      "scenario": null,
+      "failures": [],
+      "warnings": [],
+      "consoleErrors": []
+    },
+    {
+      "id": "19-free-default",
+      "note": "免费车道：开关/模型数/发现源 + 展开摘要",
+      "file": "19-free-default-en.png",
+      "scenario": null,
+      "failures": [],
+      "warnings": [],
+      "consoleErrors": []
+    },
+    {
+      "id": "22-free-error",
+      "note": "免费车道运行态读取失败",
+      "file": "22-free-error-en.png",
+      "scenario": "free-error",
+      "failures": [],
+      "warnings": [],
+      "consoleErrors": []
+    },
+    {
+      "id": "24-free-prefer-add",
+      "note": "固定一个免费模型进偏好（高级折叠内）",
+      "file": "24-free-prefer-add-en.png",
+      "scenario": null,
+      "failures": [],
+      "warnings": [],
+      "consoleErrors": []
+    },
+    {
+      "id": "25-gate-down",
+      "note": "路由引擎没起：徽标 + 横幅 + 页签仍可用",
+      "file": "25-gate-down-en.png",
+      "scenario": "gate-down",
+      "failures": [],
+      "warnings": [],
+      "consoleErrors": []
+    },
+    {
+      "id": "28-config-missing",
+      "note": "配置读不到：横幅 + 诊断里有 tried 列表",
+      "file": "28-config-missing-en.png",
+      "scenario": "config-missing",
+      "failures": [],
+      "warnings": [],
+      "consoleErrors": []
+    },
+    {
+      "id": "40-chain-narrow-306",
+      "note": "宿主侧栏 306px：不溢出、徽标与更多可见、免费行仍可读",
+      "file": "40-chain-narrow-306-en.png",
+      "scenario": null,
+      "failures": [],
+      "warnings": [],
+      "consoleErrors": []
+    },
+    {
+      "id": "41-chain-selected-306",
+      "note": "306px：选中行 + 动作条（Selected 前缀收起，按钮仍在）",
+      "file": "41-chain-selected-306-en.png",
+      "scenario": null,
+      "failures": [],
+      "warnings": [],
+      "consoleErrors": []
+    },
+    {
+      "id": "42-stats-306",
+      "note": "306px：统计行拆两行，不溢出",
+      "file": "42-stats-306-en.png",
+      "scenario": null,
+      "failures": [],
+      "warnings": [],
+      "consoleErrors": []
+    },
+    {
+      "id": "43-free-advanced-306",
+      "note": "306px：免费车道高级折叠（偏好/禁用/白名单）",
+      "file": "43-free-advanced-306-en.png",
+      "scenario": null,
+      "failures": [],
+      "warnings": [],
+      "consoleErrors": []
+    }
+  ]
+}
