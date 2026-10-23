@@ -302,7 +302,7 @@ export async function readLedgerTail({ path, limit = STATS_DEFAULTS.limit, tailB
 }
 
 /**
- * 免费车道运行态（`/gate/free`）：发现源状态、当前展开、冷却。
+ * 免费模型池运行态（`/gate/free`）：发现源状态、当前展开、冷却。
  * 读不到不算错——面板会显示"未就绪"，请求侧照常降级到付费。
  */
 export async function fetchGateFree({ port, host = '127.0.0.1', fetchImpl = fetch, timeoutMs = STATS_DEFAULTS.timeoutMs } = {}) {

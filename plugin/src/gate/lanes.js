@@ -14,7 +14,7 @@
 import { LANES } from './config.js'
 
 /** `"provider/model"`：只在**第一个** `/` 切分（模型名本身可以带斜杠，如 9router 的 `oc/xxx`）。
- *  `@free` 是链里的**免费车道占位符**（请求时由 free.js 展开成真实候选；不是 provider）。
+ *  `@free` 是链里的**免费模型池占位符**（请求时由 free.js 展开成真实候选；不是 provider）。
  *  `parseTarget('@free')` → `{ free: true }`。 */
 export function parseTarget(spec) {
   const s = String(spec ?? '').trim()
@@ -154,7 +154,7 @@ export function planAttempts(route, { config, sessions, sessionID = null, keyPic
   }
   const keys = staticTargets.map((t) => `${t.provider.id}/${t.model}`)
   // `@free` 展开出来的候选是**逐请求动态**的（列表会变），所以不能用按索引的粘性指针：
-  // 动态链从 0 起，靠按 ref 的冷却（会话 + 免费车道全局）跳过刚失败过的项。
+  // 动态链从 0 起，靠按 ref 的冷却（会话 + 免费模型池全局）跳过刚失败过的项。
   const start = config.chains[route.chain] && route.kind === 'chain' && !route.dynamicFree ? sessions.startIndex(sid, chainName, keys) : 0
   let ordered = staticTargets.slice(start)
   const notCooling = ordered.filter((t) => !sessions.isCooling(sid, chainName, `${t.provider.id}/${t.model}`))
@@ -163,7 +163,7 @@ export function planAttempts(route, { config, sessions, sessionID = null, keyPic
   return { chainName, agent: route.agent ?? null, ordered, keys, skipped }
 }
 
-/** 转发给上游时要剥掉的头（逐跳头 + 长度/编码 + authorization 由车道替换）。 */
+/** 转发给上游时要剥掉的头（逐跳头 + 长度/编码 + authorization 由通道替换）。 */
 export const STRIP_FORWARD_HEADERS = Object.freeze([
   'host',
   'connection',
@@ -192,8 +192,8 @@ export function forwardedHeaders(inHeaders, { authorization = null } = {}) {
 
 /**
  * 这一跳实际发什么。
- *   · passthrough 车道：头**逐字**转发（含 UA 与四个 x-opencode-session*：客户端身份是它的全部意义），只换 Authorization；
- *   · native 车道：只发最小集（content-type/accept/我们自己的 UA + Authorization）——不把会话头漏给第三方上游。
+ *   · passthrough 通道：头**逐字**转发（含 UA 与四个 x-opencode-session*：客户端身份是它的全部意义），只换 Authorization；
+ *   · native 通道：只发最小集（content-type/accept/我们自己的 UA + Authorization）——不把会话头漏给第三方上游。
  * body：把 `model` 换成候选的模型名，其余原样（tools 等不动）；非 JSON body 原样透传。
  */
 export function buildUpstreamRequest({ attempt, inHeaders, bodyText, version = 'gate' }) {

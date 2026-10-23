@@ -384,12 +384,12 @@ const postJson = (gate, path, body) =>
   assert.equal(directPlan.ordered[0].key, null, 'key:none → 没有 authorization')
 
   const fh = forwardedHeaders({ a: undefined, b: 'x', Host: 'h', 'content-length': '1', 'x-opencode-session-id': 'ses_1' }, { authorization: 'Bearer k' })
-  assert.deepEqual(fh, { b: 'x', 'x-opencode-session-id': 'ses_1', authorization: 'Bearer k' }, '剥逐跳/长度头、跳过 undefined、authorization 由车道替换')
+  assert.deepEqual(fh, { b: 'x', 'x-opencode-session-id': 'ses_1', authorization: 'Bearer k' }, '剥逐跳/长度头、跳过 undefined、authorization 由通道替换')
 
   const attempt = { provider: config.providers.p, model: 'm1', key: null, authorization: null }
   const raw = buildUpstreamRequest({ attempt, inHeaders: { 'content-type': 'text/plain' }, bodyText: 'not json', version: '0.1.0' })
   assert.equal(raw.body, 'not json', '非 JSON 体原样透传（不去猜）')
-  assert.equal(raw.headers['content-type'], 'text/plain', 'native 车道保留调用方的 content-type')
+  assert.equal(raw.headers['content-type'], 'text/plain', 'native 通道保留调用方的 content-type')
   assert.equal(raw.headers.accept, '*/*', 'accept 缺省 */*')
   assert.equal(raw.headers['user-agent'], 'reeve-gate/0.1.0')
   const row = attemptRow({ ts: 'T', chainName: 'c', agent: null, attempt, status: 'error', code: 500, latencyMs: Number.NaN })
@@ -511,22 +511,23 @@ const postJson = (gate, path, body) =>
     'content-length': '123',
     'accept-encoding': 'gzip, deflate',
   }
-  const body = JSON.stringify({ model: 'reasoning', stream: true, messages: [{ role: 'user', content: 'hi' }], tools: [{ type: 'function', function: { name: 'read', description: 'd', parameters: { type: 'object', properties: { path: { type: 'string' } } } } }] })
+  const body = JSON.stringify({ model: 'reasoning', stream: true, reasoning_effort: 'xhigh', messages: [{ role: 'user', content: 'hi' }], tools: [{ type: 'function', function: { name: 'read', description: 'd', parameters: { type: 'object', properties: { path: { type: 'string' } } } } }] })
   const passthrough = buildUpstreamRequest({ attempt: attemptOf('passthrough', 'Bearer public'), inHeaders, bodyText: body })
   assert.equal(passthrough.headers['user-agent'], 'opencode/latest/2.0.32/cli', '透传：UA 逐字保留（客户端身份就是它的意义）')
   for (const k of ['x-opencode-session-id', 'x-opencode-session', 'x-session-affinity', 'x-session-id', 'x-opencode-client', 'x-opencode-project'])
     assert.equal(passthrough.headers[k], inHeaders[k], `透传保留 ${k}`)
-  assert.equal(passthrough.headers.authorization, 'Bearer public', 'Authorization 换成车道的键')
+  assert.equal(passthrough.headers.authorization, 'Bearer public', 'Authorization 换成通道的键')
   for (const k of ['connection', 'content-length', 'accept-encoding', 'host']) assert.equal(passthrough.headers[k], undefined, `剥掉 ${k}`)
   assert.equal(JSON.parse(passthrough.body).model, 'oc/mimo', '模型名映射成候选的模型')
+  assert.equal(JSON.parse(passthrough.body).reasoning_effort, 'xhigh', '推理强度原样透传（GATE 只换 model）')
   assert.deepEqual(JSON.parse(passthrough.body).tools, JSON.parse(body).tools, 'tools 原样（深比）')
   assert.equal(passthrough.url, 'http://p.test/v1/chat/completions', '默认 path')
   const native = buildUpstreamRequest({ attempt: attemptOf('native', 'Bearer sk-x'), inHeaders, bodyText: body })
-  assert.equal(native.headers['x-opencode-session-id'], undefined, '原生车道不漏会话头给第三方上游')
-  assert.equal(native.headers['user-agent'].startsWith('reeve-gate/'), true, '原生车道用自己的 UA')
+  assert.equal(native.headers['x-opencode-session-id'], undefined, '原生通道不漏会话头给第三方上游')
+  assert.equal(native.headers['user-agent'].startsWith('reeve-gate/'), true, '原生通道用自己的 UA')
   assert.equal(native.headers.authorization, 'Bearer sk-x')
   assert.equal(forwardedHeaders({ 'X-Weird': 'v' })['X-Weird'], 'v', 'forwardedHeaders 保留未知头（大小写照原样）')
-  ok('请求构造：透传逐字（UA+四个 session 头）/ 剥逐跳头与编码 / 模型映射 / tools 深比 / 原生最小集')
+  ok('请求构造：透传逐字（UA+四个 session 头）/ 剥逐跳头与编码 / 模型映射+effort 透传 / tools 深比 / 原生最小集')
 }
 
 // ---- 5b. probeGate：复用探针（引擎按工作区加载插件 → 后面的实例要能认出"已经在跑的 GATE"） ----
@@ -603,7 +604,7 @@ const postJson = (gate, path, body) =>
   assert.equal(none.from, BUNDLED_FALLBACK_PATH, '缺文件 → 打包默认')
   const bundled = JSON.parse(await readFile(BUNDLED_FALLBACK_PATH, 'utf8'))
   assert.ok(Object.keys(bundled.chains).length >= 2, '打包默认自带可用的链')
-  assert.ok(!JSON.stringify(bundled.chains).includes('-free'), '打包默认不含免费车道（每台机器自己加）')
+  assert.ok(!JSON.stringify(bundled.chains).includes('-free'), '打包默认不含免费模型池（每台机器自己加）')
   ok('配置：注释/归一化问题如实报/默认值/目录端点/坏文件回落/打包默认')
 }
 
@@ -629,8 +630,8 @@ const postJson = (gate, path, body) =>
   assert.equal(rows[0].agent, 'scout')
   assert.equal(rows[0].status, 'ok')
   assert.ok(!(await readFile(join(h.dir, 'gate.jsonl'), 'utf8')).includes(CANARY), '台账无密钥')
-  assert.equal(h.up.free.state.requests[0].headers['user-agent'], 'opencode/latest/2.0.32/cli', '透传车道：UA 到了上游')
-  assert.equal(h.up.free.state.requests[0].headers['x-opencode-session-id'], session, '透传车道：session 头到了上游')
+  assert.equal(h.up.free.state.requests[0].headers['user-agent'], 'opencode/latest/2.0.32/cli', '透传通道：UA 到了上游')
+  assert.equal(h.up.free.state.requests[0].headers['x-opencode-session-id'], session, '透传通道：session 头到了上游')
   assert.equal(h.up.free.state.requests[0].headers.authorization, undefined, 'key=none 的 provider 不发 Authorization')
   assert.ok(h.fetchImpl.seen.every((u) => new URL(u).hostname === '127.0.0.1'), '零出网：所有目标都是环回')
   await h.close()

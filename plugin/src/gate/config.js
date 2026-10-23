@@ -17,7 +17,7 @@ export const BUNDLED_FALLBACK_PATH = fileURLToPath(new URL('../../default-fallba
  * 机器上的用户配置（三端共享同一份）。
  * 形状说明：`~/.config/opencode/reeve/` 这一个**目录**是三端共享面（开发机上是 junction → 仓内
  * `.config/opencode/reeve/`，对端由 ocrc sync 同步这个目录），配置文件放里面；以后要再加
- * "策略/车道"之类的小配置也进这个目录，别再散落。
+ * "策略/通道"之类的小配置也进这个目录，别再散落。
  */
 export function defaultFallbackConfigPath({ home = homedir() } = {}) {
   return join(home, '.config', 'opencode', 'reeve', 'fallback.jsonc')
@@ -37,7 +37,7 @@ export const POLICY_DEFAULTS = Object.freeze({
 const DEFAULT_PATH = '/v1/chat/completions'
 export const LANES = Object.freeze({ NATIVE: 'native', PASSTHROUGH: 'passthrough' })
 
-/** 免费车道的默认值（面板可改；见 docs/FREE-LANE.md）。 */
+/** 免费模型池的默认值（面板可改；见 docs/FREE-LANE.md）。 */
 export const FREE_DEFAULTS = Object.freeze({
   enabled: true,
   max: 3,
@@ -111,7 +111,7 @@ export function normalizeGateConfig(raw) {
     }
   }
 
-  // 免费车道：发现源 + @free 展开的偏好。全部有默认值；坏字段进 problems，不影响其余配置。
+  // 免费模型池：发现源 + @free 展开的偏好。全部有默认值；坏字段进 problems，不影响其余配置。
   const asInt = (v, min, max, dflt) => {
     const n = Number(v)
     return Number.isFinite(n) ? Math.min(max, Math.max(min, Math.trunc(n))) : dflt

@@ -6,9 +6,9 @@
 #
 # 每条打印一行证据（`PASS/FAIL <编号> <项> — <观测值>`）；任一 FAIL → 退出码 1。
 # 编号对齐 docs/GATE.md 的验收清单：
-#   ① GATE 免费车道（/gate/free：enabled、opencode ready、目录里有免费模型）  ①b 展开预览非空
+#   ① GATE 免费模型池（/gate/free：enabled、opencode ready、目录里有免费模型）  ①b 展开预览非空
 #   ② 直投免费链（reeve/flash）：200 + x-reeve-fallback + 台账 auto:true
-#   ③ GATE 面（版本/链/直投链名+响应头/引擎经 GATE 免费链 + 台账）   ④ 免费车道关闭 → 顺位付费
+#   ③ GATE 面（版本/链/直投链名+响应头/引擎经 GATE 免费链 + 台账）   ④ 免费模型池关闭 → 顺位付费
 #   ④b 死免费候选 → 顺位付费                                        ⑤ 粘性（同 session 下次从付费起；别的 session 不受影响）
 #   ⑥ 冷却记账可见                                                  ⑦ 热更 ≤5s（临时链 → 新序生效 → 还原）
 #   ⑧ 付费直连不回归                                                ⑨ Bifrost 进程（退役完成前为 INFO）
@@ -55,14 +55,14 @@ fallback_header() { sed -n 's/.*[Xx]-[Rr]eeve-[Ff]allback: *\(.*\)\r*$/\1/p' "$1
 
 echo "== GATE 真机验收（${GATE_URL}）=="
 
-# ── ① 免费车道：发现源就绪 + 目录里有免费模型 ──
+# ── ① 免费模型池：发现源就绪 + 目录里有免费模型 ──
 free_doc=$(curl -s --max-time 8 "$GATE_URL/gate/free" 2>/dev/null || true)
 enabled=$(echo "$free_doc" | grep -o '"enabled":true' | head -1)
 oc_ready=$(echo "$free_doc" | grep -o '"id":"opencode","ready":true' | head -1)
 oc_models=$(echo "$free_doc" | sed -n 's/.*"id":"opencode","ready":true,"models":\([0-9]*\).*/\1/p' | head -1)
 [ -n "$enabled" ] && [ -n "$oc_ready" ] && [ "${oc_models:-0}" -ge 1 ] \
-  && pass ① "免费车道就绪" "opencode ready，发现 ${oc_models} 个免费模型" \
-  || fail ① "免费车道就绪" "enabled=${enabled:-无} opencode=${oc_ready:-未就绪} models=${oc_models:-0}（看 /gate/free）"
+  && pass ① "免费模型池就绪" "opencode ready，发现 ${oc_models} 个免费模型" \
+  || fail ① "免费模型池就绪" "enabled=${enabled:-无} opencode=${oc_ready:-未就绪} models=${oc_models:-0}（看 /gate/free）"
 expanded=$(echo "$free_doc" | sed -n 's/.*"expand":\[\([^]]*\)\].*/\1/p' | head -c 220)
 [ -n "$expanded" ] && pass ①b "展开预览非空" "$expanded" || fail ①b "展开预览非空" "expand 为空（发现源没拉到？）"
 
@@ -74,7 +74,7 @@ tail -n "+$((b + 1))" "$LEDGER" >"$WORK/rows2.jsonl" 2>/dev/null || true
 auto_try=$(grep -c '"auto":true' "$WORK/rows2.jsonl" || true)
 paid_ok=$(grep -c '"provider":"zhipuai-coding-plan".*"status":"ok"' "$WORK/rows2.jsonl" || true)
 # 非引擎调用没有引擎的客户端形状（UA + session 头 + 官方 tools），zen 的免费档会 403 形状门 ——
-# 所以这一条验的是"免费车道被真正尝试过 + 链顺位到付费仍成功"；免费成功本身由 ③f（真引擎）证明。
+# 所以这一条验的是"免费模型池被真正尝试过 + 链顺位到付费仍成功"；免费成功本身由 ③f（真引擎）证明。
 if [ "$c" = 200 ] && [ -n "$fb" ] && [ "${auto_try:-0}" -ge 1 ] && [ "${paid_ok:-0}" -ge 1 ]; then
   pass ② "直投链：免费被形状门拒 → 顺位付费" "HTTP $c；auto 尝试 ${auto_try} 行；付费成功；引擎侧免费成功见 ③f"
 else
@@ -106,7 +106,7 @@ else
     fail ③f "引擎经 GATE 免费链" "输出：$(echo "$out" | tail -1 | head -c 120) ｜ 新台账：$(head -c 200 "$WORK/rows.jsonl")"
   fi
 
-  # ── ④ 免费车道关闭 → 同一请求顺位走付费（不硬撞免费）──
+  # ── ④ 免费模型池关闭 → 同一请求顺位走付费（不硬撞免费）──
   cp -f "$USER_CFG" "$WORK/cfg4.bak"
   node --input-type=module -e "
     import { readFileSync, writeFileSync } from 'node:fs'

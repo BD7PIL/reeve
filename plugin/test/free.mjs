@@ -1,4 +1,4 @@
-// 免费车道（src/gate/free.js）的离线验收：
+// 免费模型池（src/gate/free.js）的离线验收：
 //   · 发现解析/过滤（opencode 的 -free/big-pickle、openrouter 的 :free、nvidia 静态）
 //   · TTL 缓存 / 拉取失败保留上一份
 //   · @free 展开：prefer → 发现序、deny、预算（maxAttempts - 1）、无键跳过
@@ -512,7 +512,7 @@ const OPENROUTER_FREE = ['vendor/a:free', 'vendor/b', 'vendor/c:free']
     assert.equal(res.status, 200)
     const rows = await h.rows()
     assert.equal(rows.at(-1).provider, 'paid')
-    ok('enabled=false：免费车道整体关闭，链照常走付费')
+    ok('enabled=false：免费模型池整体关闭，链照常走付费')
   } finally {
     await h.close()
   }
@@ -570,4 +570,4 @@ const OPENROUTER_FREE = ['vendor/a:free', 'vendor/b', 'vendor/c:free']
   ok("过滤：all 全收 / 未知 filter 回落 / 默认 getAuth 安全")
 }
 
-console.log(`\n免费车道测试：${passed} 项全过`)
+console.log(`\n免费模型池测试：${passed} 项全过`)

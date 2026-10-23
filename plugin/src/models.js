@@ -37,6 +37,11 @@ export const REEVE_TIERS = Object.freeze([
 /** 四档共享的 limit（付费候选最小值；见 REEVE_TIERS 注释）。 */
 export const TIER_LIMIT = Object.freeze({ context: 1_000_000, output: 131_072 })
 
+/** 四档共享的推理强度变体（id = reasoningEffort，形状与 opencode.jsonc 的 v2 variants 一致）。
+ *  引擎把选中的变体翻译成请求体里的 `reasoning_effort`，GATE 只换 model、其余透传；
+ *  上游不认识某个档位时由链换下一候选。每次 buildTierModel 生成新数组，不共享可变引用。 */
+export const TIER_VARIANTS = Object.freeze(['low', 'medium', 'high', 'xhigh', 'max'])
+
 /** 造一个最小的 `Model.Info`（照 `Model.Info.default()` 的形状，能力按档位给）。 */
 export function buildTierModel(tier, providerID = 'reeve') {
   return {
@@ -49,7 +54,7 @@ export function buildTierModel(tier, providerID = 'reeve') {
       input: tier.images ? ['text', 'image'] : ['text'],
       output: ['text'],
     },
-    variants: [],
+    variants: TIER_VARIANTS.map((id) => ({ id, settings: { reasoningEffort: id } })),
     time: { released: 0 },
     cost: [],
     status: 'active',

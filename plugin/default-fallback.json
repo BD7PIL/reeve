@@ -54,9 +54,7 @@
     "reeve/flash": "free-first",
     "reeve/standard": "standard",
     "reeve/pro": "reasoning",
-    "reeve/multimodal": "vision",
-    "zhipuai-coding-plan/glm-5.3": "reasoning",
-    "zhipuai-coding-plan/glm-5.3-flash": "standard"
+    "reeve/multimodal": "vision"
   },
   "default_chain": "standard"
 }

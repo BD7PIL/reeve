@@ -5,7 +5,7 @@
 //   POST /gate/session          插件侧的 session→agent 桥（把"这个 session 是 scout"告诉 GATE）
 //   POST /gate/session/:id/next 插件侧要"下一个候选"（流已开始/沉默这两类层内换不了的情形）
 //   GET  /gate/version          探针/测试用
-//   GET  /gate/free             免费车道运行态（发现源/展开预览/冷却）——面板只读它
+//   GET  /gate/free             免费模型池运行态（发现源/展开预览/冷却）——面板只读它
 //
 // 纪律：① 只记录、不泄漏——台账里没有密钥（只记键的"名字"）；② 时间与 IO 全可注入（测试零 sleep、零真实出网）；
 // ③ 管理面只认环回；④ dispose 尽力而为、绝不因为清理炸掉（含"定时器已开"的情况）。
@@ -145,7 +145,7 @@ export async function startGate({
     return { key: auth[id].key, name: `auth:${id}` }
   }
 
-  // 免费车道：发现（公开模型列表/静态白名单）+ `@free` 展开 + 按 ref 的全局冷却。
+  // 免费模型池：发现（公开模型列表/静态白名单）+ `@free` 展开 + 按 ref 的全局冷却。
   // 读的是**当前** config（热更即时生效）；时间/IO 注入，测试零出网。
   const freeLane = createFreeLane({ getConfig: () => config, getAuth: () => auth, now, fetchImpl, logger })
 
@@ -179,7 +179,7 @@ export async function startGate({
         logger?.debug?.(`[gate] 拉 ${provider.id} 的模型池失败（降级）：${String(err).slice(0, 120)}`)
       }
     }
-    // 免费车道发现到的模型也进目录（面板的选择器才能看到并固定它们；`@free` 本身不需要进）
+    // 免费模型池发现到的模型也进目录（面板的选择器才能看到并固定它们；`@free` 本身不需要进）
     try {
       for (const c of await freeLane.discovered()) push(c.ref, c.provider)
     } catch {
@@ -332,7 +332,7 @@ export async function startGate({
           agents: { ...config.agents },
           chain_for_model: { ...config.chain_for_model },
           default_chain: config.default_chain ?? null,
-          // 免费车道的**配置**（运行态在 /gate/free；面板的"已生效"比对用这一份）
+          // 免费模型池的**配置**（运行态在 /gate/free；面板的"已生效"比对用这一份）
           free: {
             enabled: config.free.enabled,
             max: config.free.max,
@@ -419,7 +419,7 @@ export async function startGate({
       }
     },
   })
-  // 免费车道后台预热（不阻塞启动；失败只影响免费候选，请求照常降级到付费）
+  // 免费模型池后台预热（不阻塞启动；失败只影响免费候选，请求照常降级到付费）
   freeLane.warm()
 
   const disposeFns = [() => watch.stop(), () => ledger.flush(), () => new Promise((r) => server.close(() => r()))]

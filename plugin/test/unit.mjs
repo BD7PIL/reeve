@@ -12,7 +12,7 @@ import { decideStop, VERDICT } from '../src/terminal-gate.js'
 import { STATE, REASON, STOP_CONFIRMATION_GRACE_MS } from '../src/constants.js'
 import { SUBAGENT_ROSTER, ROSTER_MARKER, buildSubagentRoster, withRoster } from '../src/roster.js'
 import { readdirSync, readFileSync } from 'node:fs'
-import { REEVE_TIERS, TIER_LIMIT, resolveGateEndpoint } from '../src/models.js'
+import { REEVE_TIERS, TIER_LIMIT, TIER_VARIANTS, buildTierModel, resolveGateEndpoint } from '../src/models.js'
 
 let pass = 0
 let fail = 0
@@ -260,8 +260,18 @@ section('名册：subagent 工具描述补名 + 与 agents/*.md 不漂移')
     ok(`档位 ${t.id} 的 limit = 1M/131072（付费候选最小值）`, t && TIER_LIMIT.context === 1_000_000 && TIER_LIMIT.output === 131_072)
     ok(`档位 ${t.id} 声明能吃图`, t.images === true)
   }
+  ok('推理强度变体五档', JSON.stringify(TIER_VARIANTS) === JSON.stringify(['low', 'medium', 'high', 'xhigh', 'max']))
+  {
+    const a = buildTierModel(REEVE_TIERS[0])
+    const b = buildTierModel(REEVE_TIERS[1])
+    ok('档位模型注册 5 个变体且 id = reasoningEffort',
+      JSON.stringify(a.variants.map((v) => [v.id, v.settings?.reasoningEffort])) === JSON.stringify([['low', 'low'], ['medium', 'medium'], ['high', 'high'], ['xhigh', 'xhigh'], ['max', 'max']]))
+    ok('各档 variants 逐次新建、不共享引用', a.variants !== b.variants && a.variants[0] !== b.variants[0])
+  }
   const bundled = JSON.parse(readFileSync(new URL('../default-fallback.json', import.meta.url), 'utf8'))
   const chainNames = Object.keys(bundled.chains ?? {})
+  ok('打包默认 chain_for_model 恰为四个档位键（zhipu 直投别名 0.2.4 退役）',
+    JSON.stringify(Object.keys(bundled.chain_for_model ?? {}).sort()) === JSON.stringify(['reeve/flash', 'reeve/multimodal', 'reeve/pro', 'reeve/standard']))
   for (const [model, chain] of Object.entries(bundled.chain_for_model ?? {})) {
     if (model.startsWith('reeve/')) {
       ok(`chain_for_model.${model} 是注册过的档位`, ids.includes(model.slice('reeve/'.length)))

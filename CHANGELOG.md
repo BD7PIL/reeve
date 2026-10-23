@@ -3,6 +3,33 @@
 Newest first. Versions follow the plugin package (`plugin/package.json`); the
 panel extension has its own tags (`reeve-<version>`).
 
+## 0.2.4 — 2026-10-24
+
+**Tier models expose reasoning-effort variants.** Every reeve tier
+(`flash`/`standard`/`pro`/`multimodal`) now registers five variants —
+`low`/`medium`/`high`/`xhigh`/`max` (`settings.reasoningEffort`), the same shape
+the engine already accepts for configured providers. The composer shows the
+variant submenu on `REEVE *` models; the engine translates the selection into a
+`reasoning_effort` request field, and GATE keeps passing the body through
+untouched except for `model` (asserted in tests). Upstreams that do not
+understand a value fall through to the next chain candidate as usual.
+
+**Dormant direct-model aliases removed from the bundled config.**
+`default-fallback.json` no longer maps `zhipuai-coding-plan/glm-5.3` →
+`reasoning` and `zhipuai-coding-plan/glm-5.3-flash` → `standard` in
+`chain_for_model`; only the four `reeve/*` tiers remain. Those aliases could
+only fire if a request naming the raw provider model reached GATE, which the
+current topology never does (direct provider selection bypasses GATE). A unit
+test pins the bundled mapping to exactly the four tier keys. Existing machine
+configs that still carry the two keys keep working — the panel shows them as
+read-only "other mappings" and preserves them on save; delete them from
+`~/.config/opencode/reeve/fallback.jsonc` to drop the rows.
+
+**Terminology (extension 0.1.14).** The Chinese UI no longer calls the free
+pool「免费车道」(a literal "free lane") — it is now「免费模型池」with English
+"Free pool"; audit and host-audit assertions, README and docs updated to match.
+GATE's provider `lane` concept is 通道 in Chinese docs, no longer 车道.
+
 ## 0.2.3 — 2026-10-23
 
 **Skill descriptions are real text again.** The review skill's frontmatter used

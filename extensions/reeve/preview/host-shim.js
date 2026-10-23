@@ -170,7 +170,7 @@ function applyScenario(snapshot) {
       cooling: [{ ref: 'opencode/mimo-v2.6-flash-free', fails: 3, until: Date.now() + 240_000 }],
     }
   }
-  if (scenario === 'free-error') out.free = { error: L('读不到免费车道运行态（模拟）', 'Cannot read free lane runtime (simulated)') }
+  if (scenario === 'free-error') out.free = { error: L('读不到免费模型池运行态（模拟）', 'Cannot read free pool runtime (simulated)') }
   return out
 }
 

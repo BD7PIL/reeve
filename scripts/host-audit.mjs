@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // 真宿主验收：在 openchamber 里打开 REEVE 面板（OOPIF），断言它真的渲染、没有控制台错误、
-// 没有横向溢出、宿主 token 在位、关键内容（免费车道 / @free / 预算 / 三个 tab）都在。
+// 没有横向溢出、宿主 token 在位、关键内容（免费模型池 / @free / 预算 / 三个 tab）都在。
 //
 //   node scripts/host-audit.mjs --app=http://127.0.0.1:3001/ --cdp=http://127.0.0.1:9222
 //   node scripts/host-audit.mjs --app=http://127.0.0.1:4610/ --cdp=http://127.0.0.1:9223 --login \
@@ -185,7 +185,7 @@ for (let i = 0; i < 24 && ready < 200; i++) {
 const langProbe = await send('Runtime.evaluate', { expression: 'document.documentElement.lang', returnByValue: true }, sid)
 const zh = /^zh/i.test(String(langProbe.result?.result?.value ?? ''))
 const L = (en, zhText) => (zh ? zhText : en)
-const MUST = zh ? ['免费车道', '总尝试', '链', '统计', '任务'] : ['Free lane', 'Total attempts', 'Chains', 'Stats', 'Tasks']
+const MUST = zh ? ['免费模型池', '总尝试', '链', '统计', '任务'] : ['Free pool', 'Total attempts', 'Chains', 'Stats', 'Tasks']
 
 const checks = await send(
   'Runtime.evaluate',

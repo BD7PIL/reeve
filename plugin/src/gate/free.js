@@ -1,4 +1,4 @@
-// GATE 的自动免费车道。
+// GATE 的自动免费模型池。
 //
 // 为什么需要它：免费档（OpenCode Free / OpenRouter `:free` / NVIDIA 免费额度）的**模型列表会变**
 // 且**时好时坏**。写死候选会腐坏；写一个"管理器"定时改配置又会 churn 用户的文件。这里的做法是：
@@ -97,7 +97,7 @@ export function createFreeLane({ getConfig, getAuth = () => ({}), now = Date.now
       // 拉不到就**保留上一份好列表**（免费池抖一下不该让链里突然没有免费候选）
       const next = { at: now(), models: prev?.models ?? [], error: String(err?.message ?? err).slice(0, 140), from: src.url, sig: src.url }
       cache.set(id, next)
-      logger?.debug?.(`[gate] 免费车道发现失败 ${id}：${next.error}`)
+      logger?.debug?.(`[gate] 免费模型池发现失败 ${id}：${next.error}`)
       return next
     }
   }

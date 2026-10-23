@@ -1,4 +1,4 @@
-# 免费车道（`@free`）
+# 免费模型池（`@free`）
 
 > 状态（2026-10-22，reeve 0.1.13）：GATE 原生实现；9router 已退役。
 > 一句话：链里写 `@free`，GATE 在**请求时**把它展开成"当前可发现、未冷却、有键"的免费候选；
@@ -41,7 +41,7 @@ free-first 是 3 免费 + 3 付费。面板的「免费尝试次数」下面会�
 好数据；从未成功拿到元数据时直接走付费，**绝不猜/退回纯文本免费模型**。OpenCode Zen 的 `/models`
 本身只有 id，没有 modalities，所以必须用 models.dev 或 OpenRouter 的 `architecture.input_modalities`。
 
-免费车道挂在 `free-first` 和 `standard`/`vision` 的尾部，默认给 `reeve/flash`（scout /
+免费模型池挂在 `free-first` 和 `standard`/`vision` 的尾部，默认给 `reeve/flash`（scout /
 librarian）和 `reeve/standard`（executor / reviewer）用；`reeve/pro`（planner / advisor /
 critic）走 `reasoning` 付费强推理。不要让所有
 agent 都落到 `@free`，免费池里多是 flash 档，规划/评审质量会掉；也不要把所有 agent 都钉到
@@ -51,7 +51,7 @@ agent 都落到 `@free`，免费池里多是 flash 档，规划/评审质量会�
 
 | provider | 来源 | 过滤 | 说明 |
 | --- | --- | --- | --- |
-| `opencode` | `https://opencode.ai/zen/v1/models`（公开） | `-free` 后缀或 `big-pickle`，排除 `deepseek-v4-flash-free` | 透传车道（我们的客户端身份） |
+| `opencode` | `https://opencode.ai/zen/v1/models`（公开） | `-free` 后缀或 `big-pickle`，排除 `deepseek-v4-flash-free` | 透传通道（我们的客户端身份） |
 | `openrouter` | `https://openrouter.ai/api/v1/models`（公开） | `:free` 后缀 | 需要 `auth.json` 的 `openrouter` key |
 | `nvidia` | 无公开"免费"标记 | `free.static.nvidia` 白名单 | 免费是账号额度；没有 key 时不参与 |
 
@@ -72,9 +72,9 @@ agent 都落到 `@free`，免费池里多是 flash 档，规划/评审质量会�
 
 ## 4. 面板
 
-链 tab 的「免费车道」卡：启用开关、免费尝试次数（含预算提示）、参与发现的 provider（含 key/发现状态）、
+链 tab 的「免费模型池」卡：启用开关、免费尝试次数（含预算提示）、参与发现的 provider（含 key/发现状态）、
 偏好顺序（置顶 / 排除 / 固定一个模型）、NVIDIA 白名单、发现与冷却参数、**当前展开**（运行时只读）。
-链编辑器里 `@free` 显示为「免费车道（自动）· 最多 N 个」一行。
+链编辑器里 `@free` 显示为「免费模型池（自动）· 最多 N 个」一行。
 
 所有编辑走同一套保存（只重写被改的节、保留注释）；保存后等 GATE 热更（≤5s）才显示「已生效」——
 「已生效」比较的是**链的完整目标集（chain_targets）+ 策略 + free 节**，不再只比链名。
@@ -108,5 +108,5 @@ agent 都落到 `@free`，免费池里多是 flash 档，规划/评审质量会�
 ## 7. 验证
 
 - 离线：`node plugin/test/free.mjs`（15 项：发现/TTL/展开/预算/冷却/热更/并发/无键/空目录）。
-- 真机：`bash scripts/accept-gate.sh`（①/② 免费车道；④ 关闭免费→付费；④b 死免费候选→付费）。
+- 真机：`bash scripts/accept-gate.sh`（①/② 免费模型池；④ 关闭免费→付费；④b 死免费候选→付费）。
 - 生命周期：`node scripts/accept-lifecycle.mjs`（工作区驱逐后 GATE 仍在）。

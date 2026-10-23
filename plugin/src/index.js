@@ -83,7 +83,7 @@ export default {
     let statsState = null
     /** 模型候选（面板的链编辑选择器用）。必须在快照块之前声明。 */
     let modelsState = null
-    // 免费车道运行态（/gate/free）：面板的"当前展开 / 冷却 / 发现源"读它
+    // 免费模型池运行态（/gate/free）：面板的"当前展开 / 冷却 / 发现源"读它
     let freeState = null
     /** 从插件包注册进去的 agent / skill 名单（进快照，便于上机核对"没往配置目录拷文件"）。 */
     let registeredAgents = []

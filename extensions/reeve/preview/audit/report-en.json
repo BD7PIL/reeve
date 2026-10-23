@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-23T13:10:38.601Z",
+  "generatedAt": "2026-10-23T17:06:06.003Z",
   "locale": "en",
   "fixture": true,
   "strictContrast": false,
@@ -27,7 +27,7 @@
     },
     {
       "id": "19-free-default",
-      "note": "免费车道：开关/模型数/发现源 + 展开摘要",
+      "note": "免费模型池：开关/模型数/发现源 + 展开摘要",
       "file": "19-free-default-en.png",
       "scenario": null,
       "failures": [],
@@ -36,7 +36,7 @@
     },
     {
       "id": "22-free-error",
-      "note": "免费车道运行态读取失败",
+      "note": "免费模型池运行态读取失败",
       "file": "22-free-error-en.png",
       "scenario": "free-error",
       "failures": [],
@@ -99,7 +99,7 @@
     },
     {
       "id": "43-free-advanced-306",
-      "note": "306px：免费车道高级折叠（偏好/禁用/白名单）",
+      "note": "306px：免费模型池高级折叠（偏好/禁用/白名单）",
       "file": "43-free-advanced-306-en.png",
       "scenario": null,
       "failures": [],

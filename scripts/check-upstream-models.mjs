@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // 上游"免费模型目录"契约哨兵（每日 CI 跑；不需要任何 key）。
 //
-// 为什么：GATE 的免费车道靠两个公开模型列表做自动发现，**列表形状变了不会报错**，只会静默
+// 为什么：GATE 的免费模型池靠两个公开模型列表做自动发现，**列表形状变了不会报错**，只会静默
 // 变成"没有免费候选 → 全走付费"。这里把"形状 + 免费项数量"钉住，漂移就红 + 开 issue。
 //
 //   node scripts/check-upstream-models.mjs
@@ -48,7 +48,7 @@ for (const c of checks) {
 }
 
 if (failed) {
-  console.error(`\n上游目录契约漂移 ${failed} 项 —— 免费车道的自动发现可能失效，检查 GATE 的 sources/filter。`)
+  console.error(`\n上游目录契约漂移 ${failed} 项 —— 免费模型池的自动发现可能失效，检查 GATE 的 sources/filter。`)
   process.exit(1)
 }
 console.log('\n上游目录契约正常')
