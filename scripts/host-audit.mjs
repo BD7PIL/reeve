@@ -176,7 +176,7 @@ const checks = await send(
       const rs = getComputedStyle(de)
       const tokens = ['--surface-background', '--surface-elevated', '--surface-subtle', '--interactive-border', '--status-error'].filter((n) => !rs.getPropertyValue(n).trim())
       const text = document.body.innerText
-      const must = ['编排与代理层', '免费车道', '免费车道（自动）', '总尝试 4 = 免费 3 + 付费 1', '链', '统计', '台账']
+      const must = ['免费车道', '免费车道', '总尝试', '路由链', '调用统计', '任务记录']
       return {
         textLen: text.length,
         missing: must.filter((s) => !text.includes(s)),
@@ -222,18 +222,18 @@ if (SAVE_TEST) {
       `(() => { const i = document.querySelector('[data-act="new-chain-row"] input'); if (!i) return false; const s = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set; s.call(i, ${JSON.stringify(chainName)}); i.dispatchEvent(new Event('input', { bubbles: true })); return true })()`,
     )
     await step(
-      '建链',
-      `(() => { const b = [...document.querySelectorAll('[data-act="new-chain-row"] button')].find((b) => (b.textContent || '').trim() === '建链'); if (!b) return false; b.click(); return true })()`,
+      '创建',
+      `(() => { const b = [...document.querySelectorAll('[data-act="new-chain-row"] button')].find((b) => (b.textContent || '').trim() === '创建'); if (!b) return false; b.click(); return true })()`,
     )
     await step(
-      '添加候选',
-      `(() => { const card = document.querySelector('[data-chain="${chainName}"]'); if (!card) return false; const b = [...card.querySelectorAll('button')].find((b) => (b.textContent || '').includes('添加候选')); if (!b) return false; b.click(); return true })()`,
+      '添加模型',
+      `(() => { const card = document.querySelector('[data-chain="${chainName}"]'); if (!card) return false; const b = [...card.querySelectorAll('button')].find((b) => (b.textContent || '').includes('添加模型')); if (!b) return false; b.click(); return true })()`,
     )
     await step(
-      '选一个候选',
+      '选一个模型',
       `(() => { const rows = [...document.querySelectorAll('[data-chain="${chainName}"] .oc-sdk-row')]; const r = rows[0]; if (!r) return false; r.click(); return true })()`,
     )
-    await step('保存并生效', clickBtn('保存并生效'))
+    await step('保存并应用', clickBtn('保存并应用'))
     for (let i = 0; i < 20 && !applied; i++) {
       await sleep(1000)
       applied = String(await panelEval('document.body.innerText')).includes('已生效')

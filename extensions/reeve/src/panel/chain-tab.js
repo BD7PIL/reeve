@@ -12,12 +12,16 @@
 // 它写什么：**只写 GATE 的 fallback 配置**（路径取自快照 `gate.from`）。写入是宿主的原子写
 // （temp + rename），GATE 那边永远看不到半截 JSON；`fallback-edit.js` 保证只重写被改的几节。
 
-import { applySave, agentsForChain, parseJsonc, planSave, viewOf } from './fallback-edit.js'
-import { badge, banner, button, checkbox, field, fieldRow, iconButton, list, menu, search, section as kitSection, select, separator, spinner } from './kit.js'
-import { el, fallbackConfigPathFor, fmtAgo, fmtClock, readGateConfig } from './util.js'
+import { applySave, parseJsonc, planSave, viewOf } from './fallback-edit.js'
+import { agentLabel, chainLabel, hasChainLabel, modelRefParts, providerLabel, tierLabel } from './labels.js'
+import { badge, banner, button, checkbox, field, fieldRow, list, menu, search, section as kitSection, select, separator, spinner } from './kit.js'
+import { el, fallbackConfigPathFor, fmtClock, readGateConfig } from './util.js'
 
 const clone = (v) => JSON.parse(JSON.stringify(v ?? {}))
 const chainNames = (view) => Object.keys(view?.chains ?? {})
+
+/** 引擎档位（chain_for_model 的编辑面只露这四个；未知映射原样保留、只读展示）。 */
+const TIER_MODELS = ['reeve/flash', 'reeve/standard', 'reeve/pro', 'reeve/multimodal']
 
 export function createChainTab({ host, onNeedPoll, readInfo = null }) {
   const state = {
@@ -36,6 +40,8 @@ export function createChainTab({ host, onNeedPoll, readInfo = null }) {
     addingChain: false,
     newChainName: '',
     save: { status: 'idle', at: null, error: null, planned: null },
+    // 折叠块的展开状态要跨重绘保留 —— 否则「高级」里点一下按钮，重绘后块又合上了
+    openBlocks: {},
   }
 
   /** 从盘上读一次配置。**有未保存改动时不覆盖**（用户的编辑优先）。 */
@@ -78,6 +84,18 @@ export function createChainTab({ host, onNeedPoll, readInfo = null }) {
     onNeedPoll?.()
   }
 
+  /** 文本框类编辑的脏反馈：**不重绘**（重绘会打断输入焦点），只把保存条/徽标点亮。
+   *  引用由 render() 挂在 state.ui 上。 */
+  function markDirty() {
+    state.dirty = true
+    state.ui?.badge?.handle.update({ label: '未保存', tone: 'warning' })
+    if (state.ui?.savebar) {
+      state.ui.savebar.hidden = false
+      state.ui.saveBtn?.handle.update({ disabled: false })
+    }
+    onNeedPoll?.()
+  }
+
   // ---- 编辑动作（全部经过"选择"这一个入口，除了加/删链这种链级动作） ----
 
   const targetsOf = (chain) => [...(state.view.chains[chain]?.targets ?? [])]
@@ -91,6 +109,11 @@ export function createChainTab({ host, onNeedPoll, readInfo = null }) {
     state.live = text
   }
 
+  /** 改一条链的 targets 时**保留 spec 里的未知键**（面板只管 targets，别的键不是它的）。 */
+  const setTargets = (chain, targets) => {
+    state.view.chains[chain] = { ...clone(state.view.chains[chain]), targets }
+  }
+
   function moveSelected(chain, ref, delta, section, snapshot) {
     const targets = targetsOf(chain)
     const at = targets.indexOf(ref)
@@ -98,9 +121,7 @@ export function createChainTab({ host, onNeedPoll, readInfo = null }) {
     if (at < 0 || to < 0 || to >= targets.length) return
     ;[targets[at], targets[to]] = [targets[to], targets[at]]
     announce(`${ref} 移到第 ${to + 1} 位`)
-    mutate(section, snapshot, () => {
-      state.view.chains[chain] = { targets }
-    })
+    mutate(section, snapshot, () => setTargets(chain, targets))
     focusRow(chain, to)
   }
 
@@ -160,7 +181,7 @@ export function createChainTab({ host, onNeedPoll, readInfo = null }) {
 
   function removeSelected(chain, ref, section, snapshot) {
     mutate(section, snapshot, () => {
-      state.view.chains[chain] = { targets: targetsOf(chain).filter((t) => t !== ref) }
+      setTargets(chain, targetsOf(chain).filter((t) => t !== ref))
       state.selected = null
     })
   }
@@ -168,7 +189,7 @@ export function createChainTab({ host, onNeedPoll, readInfo = null }) {
   function placeTarget(chain, ref, replaceRef, section, snapshot) {
     const r = String(ref ?? '').trim()
     if (!r.includes('/')) {
-      state.notice = `认不出的候选：${ref}（要写成 provider/model）`
+      state.notice = `认不出的模型：${ref}（要写成 服务商/模型）`
       render(section, snapshot)
       return
     }
@@ -176,7 +197,7 @@ export function createChainTab({ host, onNeedPoll, readInfo = null }) {
     if (replaceRef != null && targets.includes(replaceRef)) targets[targets.indexOf(replaceRef)] = r
     else targets.push(r)
     mutate(section, snapshot, () => {
-      state.view.chains[chain] = { targets }
+      setTargets(chain, targets)
       state.picker = null
       state.notice = null
       state.selected = { chain, ref: r }
@@ -207,6 +228,14 @@ export function createChainTab({ host, onNeedPoll, readInfo = null }) {
     })
   }
 
+  /** 删链前的引用计数：档位映射（chain_for_model）指向它时**拒绝删**——0.1.x 会静默
+   *  把 reeve/pro → reasoning 这类映射一起删掉，用户模型面直接 404。 */
+  function tierUsersOf(chain) {
+    return Object.entries(state.view.chain_for_model ?? {})
+      .filter(([, c]) => c === chain)
+      .map(([m]) => m)
+  }
+
   // ---- 保存：改 → 写 → 等快照里的 gate 段真的变（≤5s 热更） ----
 
   async function save(snapshot, section) {
@@ -218,7 +247,11 @@ export function createChainTab({ host, onNeedPoll, readInfo = null }) {
       return
     }
     try {
-      const { text } = applySave(state.text ?? '', planned)
+      // 只重写**真的改了**的节：没改的节（连同里面的注释与排版）一个字节都不动。
+      // 比较用编辑视图 vs 盘上视图（planned 是归一化产物，直接比会把"补了默认值"当成改动）。
+      const ALL_SECTIONS = ['chains', 'agents', 'chain_for_model', 'policy', 'free', 'default_chain']
+      const changed = ALL_SECTIONS.filter((k) => sectionChanged(state.view?.[k], state.baseView?.[k]))
+      const { text } = applySave(state.text ?? '', planned, { sections: changed })
       const res = await host.writeFile(fallbackConfigPathFor(snapshot), text)
       if (res && res.written === false) throw new Error('宿主没有确认写入')
       state.dirty = false
@@ -233,8 +266,9 @@ export function createChainTab({ host, onNeedPoll, readInfo = null }) {
     render(section, snapshot)
   }
 
-  /** 保存是否真的到了 GATE：比的是链的**目标全集**（chain_targets）与策略/免费车道，
-   *  不再只比链名 —— 只比名字会把"加了候选但 GATE 没变"误判成已生效（预览是内存写，以前就这样假绿）。 */
+  /** 保存是否真的到了 GATE：比的是链的**目标全集**（chain_targets）与档位映射/策略/免费车道，
+   *  不再只比链名 —— 只比名字会把"加了候选但 GATE 没变"误判成已生效（预览是内存写，以前就这样假绿）。
+   *  策略只比面板暴露的四个键（快照的 gate.policy 只投影这四个；planned 里带着未知键，直接比永远不等）。 */
   function syncSave(snapshot) {
     const s = state.save
     if (s.status !== 'waiting' || !s.planned) return
@@ -251,11 +285,14 @@ export function createChainTab({ host, onNeedPoll, readInfo = null }) {
       for (const k of FREE_KEYS) out[k] = k === 'static' ? sortedStatic(f?.[k]) : f?.[k]
       return out
     }
+    const POLICY_KEYS = ['max_fallback_attempts', 'cooldown_seconds', 'restore_primary_after_cooldown', 'provider_retries']
+    const pickPolicy = (p) => Object.fromEntries(POLICY_KEYS.map((k) => [k, p?.[k]]))
     const same =
       JSON.stringify(g.chain_targets ?? {}) === JSON.stringify(plannedTargets) &&
       JSON.stringify(g.agents ?? {}) === JSON.stringify(s.planned.agents) &&
+      JSON.stringify(g.chain_for_model ?? {}) === JSON.stringify(s.planned.chain_for_model) &&
       JSON.stringify(g.default_chain ?? null) === JSON.stringify(s.planned.default_chain ?? null) &&
-      JSON.stringify(g.policy ?? {}) === JSON.stringify(s.planned.policy) &&
+      JSON.stringify(pickPolicy(g.policy)) === JSON.stringify(pickPolicy(s.planned.policy)) &&
       JSON.stringify(pickFree(g.free)) === JSON.stringify(pickFree(s.planned.free))
     if (same) s.status = 'applied'
     else if (Date.now() - s.at > 30_000) s.status = 'timeout'
@@ -272,16 +309,18 @@ export function createChainTab({ host, onNeedPoll, readInfo = null }) {
 
   function renderChainCard(chain, snapshot, section) {
     const targets = targetsOf(chain)
-    const users = agentsForChain(state.view, chain)
+    const tierUsers = tierUsersOf(chain)
     const card = el('div', { class: 'oc-col', 'data-chain': chain, style: 'gap:6px;padding:10px 0' })
 
-    // 标题行：链名 + 状态徽标 + 灰字事实；右侧只有「更多」一个入口
+    // 标题行：中文链名 + 原始 ID 小字 + 徽标；右侧只有「更多」一个入口
     const head = el('div', { class: 'oc-bar oc-bar-between' })
     const left = el('div', { class: 'oc-bar' })
-    left.append(el('span', { class: 'oc-label', text: chain }))
+    left.append(el('span', { class: 'oc-label', text: chainLabel(chain) }))
+    if (hasChainLabel(chain)) left.append(el('span', { class: 'oc-micro oc-muted oc-mono', text: chain }))
     if (state.view.default_chain === chain) left.append(badge({ label: '默认', tone: 'primary' }).node)
-    left.append(el('span', { class: 'oc-micro oc-muted', text: users.length ? `agent：${users.join(' · ')}` : '没有 agent 用它' }))
-    left.append(el('span', { class: 'oc-micro oc-muted oc-mono', text: targets.includes('@free') ? `${targets.filter((t) => t !== '@free').length} 个候选 + 免费自动` : `${targets.length} 个候选` }))
+    if (targets.includes('@free')) left.append(badge({ label: '免费兜底', tone: 'info' }).node)
+    const paidCount = targets.filter((t) => t !== '@free').length
+    left.append(el('span', { class: 'oc-micro oc-muted', text: targets.includes('@free') ? `${paidCount} 个模型 + 免费兜底` : `${paidCount} 个模型` }))
     head.append(left)
     const right = el('div', { class: 'oc-bar' })
     right.append(
@@ -293,7 +332,12 @@ export function createChainTab({ host, onNeedPoll, readInfo = null }) {
         items: [
           { id: 'default', label: '设为默认链', disabled: state.view.default_chain === chain },
           { separator: true },
-          { id: 'delete', label: '删除这条链', destructive: true, disabled: users.length > 0 || chainNames(state.view).length <= 1 },
+          {
+            id: 'delete',
+            label: tierUsers.length > 0 ? `删除（${tierUsers.map(tierLabel).join('、')} 在用）` : '删除这条链',
+            destructive: true,
+            disabled: tierUsers.length > 0 || chainNames(state.view).length <= 1,
+          },
         ],
         onSelect: (id) => {
           if (id === 'default') mutate(section, snapshot, () => { state.view.default_chain = chain })
@@ -305,7 +349,7 @@ export function createChainTab({ host, onNeedPoll, readInfo = null }) {
     card.append(head)
 
     if (targets.length === 0) {
-      card.append(el('span', { class: 'oc-micro oc-muted', text: '还没有候选 —— 加一个，GATE 才有得试。' }))
+      card.append(el('span', { class: 'oc-micro oc-muted', text: '还没有模型 —— 加一个，路由引擎才有得试。' }))
     } else {
       const sel = state.selected?.chain === chain ? state.selected.ref : null
       // kit 的行是 role=option / tabindex=-1（roving tabindex）→ 容器按 listbox 做，
@@ -315,7 +359,7 @@ export function createChainTab({ host, onNeedPoll, readInfo = null }) {
         'data-chain-list': chain,
         role: 'listbox',
         tabindex: '0',
-        'aria-label': `${chain} 的候选（↑/↓ 选 · Alt+↑/↓ 换位 · Enter 换模型 · Delete 删除）`,
+        'aria-label': `${chainLabel(chain)}的模型（↑/↓ 选 · Alt+↑/↓ 换位 · Enter 换模型 · Delete 删除）`,
       })
       listWrap.addEventListener('keydown', (event) => onListKeydown(event, chain, section, snapshot))
       queueMicrotask(() => {
@@ -325,7 +369,7 @@ export function createChainTab({ host, onNeedPoll, readInfo = null }) {
       })
       listWrap.append(
         list({
-          ariaLabel: `${chain} 的候选`,
+          ariaLabel: `${chainLabel(chain)}的模型`,
           selectedId: sel,
           items: targets.map((ref, i) => {
             if (ref === '@free') {
@@ -335,18 +379,20 @@ export function createChainTab({ host, onNeedPoll, readInfo = null }) {
               return {
                 id: ref,
                 leading: String(i + 1),
-                title: '免费车道（自动）',
-                meta: free.enabled === false ? '已关闭' : `最多 ${cap} 个 · 全部冷却走付费`,
+                title: '免费车道',
+                subtitle: '自动发现免费模型，失败回到付费',
+                meta: free.enabled === false ? '已关闭' : `最多 ${cap} 个`,
                 badge: { label: '自动', tone: 'info' },
               }
             }
             const usage = usageOf(snapshot, ref)
+            const parts = modelRefParts(ref)
             return {
               id: ref,
               leading: String(i + 1),
-              title: ref,
+              title: parts.title,
+              subtitle: parts.sub,
               meta: usage ?? undefined,
-              ...(i === 0 ? { badge: { label: '首选', tone: 'primary' } } : {}),
             }
           }),
           onSelect: (ref) => {
@@ -358,17 +404,17 @@ export function createChainTab({ host, onNeedPoll, readInfo = null }) {
       )
       card.append(listWrap)
 
-      // 选中之后才出现的动作条（同权按钮不成群：这里最多四个，而且针对的是"这一个候选"）
+      // 选中之后才出现的动作条（同权按钮不成群：这里最多四个，而且针对的是"这一个模型"）
       if (sel) {
         const at = targets.indexOf(sel)
         const bar = el('div', { class: 'oc-bar oc-bar-between', 'data-act': 'row-actions', 'data-ref': sel, role: 'group', 'aria-label': `已选 ${sel}` })
         bar.append(el('span', { class: 'oc-micro oc-muted oc-truncate', text: `已选：${sel}` }))
         const acts = el('div', { class: 'oc-bar' })
         acts.append(
-          button({ label: '↑', variant: 'secondary', size: 'xs', disabled: at <= 0, data: { 'data-act': 'up', 'aria-keyshortcuts': 'Alt+ArrowUp' }, onClick: () => moveSelected(chain, sel, -1, section, snapshot) }).node,
-          button({ label: '↓', variant: 'secondary', size: 'xs', disabled: at < 0 || at >= targets.length - 1, data: { 'data-act': 'down', 'aria-keyshortcuts': 'Alt+ArrowDown' }, onClick: () => moveSelected(chain, sel, +1, section, snapshot) }).node,
+          button({ label: '上移', variant: 'secondary', size: 'xs', disabled: at <= 0, data: { 'data-act': 'up', 'aria-keyshortcuts': 'Alt+ArrowUp' }, onClick: () => moveSelected(chain, sel, -1, section, snapshot) }).node,
+          button({ label: '下移', variant: 'secondary', size: 'xs', disabled: at < 0 || at >= targets.length - 1, data: { 'data-act': 'down', 'aria-keyshortcuts': 'Alt+ArrowDown' }, onClick: () => moveSelected(chain, sel, +1, section, snapshot) }).node,
           button({
-            label: '换模型',
+            label: '更换模型',
             variant: 'secondary',
             size: 'xs',
             data: { 'data-act': 'swap', 'aria-keyshortcuts': 'Enter' },
@@ -377,21 +423,21 @@ export function createChainTab({ host, onNeedPoll, readInfo = null }) {
               render(section, snapshot)
             },
           }).node,
-          iconButton({ iconName: 'close', label: '', variant: 'ghost', size: 'xs', data: { 'data-act': 'remove', 'aria-keyshortcuts': 'Delete', 'aria-label': '删除这个候选' }, onClick: () => removeSelected(chain, sel, section, snapshot) }).node,
+          button({ label: '移除', variant: 'ghost', size: 'xs', data: { 'data-act': 'remove', 'aria-keyshortcuts': 'Delete' }, onClick: () => removeSelected(chain, sel, section, snapshot) }).node,
         )
         bar.append(acts)
         card.append(bar)
       }
     }
 
-    // 加候选：动线 = 点一下 → 出现搜索 + 手填
+    // 加模型：动线 = 点一下 → 出现搜索 + 手填
     if (state.picker?.chain === chain) {
       card.append(separator({ label: state.picker.replaceRef ? `换掉 ${state.picker.replaceRef}` : '添加到链尾' }))
       card.append(renderPicker(chain, snapshot, section))
     } else {
       card.append(
         button({
-          label: '+ 添加候选',
+          label: '+ 添加模型',
           variant: 'ghost',
           size: 'xs',
           data: { 'data-act': 'add' },
@@ -411,20 +457,24 @@ export function createChainTab({ host, onNeedPoll, readInfo = null }) {
     const q = String(state.picker.query ?? '').toLowerCase()
     const matches = all.filter((c) => !q || c.ref.toLowerCase().includes(q)).slice(0, 30)
     const wrap = el('div', { class: 'oc-inset' })
-    wrap.append(search({ value: state.picker.query, placeholder: '搜索候选（provider/model）', onChange: (v) => { state.picker.query = v; render(section, snapshot) } }).node)
+    wrap.append(search({ value: state.picker.query, placeholder: '搜索模型（服务商/模型）', onChange: (v) => { state.picker.query = v; render(section, snapshot) } }).node)
     if (matches.length === 0) {
-      wrap.append(el('span', { class: 'oc-micro oc-muted', text: all.length ? '没有匹配的候选 —— 也可以在下面手填。' : '候选列表是空的（GATE 还没列出来）—— 在下面手填。' }))
+      wrap.append(el('span', { class: 'oc-micro oc-muted', text: all.length ? '没有匹配的模型 —— 也可以在下面手填。' : '模型目录是空的（路由引擎还没列出来）—— 在下面手填。' }))
     } else {
       const scroll = el('div', { class: 'oc-list-scroll' })
       scroll.append(
         list({
-          ariaLabel: '候选',
+          ariaLabel: '可选模型',
           selectedId: null,
-          items: matches.map((c) => ({
-            id: c.ref,
-            title: c.ref,
-            meta: c.sources?.includes('gate') ? 'GATE 目录' : '链上/引擎',
-          })),
+          items: matches.map((c) => {
+            const parts = modelRefParts(c.ref)
+            return {
+              id: c.ref,
+              title: parts.title,
+              subtitle: parts.sub,
+              meta: c.sources?.includes('gate') ? '可用' : '已在使用',
+            }
+          }),
           onSelect: (ref) => placeTarget(chain, ref, state.picker.replaceRef, section, snapshot),
         }).node,
       )
@@ -432,7 +482,7 @@ export function createChainTab({ host, onNeedPoll, readInfo = null }) {
     }
     const manual = el('div', { class: 'oc-bar' })
     const apply = (v) => placeTarget(chain, v, state.picker.replaceRef, section, snapshot)
-    const f = field({ value: state.picker.manual, placeholder: 'provider/model', mono: true, onChange: (v) => { state.picker.manual = v; addBtn.handle.update({ disabled: !v.includes('/') }) } })
+    const f = field({ value: state.picker.manual, placeholder: '服务商/模型', mono: true, onChange: (v) => { state.picker.manual = v; addBtn.handle.update({ disabled: !v.includes('/') }) } })
     const addBtn = button({ label: '加入', variant: 'secondary', size: 'xs', disabled: !String(state.picker.manual ?? '').includes('/'), onClick: () => apply(state.picker.manual) })
     manual.append(el('span', { class: 'oc-grow' }, [f.node]), addBtn.node)
     manual.append(button({ label: '取消', variant: 'ghost', size: 'xs', onClick: () => { state.picker = null; render(section, snapshot) } }).node)
@@ -440,46 +490,49 @@ export function createChainTab({ host, onNeedPoll, readInfo = null }) {
     return wrap
   }
 
-  function renderAgents(section, snapshot) {
-    const mapped = Object.keys(state.view.agents).sort()
-    const known = [...new Set([...(snapshot?.agentTable?.visible ?? []).map((a) => a.id), ...(snapshot?.agentTable?.subagent ?? []).map((a) => a.id), 'planner', 'advisor', 'critic', 'foreman', 'executor', 'reviewer', 'scout', 'librarian'])]
+  /** 档位映射（chain_for_model）：这是**真正生效**的路由 —— 引擎里选 reeve/* 档位时走这里
+   *  指向的链。0.1.x 的面板把没有生产调用方的 `agents` 段做成了显眼编辑面，真正的映射反而
+   *  藏着；0.2.0 换过来。未知映射（非档位的键）原样保留，只读展示。 */
+  function renderTierMapping(section, snapshot) {
     const rows = []
-    for (const agent of mapped) {
-      const cell = el('div', { class: 'oc-field-control', 'data-agent': agent })
+    for (const model of TIER_MODELS) {
+      const cell = el('div', { class: 'oc-field-control', 'data-tier': model })
       cell.append(
         select({
-          value: state.view.agents[agent],
-          options: [{ id: '__none__', label: '不映射' }, ...chainNames(state.view).map((c) => ({ id: c, label: c }))],
+          value: state.view.chain_for_model?.[model] ?? null,
+          placeholder: '跟随默认链',
+          options: [
+            ...chainNames(state.view).map((c) => ({ id: c, label: chainLabel(c), hint: c })),
+          ],
           onChange: (id) => mutate(section, snapshot, () => {
-            if (id === '__none__') delete state.view.agents[agent]
-            else state.view.agents[agent] = id
+            if (!id) delete state.view.chain_for_model[model]
+            else state.view.chain_for_model[model] = id
           }),
         }).node,
       )
-      rows.push(fieldRow({ label: agent, control: cell }))
+      rows.push(fieldRow({ label: tierLabel(model), description: model, control: cell }))
     }
-    const missing = known.filter((a) => !state.view.agents[a])
-    if (missing.length) {
-      const cell = el('div', { class: 'oc-field-control' })
-      cell.append(
-        select({
-          value: null,
-          placeholder: '指定…',
-          searchable: true,
-          options: missing.map((a) => ({ id: a, label: a })),
-          onChange: (id) => mutate(section, snapshot, () => {
-            state.view.agents[id] = chainNames(state.view)[0] ?? null
-            if (state.view.agents[id] === null) delete state.view.agents[id]
-          }),
-        }).node,
-      )
-      rows.push(fieldRow({ label: '再加一个 agent', description: '没映射的按自己的主模型挑链，再落到默认链', control: cell }))
+    // 未知映射（例如 provider/model → 链）：面板不编辑，但保存时原样保留 —— 这里只展示
+    const others = Object.entries(state.view.chain_for_model ?? {}).filter(([m]) => !TIER_MODELS.includes(m))
+    if (others.length > 0) {
+      const block = el('div', { class: 'oc-col', 'data-tier-others': '', style: 'gap:2px;padding:8px 0' })
+      block.append(el('span', { class: 'oc-micro oc-muted', text: '其他映射（面板不改；手改配置可增删）' }))
+      for (const [model, chain] of others) {
+        block.append(el('div', { class: 'oc-bar oc-bar-between', 'data-tier-other': model }, [
+          el('span', { class: 'oc-micro oc-mono oc-truncate', text: model }),
+          el('span', { class: 'oc-micro oc-muted', text: `→ ${chainLabel(chain)}（${chain}）` }),
+        ]))
+      }
+      rows.push(block)
     }
-    return kitSection({
-      title: 'agent → 链',
-      hint: '没映射的按自己的主模型挑链，再落到默认链',
+    const tierSection = kitSection({
+      title: '档位映射',
+      hint: '会话里选 reeve/* 档位时走哪条链（保存才生效）',
       body: rows,
+      headRight: dirtyHead(sectionChanged(state.view.chain_for_model, state.baseView?.chain_for_model)),
     })
+    tierSection.setAttribute('data-section', 'tier-mapping')
+    return tierSection
   }
 
   /** kit 的 checkbox 是个 `button[role=checkbox]`；标签用行标题，所以按钮本身要补可访问名。 */
@@ -491,16 +544,16 @@ export function createChainTab({ host, onNeedPoll, readInfo = null }) {
 
   function renderPolicy(section, snapshot) {
     const p = state.view.policy ?? {}
-    const numRow = (label, key, value, description) => {
+    const numRow = (label, key, value, description, placeholder) => {
       const cell = el('div', { class: 'oc-field-control', 'data-policy': key })
       cell.append(
         field({
           value: value == null ? '' : String(value),
           mono: true,
+          placeholder,
           onChange: (v) => {
             state.view.policy = { ...state.view.policy, [key]: v === '' ? null : Number(v) }
-            state.dirty = true
-            onNeedPoll?.()
+            markDirty()
           },
         }).node,
       )
@@ -513,39 +566,39 @@ export function createChainTab({ host, onNeedPoll, readInfo = null }) {
         checked: p.restore_primary_after_cooldown === true,
         onChange: (checked) => {
           state.view.policy = { ...state.view.policy, restore_primary_after_cooldown: checked }
-          state.dirty = true
-          onNeedPoll?.()
+          mutate(section, snapshot, () => {})
         },
       }, '冷却结束后回到首选').node,
     )
+    // 低频调参收进「高级」：默认值够用，不跟常用项抢位置
+    const advanced = detailsBlock('policy-advanced', '高级')
+    const advancedBody = el('div', { class: 'oc-col' })
+    advancedBody.append(numRow('同服务商重试', 'provider_retries', p.provider_retries, '同一家上游的瞬时错误先重试几次', '默认 1'))
+    advanced.append(advancedBody)
     const policySection = kitSection({
-      title: '策略',
-      hint: '改完点保存才生效（GATE ≤5 秒热更）',
+      title: '重试与回退',
+      hint: '改完点保存才生效（几秒内热更）',
       headRight: dirtyHead(sectionChanged(state.view.policy, state.baseView?.policy)),
       body: [
-        numRow('最多尝试候选数', 'max_fallback_attempts', p.max_fallback_attempts, '换到第几个候选就放弃（默认 3；免费车道要 3 个免费时设 4）'),
-        numRow('冷却秒数', 'cooldown_seconds', p.cooldown_seconds, '失败过的候选在这段时间里被跳过（默认 60）'),
-        numRow('provider 内重试', 'provider_retries', p.provider_retries, '同一家上游的瞬时错误先重试（默认 1）'),
-        fieldRow({ label: '冷却结束后回到首选', description: '默认关：失败换人后就粘住新的候选，不自动回到首选', control: switchCell }),
+        numRow('最多尝试次数', 'max_fallback_attempts', p.max_fallback_attempts, '换到第几个模型就放弃', '默认 3'),
+        numRow('失败后冷却（秒）', 'cooldown_seconds', p.cooldown_seconds, '失败过的模型在这段时间里被跳过', '默认 60'),
+        fieldRow({ label: '冷却结束后回到首选', description: '默认关：失败换人后就粘住新的模型', control: switchCell }),
+        advanced,
       ],
     })
     policySection.setAttribute('data-section', 'policy')
     return policySection
   }
 
-  /** 免费车道：链里的 `@free` 展开成什么、几个、谁优先、谁排除。写的是配置里的 `free` 节。 */
+  /** 免费车道：链里的 `@free` 展开成什么、几个、谁优先、谁排除。写的是配置里的 `free` 节。
+   *  常用项只有开关/预算/发现源；调参（偏好/排除/白名单/刷新/冷却）收进「高级」；
+   *  当前展开只留一行摘要（逐个模型列表在「诊断信息」）。 */
   function renderFree(section, snapshot) {
     const f = state.view.free ?? {}
     const runtime = snapshot?.free ?? null
     const provStatus = new Map((runtime?.providers ?? []).map((p) => [p.id, p]))
     const maxAttempts = Math.max(1, Number(state.view.policy?.max_fallback_attempts ?? 3))
     const cap = Math.max(0, Math.min(Number(f.max ?? 0), maxAttempts - 1))
-    const budgetHint =
-      f.enabled === false
-        ? '免费车道关闭：@free 展开为空，链直接走付费候选'
-        : Number(f.max ?? 0) > maxAttempts - 1
-          ? `总尝试 ${maxAttempts}：免费被压到 ${cap} 个（想 ${f.max} 个就把「最多尝试候选数」调到 ${Number(f.max) + 1}）`
-          : `总尝试 ${maxAttempts} = 免费 ${cap} + 付费 ${maxAttempts - cap}（免费最多占 总尝试-1）`
     const update = (next) => mutate(section, snapshot, () => {
       state.view.free = { ...state.view.free, ...next }
     })
@@ -559,21 +612,27 @@ export function createChainTab({ host, onNeedPoll, readInfo = null }) {
         onChange: (checked) => update({ enabled: checked }),
       }, '启用免费车道').node,
     )
-    rows.push(fieldRow({ label: '启用免费车道', description: '关闭后 @free 不展开，链按写入的付费候选走', control: switchCell }))
+    rows.push(fieldRow({ label: '启用免费车道', description: '关闭后链里的免费兜底不展开，直接走付费', control: switchCell }))
 
     const maxCell = el('div', { class: 'oc-field-control', 'data-free': 'max' })
     maxCell.append(
       field({
         value: f.max == null ? '' : String(f.max),
         mono: true,
+        placeholder: '默认 3',
         onChange: (v) => {
           state.view.free = { ...state.view.free, max: v === '' ? null : Number(v) }
-          state.dirty = true
-          onNeedPoll?.()
+          markDirty()
         },
       }).node,
     )
-    rows.push(fieldRow({ label: '免费尝试次数', description: budgetHint, control: maxCell }))
+    const budgetHint =
+      f.enabled === false
+        ? '免费车道已关闭'
+        : Number(f.max ?? 0) > maxAttempts - 1
+          ? `总尝试 ${maxAttempts}：免费被压到 ${cap} 个`
+          : `总尝试 ${maxAttempts} = 免费 ${cap} + 付费 ${maxAttempts - cap}`
+    rows.push(fieldRow({ label: '免费模型数', description: budgetHint, control: maxCell }))
 
     const providerIds = [...new Set(['opencode', 'openrouter', 'nvidia', ...(f.providers ?? [])])]
     for (const id of providerIds) {
@@ -584,8 +643,8 @@ export function createChainTab({ host, onNeedPoll, readInfo = null }) {
         : st
           ? st.ready
             ? `${st.models} 个免费模型${st.error ? ` · 发现错误：${st.error}` : ''}`
-            : st.error ?? '未就绪（key 未配置 / 没有发现源）'
-          : '运行态未就绪（GATE 没起或还没刷新）'
+            : st.error ?? '未就绪（密钥未配置 / 没有发现源）'
+          : '运行态未就绪（路由引擎没起或还没刷新）'
       const cell = el('div', { class: 'oc-field-control', 'data-free-provider': id })
       cell.append(
         checkboxNamed({
@@ -597,10 +656,24 @@ export function createChainTab({ host, onNeedPoll, readInfo = null }) {
             else next.delete(id)
             update({ providers: providerIds.filter((p) => next.has(p)) })
           },
-        }, `${id} 参与免费车道`).node,
+        }, `${providerLabel(id)} 参与免费车道`).node,
       )
-      rows.push(fieldRow({ label: id, description: desc, control: cell }))
+      rows.push(fieldRow({ label: providerLabel(id), description: desc, control: cell }))
     }
+
+    // 当前展开（只读运行态）：一行摘要；逐个模型列表在「诊断信息」
+    const expandLine = el('div', { class: 'oc-bar oc-bar-between', 'data-free': 'expand' })
+    if (!runtime) expandLine.append(el('span', { class: 'oc-micro oc-muted', text: '运行态未就绪（路由引擎没起 / 插件还没刷）' }))
+    else if (runtime.error) expandLine.append(el('span', { class: 'oc-micro oc-muted', text: `运行态读取失败：${runtime.error}` }))
+    else {
+      const coolingN = (runtime.cooling ?? []).filter((c) => (runtime.expand ?? []).includes(c.ref)).length
+      expandLine.append(el('span', { class: 'oc-micro oc-muted', text: (runtime.expand ?? []).length === 0 ? '当前没有可展开的免费模型' : `当前可展开 ${runtime.expand.length} 个${coolingN ? `，${coolingN} 个冷却中` : ''}` }))
+    }
+    expandLine.append(button({ label: '刷新', variant: 'ghost', size: 'xs', data: { 'data-act': 'free-refresh' }, onClick: () => onNeedPoll?.() }).node)
+    rows.push(expandLine)
+
+    // ---- 高级：偏好/排除/白名单/调参 ----
+    const advancedRows = []
 
     // 偏好顺序（prefer）：↑/↓ 调序、排除进 deny、直接移除
     const prefer = [...(f.prefer ?? [])]
@@ -611,12 +684,12 @@ export function createChainTab({ host, onNeedPoll, readInfo = null }) {
       row.append(el('span', { class: 'oc-micro oc-mono oc-truncate', text: `${i + 1}. ${ref}` }))
       const acts = el('div', { class: 'oc-bar' })
       acts.append(
-        button({ label: '↑', variant: 'ghost', size: 'xs', disabled: i === 0, data: { 'data-act': 'free-up' }, onClick: () => {
+        button({ label: '上移', variant: 'ghost', size: 'xs', disabled: i === 0, data: { 'data-act': 'free-up' }, onClick: () => {
           const next = [...prefer]
           ;[next[i - 1], next[i]] = [next[i], next[i - 1]]
           update({ prefer: next })
         } }).node,
-        button({ label: '↓', variant: 'ghost', size: 'xs', disabled: i === prefer.length - 1, data: { 'data-act': 'free-down' }, onClick: () => {
+        button({ label: '下移', variant: 'ghost', size: 'xs', disabled: i === prefer.length - 1, data: { 'data-act': 'free-down' }, onClick: () => {
           const next = [...prefer]
           ;[next[i + 1], next[i]] = [next[i], next[i + 1]]
           update({ prefer: next })
@@ -624,7 +697,7 @@ export function createChainTab({ host, onNeedPoll, readInfo = null }) {
         button({ label: '排除', variant: 'ghost', size: 'xs', data: { 'data-act': 'free-deny' }, onClick: () => {
           update({ prefer: prefer.filter((r) => r !== ref), deny: [...(f.deny ?? []), ref] })
         } }).node,
-        iconButton({ iconName: 'close', label: '', variant: 'ghost', size: 'xs', data: { 'data-act': 'free-remove', 'aria-label': '从偏好里移除' }, onClick: () => update({ prefer: prefer.filter((r) => r !== ref) }) }).node,
+        button({ label: '移除', variant: 'ghost', size: 'xs', data: { 'data-act': 'free-remove' }, onClick: () => update({ prefer: prefer.filter((r) => r !== ref) }) }).node,
       )
       row.append(acts)
       preferBlock.append(row)
@@ -639,18 +712,12 @@ export function createChainTab({ host, onNeedPoll, readInfo = null }) {
     } })
     addCell.append(
       el('span', { class: 'oc-grow' }, [
-        field({ value: '', placeholder: '固定一个模型（provider/model 或模型名）', mono: true, onChange: (v) => { draft = v; addBtn.handle.update({ disabled: !v.trim() }) } }).node,
+        field({ value: '', placeholder: '固定一个模型（服务商/模型 或 模型名）', mono: true, onChange: (v) => { draft = v; addBtn.handle.update({ disabled: !v.trim() }) } }).node,
       ]),
       addBtn.node,
     )
     preferBlock.append(addCell)
-    const blockRow = (label, description, node) =>
-      el('div', { class: 'oc-col', 'data-free-block': label, style: 'gap:4px;padding:8px 0' }, [
-        el('span', { class: 'oc-label', text: label }),
-        el('span', { class: 'oc-micro oc-muted', text: description }),
-        node,
-      ])
-    rows.push(blockRow('偏好顺序', '命中的排最前，其余按发现顺序；可以写裸模型名', preferBlock))
+    advancedRows.push(blockRow('偏好顺序', '命中的排最前，其余按发现顺序；可以写裸模型名', preferBlock))
 
     const deny = [...(f.deny ?? [])]
     const denyBlock = el('div', { class: 'oc-col', 'data-free': 'deny', style: 'gap:4px' })
@@ -661,75 +728,61 @@ export function createChainTab({ host, onNeedPoll, readInfo = null }) {
       row.append(button({ label: '恢复', variant: 'ghost', size: 'xs', data: { 'data-act': 'free-restore' }, onClick: () => update({ deny: deny.filter((r) => r !== ref) }) }).node)
       denyBlock.append(row)
     })
-    rows.push(blockRow('排除', '这些永不展开（比如已知一直限流的模型）', denyBlock))
+    advancedRows.push(blockRow('排除', '这些永不展开（比如已知一直限流的模型）', denyBlock))
 
     // NVIDIA 没有 `:free` 标记（免费是账号额度）→ 白名单
     const staticCell = el('div', { class: 'oc-field-control', 'data-free': 'static' })
     staticCell.append(
       field({
         value: (f.static?.nvidia ?? []).join(', '),
-        placeholder: 'nvidia 白名单，逗号分隔',
+        placeholder: '逗号分隔的模型名',
         mono: true,
         onChange: (v) => {
           const list = String(v).split(/[,，\s]+/).map((s) => s.trim()).filter(Boolean)
           state.view.free = { ...state.view.free, static: { ...(state.view.free.static ?? {}), nvidia: list } }
-          state.dirty = true
-          onNeedPoll?.()
+          markDirty()
         },
       }).node,
     )
-    rows.push(fieldRow({ label: 'NVIDIA 白名单', description: '它没有 :free 后缀；列在这里的才会被展开', control: staticCell }))
+    advancedRows.push(fieldRow({ label: 'NVIDIA 白名单', description: '它没有 :free 后缀；列在这里的才会被展开', control: staticCell }))
 
-    const numFreeRow = (label, key, value, description) => {
+    const numFreeRow = (label, key, value, description, placeholder) => {
       const cell = el('div', { class: 'oc-field-control', 'data-free': key })
       cell.append(
         field({
           value: value == null ? '' : String(value),
           mono: true,
+          placeholder,
           onChange: (v) => {
             state.view.free = { ...state.view.free, [key]: v === '' ? null : Number(v) }
-            state.dirty = true
-            onNeedPoll?.()
+            markDirty()
           },
         }).node,
       )
       return fieldRow({ label, description, control: cell })
     }
-    rows.push(numFreeRow('发现刷新间隔（秒）', 'refresh_seconds', f.refresh_seconds, '公开模型列表多久重拉一次（默认 300）'))
-    rows.push(numFreeRow('连续失败几次进冷却', 'failure_threshold', f.failure_threshold, '同一个免费模型的连续失败阈值（默认 3）'))
-    rows.push(numFreeRow('冷却秒数', 'failure_cooldown_seconds', f.failure_cooldown_seconds, '到阈值后多久不再展开（默认 600）'))
+    advancedRows.push(numFreeRow('列表刷新间隔（秒）', 'refresh_seconds', f.refresh_seconds, '公开模型列表多久重拉一次', '默认 300'))
+    advancedRows.push(numFreeRow('连续失败几次进冷却', 'failure_threshold', f.failure_threshold, '同一个免费模型的连续失败阈值', '默认 3'))
+    advancedRows.push(numFreeRow('冷却秒数', 'failure_cooldown_seconds', f.failure_cooldown_seconds, '到阈值后多久不再展开', '默认 600'))
 
-    // 当前展开（只读运行态）：面板没有网络，数据来自插件快照
-    const expandBlock = el('div', { class: 'oc-col', 'data-free': 'expand', style: 'gap:4px' })
-    const cooling = new Map((runtime?.cooling ?? []).map((c) => [c.ref, c]))
-    if (!runtime) expandBlock.append(el('span', { class: 'oc-micro oc-muted', text: '还没读到运行态（GATE 没起 / 插件还没刷）' }))
-    else if (runtime.error) expandBlock.append(el('span', { class: 'oc-micro oc-muted', text: `运行态读取失败：${runtime.error}` }))
-    else if ((runtime.expand ?? []).length === 0) expandBlock.append(el('span', { class: 'oc-micro oc-muted', text: '当前没有可展开的免费候选（全部冷却、没 key 或链里没有 @free）' }))
-    else {
-      for (const ref of runtime.expand) {
-        const c = cooling.get(ref)
-        const row = el('div', { class: 'oc-bar oc-bar-between', 'data-free-expand': ref })
-        row.append(el('span', { class: 'oc-micro oc-mono oc-truncate', text: ref }))
-        row.append(badge({ label: c ? `冷却 ${Math.max(1, Math.round((c.until - Date.now()) / 1000))}s` : '就绪', tone: c ? 'warning' : 'success' }).node)
-        expandBlock.append(row)
-      }
-    }
-    const refresh = button({ label: '刷新读数', variant: 'ghost', size: 'xs', data: { 'data-act': 'free-refresh' }, onClick: () => onNeedPoll?.() })
-    expandBlock.append(el('div', { class: 'oc-bar' }, [refresh.node]))
-    rows.push(blockRow('当前展开', '链里 @free 此刻会试的真实候选（运行时；保存后才更新）', expandBlock))
+    const advanced = detailsBlock('free-advanced', '高级')
+    const advancedBody = el('div', { class: 'oc-col' })
+    for (const r of advancedRows) advancedBody.append(r)
+    advanced.append(advancedBody)
+    rows.push(advanced)
 
     if (runtime?.error) {
       rows.unshift(
         banner({
           tone: 'error',
           title: '免费车道运行态读取失败',
-          body: `${runtime.error}。展开会退回配置里的偏好/付费候选；点「刷新读数」重试。`,
+          body: `${runtime.error}。展开会退回配置里的偏好/付费模型；点「刷新」重试。`,
         }),
       )
     }
     const freeSection = kitSection({
       title: '免费车道',
-      hint: '链里写 @free；这里决定展开谁、几个、谁优先（保存才生效）',
+      hint: '链里写 @free 时，这里决定展开谁、几个（保存才生效）',
       body: rows,
       headRight: dirtyHead(sectionChanged(state.view.free, state.baseView?.free)),
     })
@@ -737,12 +790,67 @@ export function createChainTab({ host, onNeedPoll, readInfo = null }) {
     return freeSection
   }
 
+  const blockRow = (label, description, node) =>
+    el('div', { class: 'oc-col', 'data-free-block': label, style: 'gap:4px;padding:8px 0' }, [
+      el('span', { class: 'oc-label', text: label }),
+      el('span', { class: 'oc-micro oc-muted', text: description }),
+      node,
+    ])
+
+  /** 折叠块（details）：展开状态记在 state.openBlocks，重绘后还原。 */
+  function detailsBlock(key, summaryText) {
+    const node = el('details', { class: 'oc-advanced' })
+    if (state.openBlocks[key]) node.setAttribute('open', '')
+    node.addEventListener('toggle', () => { state.openBlocks[key] = node.open })
+    node.append(el('summary', { class: 'oc-micro oc-muted', text: summaryText }))
+    return node
+  }
+
+  /** 诊断信息：路径、原始错误码、编排面事实、免费车道展开明细 —— 都是要"能查到"而非"常看"的东西。 */
+  function renderDiagnostics(section, snapshot) {
+    const gate = snapshot?.gate ?? null
+    const path = state.path ?? fallbackConfigPathFor(snapshot)
+    const info = typeof readInfo === 'function' ? readInfo() : null
+    const runtime = snapshot?.free ?? null
+    const facts = el('div', { class: 'oc-col', style: 'gap:2px' })
+    const line = (label, value) => {
+      const row = el('div', { class: 'oc-bar oc-bar-between', 'data-diag': label })
+      row.append(el('span', { class: 'oc-micro oc-muted', text: label }))
+      row.append(el('span', { class: 'oc-micro oc-mono oc-truncate', text: value }))
+      facts.append(row)
+    }
+    line('配置文件', `${path}${gate?.port ? `（路由引擎 :${gate.port}${gate.from ? ` · ${gate.from}` : ''}）` : '（未运行）'}`)
+    if (info?.path) line('数据快照', info.path)
+    for (const t of state.loadTried ?? []) line('配置读取尝试', `${t.path}（${t.code}）`)
+    for (const t of info?.tried ?? []) line('快照读取尝试', `${t.path}（${t.code}）`)
+    for (const p of gate?.problems ?? []) line('配置问题', p)
+    const t = snapshot?.agentTable
+    if (t) {
+      const vis = (t.visible ?? []).map((a) => `${agentLabel(a.id)}(${a.id})`).join('、') || '（无）'
+      const roster = snapshot.roster ? `名册 ${snapshot.roster.count} 个` : '名册未注入'
+      const hiddenN = Array.isArray(t.hidden) ? t.hidden.length : Number(t.hidden ?? 0)
+      line('智能体', `前台 ${vis} · 隐藏 ${hiddenN} 个 · ${roster}`)
+    }
+    if (snapshot?.registered) line('插件注册', `agent ${snapshot.registered.agents?.length ?? 0} 个 · skill ${snapshot.registered.skills?.length ?? 0} 个`)
+    if (runtime?.expand?.length) {
+      const cooling = new Map((runtime.cooling ?? []).map((c) => [c.ref, c]))
+      for (const ref of runtime.expand) {
+        const c = cooling.get(ref)
+        line('免费展开', c ? `${ref}（冷却 ${Math.max(1, Math.round((c.until - Date.now()) / 1000))}s）` : `${ref}（就绪）`)
+      }
+    }
+    const diag = detailsBlock('diag', '诊断信息')
+    diag.setAttribute('data-section', 'diag')
+    diag.append(facts)
+    return diag
+  }
+
   function render(section, snapshot) {
     if (!section) return
     section.__snapshot = snapshot
     if (state.view === null && !state.loadError) {
       const loadRow = el('div', { class: 'oc-bar', 'data-act': 'config-loading', style: 'padding:8px 0' })
-      loadRow.append(spinner({}), el('span', { class: 'oc-micro oc-muted', text: '正在读 GATE 配置…' }))
+      loadRow.append(spinner({}), el('span', { class: 'oc-micro oc-muted', text: '正在读路由配置…' }))
       section.replaceChildren(loadRow)
       void load(snapshot).then(() => render(section, snapshot))
       return
@@ -751,17 +859,22 @@ export function createChainTab({ host, onNeedPoll, readInfo = null }) {
     section.replaceChildren()
 
     const gate = snapshot?.gate ?? null
-    const path = state.path ?? fallbackConfigPathFor(snapshot)
+    const s = state.save
 
-    // 头一行：运行态（宿主 chrome 已经有面板标题，这里不重复）+ 保存状态徽标
+    // 头一行：保存状态徽标（markDirty 会原地更新它，所以把 kit 句柄存在 state.ui）
     const top = el('div', { class: 'oc-bar oc-bar-between' })
     top.append(el('div', { class: 'oc-bar' }))
     const right = el('div', { class: 'oc-bar' })
-    const s = state.save
-    if (s.status === 'failed' || s.status === 'timeout') right.append(badge({ label: '没生效', tone: 'error' }).node)
-    else if (s.status === 'waiting') right.append(badge({ label: '生效中…', tone: 'info' }).node)
-    else if (state.dirty) right.append(badge({ label: '未保存', tone: 'warning' }).node)
-    else if (s.status === 'applied') right.append(badge({ label: `已生效 ${fmtClock(s.at)}`, tone: 'success' }).node)
+    const statusBadge = badge({ label: '…', tone: 'neutral' })
+    const paintBadge = () => {
+      if (s.status === 'failed' || s.status === 'timeout') statusBadge.handle.update({ label: '没生效', tone: 'error' })
+      else if (s.status === 'waiting') statusBadge.handle.update({ label: '生效中…', tone: 'info' })
+      else if (state.dirty) statusBadge.handle.update({ label: '未保存', tone: 'warning' })
+      else if (s.status === 'applied') statusBadge.handle.update({ label: `已生效 ${fmtClock(s.at)}`, tone: 'success' })
+      else statusBadge.handle.update({ label: '已保存', tone: 'neutral' })
+    }
+    paintBadge()
+    right.append(statusBadge.node)
     top.append(right)
     section.append(top)
 
@@ -769,8 +882,8 @@ export function createChainTab({ host, onNeedPoll, readInfo = null }) {
       section.append(
         banner({
           tone: 'error',
-          title: '读不到 GATE 配置',
-          body: `${state.loadError} · 文件：${state.loadTried.map((t) => `${t.path}（${t.code}）`).join('；') || '未知'}`,
+          title: '读不到路由配置',
+          body: `${state.loadError}（详情在下方「诊断信息」）`,
         }),
       )
       section.append(
@@ -790,26 +903,23 @@ export function createChainTab({ host, onNeedPoll, readInfo = null }) {
           el('span', { class: 'oc-micro oc-muted', text: '修好文件后点这里；链/策略/免费车道在配置读不到时不可编辑。' }),
         ]),
       )
+      section.append(renderDiagnostics(section, snapshot))
       return
     }
-    // 快照读不到时，链 tab 也要给出原因 + 下一步（不能只靠页头一枚 chip；详情在台账 tab）
+    // 快照读不到时也要给出原因 + 下一步（不能只靠页头一枚 chip；详情在「任务记录」tab）
     const info = typeof readInfo === 'function' ? readInfo() : null
     if (info && info.ok === false) {
       const codes = (info.tried ?? []).map((t) => t.code)
       const hint = codes.includes('NOT_GRANTED')
         ? '扩展的文件读取权限还没批准：去 设置 → 扩展 批准「文件系统」后点刷新。'
         : codes.length > 0 && codes.every((c) => c === 'NOT_FOUND')
-          ? '插件还没写过快照：跑一次模型调用后会写；也可以确认 options.snapshotPath。'
-          : '点刷新重试；详情见「台账」tab。'
+          ? '插件还没写过快照：跑一次模型调用后会写。'
+          : '点刷新重试。'
       section.append(
-        banner({
-          tone: 'warning',
-          title: '台账快照读不到',
-          body: `${hint}（试过 ${info.tried?.length ?? 0} 个路径：${(info.tried ?? []).map((t) => `${t.path}（${t.code}）`).join('；')}）`,
-        }),
+        banner({ tone: 'warning', title: '数据快照读不到', body: hint }),
       )
     }
-    if (gate?.error) section.append(banner({ tone: 'warning', title: 'GATE 没起来', body: String(gate.error) }))
+    if (gate?.error) section.append(banner({ tone: 'warning', title: '路由引擎没有启动', body: String(gate.error) }))
     if (gate?.problems?.length) section.append(banner({ tone: 'warning', title: `配置加载有 ${gate.problems.length} 个问题`, body: gate.problems.slice(0, 3).join('；') }))
     if (state.notice) section.append(banner({ tone: s.status === 'failed' ? 'error' : 'info', title: state.notice }))
 
@@ -817,7 +927,7 @@ export function createChainTab({ host, onNeedPoll, readInfo = null }) {
     // 新增链：入口一行（或展开成一行输入）
     if (state.addingChain) {
       const row = el('div', { class: 'oc-bar', 'data-act': 'new-chain-row', style: 'padding:8px 0' })
-      const ok = button({ label: '建链', variant: 'secondary', size: 'xs', disabled: !state.newChainName.trim(), onClick: () => addChain(state.newChainName, section, snapshot) })
+      const ok = button({ label: '创建', variant: 'secondary', size: 'xs', disabled: !state.newChainName.trim(), onClick: () => addChain(state.newChainName, section, snapshot) })
       row.append(
         el('span', { class: 'oc-grow' }, [
           field({
@@ -841,63 +951,60 @@ export function createChainTab({ host, onNeedPoll, readInfo = null }) {
     const chainsDirty =
       sectionChanged(state.view.chains, state.baseView?.chains) ||
       sectionChanged(state.view.agents, state.baseView?.agents) ||
-      sectionChanged(state.view.chain_for_model, state.baseView?.chain_for_model) ||
       state.view.default_chain !== state.baseView?.default_chain
-    section.append(kitSection({ title: '链', hint: '顺序 = 先试谁，失败顺位往下', body: chainRows, headRight: dirtyHead(chainsDirty) }))
+    section.append(kitSection({ title: '路由链', hint: '从上往下试，失败换下一个', body: chainRows, headRight: dirtyHead(chainsDirty) }))
+    section.append(renderTierMapping(section, snapshot))
+    section.append(renderPolicy(section, snapshot))
     section.append(renderFree(section, snapshot))
+    section.append(renderDiagnostics(section, snapshot))
 
     const live = el('div', { class: 'oc-sr', 'aria-live': 'polite', text: state.live })
     section.append(live)
-    section.append(renderAgents(section, snapshot))
-    section.append(renderPolicy(section, snapshot))
-    section.append(
-      el('div', { class: 'oc-micro oc-muted oc-mono oc-truncate', text: `${path}${gate?.port ? `  ·  GATE :${gate.port}` : '  ·  GATE 未运行'}` }),
-    )
 
-    // 保存条：只在有改动 / 在飞 / 刚失败时出现
-    if (state.dirty || s.status === 'waiting' || s.status === 'failed' || s.status === 'timeout') {
-      const bar = el('div', { class: 'oc-savebar' })
-      bar.append(
-        button({
-          label: '保存并生效',
-          variant: 'default',
-          size: 'sm',
-          disabled: !state.dirty,
-          loading: s.status === 'waiting',
-          data: { 'data-act': 'save' },
-          onClick: () => void save(snapshot, section),
-        }).node,
-      )
-      bar.append(
-        button({
-          label: '丢弃改动',
-          variant: 'ghost',
-          size: 'sm',
-          disabled: !state.dirty,
-          onClick: () => {
-            state.dirty = false
-            state.sourceSig = null
-            state.notice = null
-            state.selected = null
-            state.picker = null
-            state.save = { status: 'idle', at: null, error: null, planned: null }
-            state.view = null
-            state.baseView = null
-            render(section, snapshot)
-          },
-        }).node,
-      )
-      const text =
-        s.status === 'waiting'
-          ? '已写入，等 GATE 热更（最多 5 秒）…'
-          : s.status === 'failed'
-            ? `没写成：${s.error}`
-            : s.status === 'timeout'
-              ? '写入后 30 秒没看到 GATE 确认 —— 看上面那条问题'
-              : '只重写被改的几节，注释与排版原样保留'
-      bar.append(el('span', { class: 'oc-micro oc-muted', text }))
-      section.append(bar)
-    }
+    // 保存条：只在有改动 / 在飞 / 刚失败时出现。句柄存在 state.ui，markDirty 原地点亮不重绘。
+    const needsBar = state.dirty || s.status === 'waiting' || s.status === 'failed' || s.status === 'timeout'
+    const bar = el('div', { class: 'oc-savebar' })
+    bar.hidden = !needsBar
+    const saveBtn = button({
+      label: '保存并应用',
+      variant: 'default',
+      size: 'sm',
+      disabled: !state.dirty,
+      loading: s.status === 'waiting',
+      data: { 'data-act': 'save' },
+      onClick: () => void save(snapshot, section),
+    })
+    bar.append(saveBtn.node)
+    bar.append(
+      button({
+        label: '丢弃改动',
+        variant: 'ghost',
+        size: 'sm',
+        disabled: !state.dirty,
+        onClick: () => {
+          state.dirty = false
+          state.sourceSig = null
+          state.notice = null
+          state.selected = null
+          state.picker = null
+          state.save = { status: 'idle', at: null, error: null, planned: null }
+          state.view = null
+          state.baseView = null
+          render(section, snapshot)
+        },
+      }).node,
+    )
+    const text =
+      s.status === 'waiting'
+        ? '已写入，等路由引擎热更（最多 5 秒）…'
+        : s.status === 'failed'
+          ? `没写成：${s.error}`
+          : s.status === 'timeout'
+            ? '写入后 30 秒没看到路由引擎确认 —— 看上面那条问题'
+            : '保存后几秒内自动生效；只重写改过的节，注释原样保留'
+    bar.append(el('span', { class: 'oc-micro oc-muted', text }))
+    section.append(bar)
+    state.ui = { badge: statusBadge, savebar: bar, saveBtn }
   }
 
   return {

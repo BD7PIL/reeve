@@ -1,11 +1,11 @@
-// REEVE 面板 —— 三个 tab：链（**唯一会写**的地方：GATE 的 fallback 配置）/ 统计 / 台账。
+// REEVE 面板 —— 三个 tab：路由链（**唯一会写**的地方：GATE 的 fallback 配置）/ 调用统计 / 任务记录。
 //
 // 分工：
-//   ① 链：每条链的候选顺序编辑（↑↓ 排序 · 换 · 增删），显式「保存并生效」→ 写配置 →
-//      GATE 5 秒内热更 → 快照的 gate 段变化 = 真生效。
-//   ② 统计：GATE 归因（代理侧） + 编排台账（本机）—— 数字由**插件**聚合后写进快照，
-//      面板不自己算（面板在 iframe 里，没有网络/文件能力，够不着台账原文）。
-//   ③ 台账：子任务列表 + "前台只出现编排者"的落盘证据。
+//   ① 路由链：链的模型顺序编辑（↑↓ 排序 · 换 · 增删）、档位映射、重试策略、免费车道，显式
+//      「保存并应用」→ 写配置 → GATE 5 秒内热更 → 快照的 gate 段变化 = 真生效。
+//   ② 调用统计：代理侧归因 —— 数字由**插件**聚合后写进快照，面板不自己算
+//      （面板在 iframe 里，没有网络/文件能力，够不着台账原文）。
+//   ③ 任务记录：子任务列表（谁派的、什么状态、跑了多久）。
 //
 // 控制面不在这里 —— 派活 / 中断在模型侧（foreman）；面板既不 startSession 也不 prompt。
 // 唯一能碰引擎配置的地方是插件的"端点自举"（写 providers.reeve 那两行），也不在这里。
@@ -14,15 +14,15 @@ import { connectHost } from '@openchamber/sdk'
 import { applyHostReady } from '@openchamber/sdk/ui'
 
 import { badge, button, tabs } from './kit.js'
-import { el, fmtAgo, fmtClock, readSnapshot, shortPath } from './util.js'
+import { el, fmtAgo, fmtClock, readSnapshot } from './util.js'
 import { createChainTab } from './chain-tab.js'
 import { createStatsTab } from './stats-tab.js'
 import { createLedgerTab } from './ledger-tab.js'
 
 const TABS = [
-  { id: 'chain', label: '链' },
-  { id: 'stats', label: '统计' },
-  { id: 'ledger', label: '台账' },
+  { id: 'chain', label: '路由链' },
+  { id: 'stats', label: '调用统计' },
+  { id: 'ledger', label: '任务记录' },
 ]
 
 function main() {
@@ -35,7 +35,7 @@ function main() {
   const header = el('div', { class: 'oc-bar oc-bar-between' })
   const headLeft = el('div', { class: 'oc-bar' })
   const badgeKit = badge({ label: '读取中…', tone: 'neutral' })
-  headLeft.append(el('span', { class: 'oc-micro oc-muted', text: '编排与代理层' }), badgeKit.node)
+  headLeft.append(badgeKit.node)
   const refreshBtnKit = button({ label: '刷新', variant: 'ghost', size: 'sm', data: { 'data-act': 'refresh' }, onClick: () => void refresh() })
   header.append(headLeft, refreshBtnKit.node)
   const tabsHost = el('div')
@@ -83,9 +83,9 @@ function main() {
     if (force) return
     tabsKit.handle.update({
       items: [
-        { id: 'chain', label: '链', count: (snapshot?.gate?.chains?.length ?? 0) || undefined },
-        { id: 'stats', label: '统计', count: snapshot?.stats?.gate?.requests ?? undefined },
-        { id: 'ledger', label: '台账', count: ledgerTab.count(snapshot) || undefined },
+        { id: 'chain', label: '路由链', count: (snapshot?.gate?.chains?.length ?? 0) || undefined },
+        { id: 'stats', label: '调用统计' },
+        { id: 'ledger', label: '任务记录', count: ledgerTab.count(snapshot) || undefined },
       ],
       activeId: active,
     })
@@ -93,20 +93,21 @@ function main() {
 
   function paintBadge() {
     if (!read?.ok) {
-      badgeKit.handle.update({ label: '台账未就绪', tone: 'warning' })
+      badgeKit.handle.update({ label: '数据未就绪', tone: 'warning' })
       return
     }
     const counts = snapshot?.counts ?? {}
     const gate = snapshot?.gate
     const waiting = snapshot?.stats?.orchestrate?.queue?.waiting ?? 0
-    // GATE 起不来/起一半都要吵：模型面会整层失败，而面板别处看不出来
+    // 路由引擎起不来/起一半都要吵：模型面会整层失败，而面板别处看不出来
     if (gate && (gate.error || !gate.port)) {
-      badgeKit.handle.update({ label: `GATE 未就绪 · ${counts.running ?? 0} 在飞`, tone: 'error' })
+      badgeKit.handle.update({ label: `路由引擎未就绪 · ${counts.running ?? 0} 个运行中`, tone: 'error' })
       return
     }
+    const running = counts.running ?? 0
     badgeKit.handle.update({
-      label: `${counts.running ?? 0} 在飞${waiting ? ` / ${waiting} 排队` : ''} / ${counts.total ?? 0} 总`,
-      tone: (counts.running ?? 0) > 0 || waiting > 0 ? 'primary' : 'neutral',
+      label: running > 0 || waiting > 0 ? `${running} 个运行中${waiting ? ` · ${waiting} 排队` : ''}` : `空闲 · ${counts.total ?? 0} 个任务`,
+      tone: running > 0 || waiting > 0 ? 'primary' : 'neutral',
     })
   }
 
@@ -121,7 +122,7 @@ function main() {
       paintBadge()
       const gen = snapshot?.generatedAt
       if (snapshot) {
-        foot.textContent = `快照 ${fmtClock(gen)}（${fmtAgo(gen)}） · ${shortPath(read.path)}`
+        foot.textContent = `更新于 ${fmtClock(gen)}（${fmtAgo(gen)}）`
       } else {
         // 读不到快照时给出**原因对应的下一步**，别只报"试过 N 个路径"
         const codes = (read?.tried ?? []).map((t) => t.code)
@@ -130,7 +131,7 @@ function main() {
           : codes.length > 0 && codes.every((c) => c === 'NOT_FOUND')
             ? '跑一次模型调用，插件会写快照'
             : '点刷新重试'
-        foot.textContent = `读不到快照（试过 ${read?.tried?.length ?? 0} 个路径）· ${hint}`
+        foot.textContent = `读不到数据快照 · ${hint}`
       }
     } catch (err) {
       foot.textContent = `刷新失败：${err instanceof Error ? err.message : String(err)}`

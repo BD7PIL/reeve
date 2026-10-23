@@ -13,7 +13,7 @@ await import('../src/panel/main.js')
 // `?tab=stats|ledger`：真宿主是靠点击切 tab 的，预览也照做（点真按钮，不绕过面板状态）。
 const want = new URLSearchParams(location.search).get('tab')
 if (want && want !== 'chain') {
-  const label = { chain: '链', stats: '统计', ledger: '台账' }[want]
+  const label = { chain: '路由链', stats: '调用统计', ledger: '任务记录' }[want]
   const clickTab = () => {
     const btn = [...document.querySelectorAll('#root button')].find((b) => b.textContent?.trim().startsWith(label))
     if (btn) {

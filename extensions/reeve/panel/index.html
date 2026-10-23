@@ -111,6 +111,18 @@
     background: color-mix(in srgb, var(--surface-elevated, transparent) 50%, transparent);
   }
 
+  /* 「高级 / 诊断信息」折叠块：原生 details，样式贴宿主的设置分组（无卡片边框，只有一条细线） */
+  .oc-advanced { display: flex; flex-direction: column; min-width: 0; padding: 4px 0; }
+  .oc-advanced > summary {
+    cursor: pointer; user-select: none; list-style: none;
+    display: flex; align-items: center; gap: 4px; padding: 6px 0;
+  }
+  .oc-advanced > summary::before { content: '▸'; font-size: 11px; transition: transform 120ms ease; }
+  .oc-advanced[open] > summary::before { transform: rotate(90deg); }
+  .oc-advanced > summary::-webkit-details-marker { display: none; }
+  .oc-advanced[open] > summary { border-bottom: 1px solid var(--interactive-border, var(--surface-subtle)); margin-bottom: 4px; }
+  .oc-advanced > .oc-col { padding-bottom: 4px; }
+
   .oc-list-scroll { max-height: 280px; overflow: auto; }
   /* 台账行：一行一条记录，行间要有一条能看见的细线（深色下尤其） */
   .oc-ledger-list .oc-sdk-row + .oc-sdk-row { border-top: 1px solid var(--interactive-border); }
@@ -132,6 +144,8 @@
     border-radius: var(--radius, 9px);
     background: var(--surface-elevated, var(--background, Canvas));
   }
+  /* display:flex 会盖过 UA 的 [hidden]——必须显式写，否则空闲态保存条也常驻 */
+  .oc-savebar[hidden] { display: none; }
 
   /* 摘要数字格：小灰标签 + 粗体数字（宿主里"读数"也是这个写法） */
   .oc-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(112px, 1fr)); gap: 8px 12px; padding: 8px 0; }
