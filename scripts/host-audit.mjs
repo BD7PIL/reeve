@@ -70,7 +70,7 @@ const list = await (await fetch(`${CDP}/json/list`)).json()
 const appHost = new URL(APP).host
 let page = list.find((t) => t.type === 'page' && String(t.url).includes(appHost))
 // 桌面客户端的顶层页是 openchamber-ui://app/index.html（不包含 HTTP host）——退回唯一的 page target
-if (!page) page = list.find((t) => t.type === 'page')
+if (!page && APP.startsWith('openchamber-ui:')) page = list.find((t) => t.type === 'page')
 if (!page && LOGIN) {
   page = await (await fetch(`${CDP}/json/new?${encodeURIComponent(APP)}`, { method: 'PUT' })).json()
   await sleep(3000)
