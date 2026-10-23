@@ -20,9 +20,10 @@
 
 ## 免费车道卡
 
-链 tab 里的「免费车道」卡编辑配置的 `free` 节：启用、免费尝试次数（含 3+1 预算提示）、
-参与发现的 provider（opencode / openrouter / nvidia，含 key 与发现状态）、偏好顺序（置顶/排除/固定）、
-NVIDIA 白名单、发现/冷却参数、**当前展开**（运行时只读，来自插件快照）。
+链 tab 里的「免费车道」卡编辑配置的 `free` 节：启用、免费尝试次数（含预算提示）、
+参与发现的 provider（opencode / openrouter，含 key 与发现状态）、偏好顺序（置顶/排除/固定）、
+动态 image 过滤（`require_image` + models.dev modalities）、发现/冷却参数、**当前展开**
+（运行时只读，来自插件快照）。纯文本免费模型不会进入展开。
 
 链里写 `@free` 显示为「免费车道（自动）· 最多 N 个」；保存后「已生效」比较的是
 `chain_targets` + `policy` + `free` 三者的真实变化，不再只比链名。
@@ -34,7 +35,7 @@ npm install                  # 一次：devDeps 钉了宿主 SDK（2.3.2）+ esb
 node build.mjs               # src/panel/main.js → panel/main.js（classic IIFE）
 node check.mjs               # manifest / 打包完整性 / 写路径守门 / fallback-edit 单测
 node test/fallback-edit.test.mjs   # 纯函数单测（check.mjs 也会跑）
-node scripts/audit.mjs --fixture   # 39 项动线审计（断言 + 截图 + report.json）
+node scripts/audit.mjs --fixture   # 40 项动线审计（断言 + 截图 + report.json）
 node scripts/preview.mjs           # 真面板挂假宿主：?tab=&theme=&scenario=&fixture=ci
 ```
 
@@ -47,7 +48,7 @@ node scripts/preview.mjs           # 真面板挂假宿主：?tab=&theme=&scenar
 两种方式（宿主设置 → 扩展）：
 
 - **zip**：发布资产 `reeve.zip`（tag `reeve-latest` / `reeve-<ver>`），设置里安装；
-- **git**：本扩展的仓库是 `BD7PIL/reeve`，用 `https://github.com/BD7PIL/reeve#main`
+- **git**：本扩展的仓库是 `BD7PIL/reeve`，用 `https://github.com/BD7PIL/reeve#reeve`
   （git 装法能跟着更新；zip 装法不能）。
 
 开发机上也常用**路径安装**（安装引用路径、不复制，改完文件重开 iframe 即可）：
