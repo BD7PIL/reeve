@@ -41,8 +41,9 @@ function linksOf(text) {
   const out = []
   // [label](target) — skip images and inline code fences; anchors are ignored.
   const re = /(!?)\[[^\]]*\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g
-  let m
-  while ((m = re.exec(text))) {
+  for (;;) {
+    const m = re.exec(text)
+    if (!m) break
     if (m[1] === '!') continue
     const target = m[2].trim()
     if (!target || target.startsWith('#') || target.startsWith('mailto:')) continue
