@@ -13,7 +13,7 @@
 // （temp + rename），GATE 那边永远看不到半截 JSON；`fallback-edit.js` 保证只重写被改的几节。
 
 import { applySave, parseJsonc, planSave, viewOf } from './fallback-edit.js'
-import { agentLabel, chainLabel, hasChainLabel, modelRefParts, providerLabel, tierLabel } from './labels.js'
+import { agentLabel, chainLabel, modelRefParts, providerLabel, tierLabel } from './labels.js'
 import { badge, banner, button, checkbox, field, fieldRow, list, menu, search, section as kitSection, select, separator, spinner } from './kit.js'
 import { el, fallbackConfigPathFor, fmtClock, readGateConfig } from './util.js'
 
@@ -312,15 +312,14 @@ export function createChainTab({ host, onNeedPoll, readInfo = null }) {
     const tierUsers = tierUsersOf(chain)
     const card = el('div', { class: 'oc-col', 'data-chain': chain, style: 'gap:6px;padding:10px 0' })
 
-    // 标题行：中文链名 + 原始 ID 小字 + 徽标；右侧只有「更多」一个入口
+    // 标题行：链 ID 原样 + 徽标；右侧只有「更多」一个入口
     const head = el('div', { class: 'oc-bar oc-bar-between' })
     const left = el('div', { class: 'oc-bar' })
     left.append(el('span', { class: 'oc-label', text: chainLabel(chain) }))
-    if (hasChainLabel(chain)) left.append(el('span', { class: 'oc-micro oc-muted oc-mono', text: chain }))
     if (state.view.default_chain === chain) left.append(badge({ label: '默认', tone: 'primary' }).node)
-    if (targets.includes('@free')) left.append(badge({ label: '免费兜底', tone: 'info' }).node)
+    if (targets.includes('@free')) left.append(badge({ label: '@free', tone: 'info' }).node)
     const paidCount = targets.filter((t) => t !== '@free').length
-    left.append(el('span', { class: 'oc-micro oc-muted', text: targets.includes('@free') ? `${paidCount} 个模型 + 免费兜底` : `${paidCount} 个模型` }))
+    left.append(el('span', { class: 'oc-micro oc-muted', text: targets.includes('@free') ? `${paidCount} 个模型 + @free` : `${paidCount} 个模型` }))
     head.append(left)
     const right = el('div', { class: 'oc-bar' })
     right.append(
@@ -510,7 +509,7 @@ export function createChainTab({ host, onNeedPoll, readInfo = null }) {
           }),
         }).node,
       )
-      rows.push(fieldRow({ label: tierLabel(model), description: model, control: cell }))
+      rows.push(fieldRow({ label: tierLabel(model), control: cell }))
     }
     // 未知映射（例如 provider/model → 链）：面板不编辑，但保存时原样保留 —— 这里只展示
     const others = Object.entries(state.view.chain_for_model ?? {}).filter(([m]) => !TIER_MODELS.includes(m))
@@ -526,8 +525,8 @@ export function createChainTab({ host, onNeedPoll, readInfo = null }) {
       rows.push(block)
     }
     const tierSection = kitSection({
-      title: '档位映射',
-      hint: '会话里选 reeve/* 档位时走哪条链（保存才生效）',
+      title: 'chain_for_model',
+      hint: '会话里选 reeve/* 时走哪条链（保存才生效）',
       body: rows,
       headRight: dirtyHead(sectionChanged(state.view.chain_for_model, state.baseView?.chain_for_model)),
     })
@@ -576,7 +575,7 @@ export function createChainTab({ host, onNeedPoll, readInfo = null }) {
     advancedBody.append(numRow('同服务商重试', 'provider_retries', p.provider_retries, '同一家上游的瞬时错误先重试几次', '默认 1'))
     advanced.append(advancedBody)
     const policySection = kitSection({
-      title: '重试与回退',
+      title: '重试策略',
       hint: '改完点保存才生效（几秒内热更）',
       headRight: dirtyHead(sectionChanged(state.view.policy, state.baseView?.policy)),
       body: [

@@ -1,6 +1,6 @@
 {
   "name": "reeve",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "private": true,
   "type": "module",
   "description": "REEVE 编排视图 —— 路由链 / 档位映射 / 策略 / 免费车道 + 调用统计 + 任务记录",

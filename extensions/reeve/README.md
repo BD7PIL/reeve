@@ -85,8 +85,8 @@ curl -b <会话 cookie> -X PUT -H 'Content-Type: application/json' \
 - 颜色/字体/圆角**只来自宿主 token**（`--surface-*` / `--interactive-*` / `--primary` / `--status-*`；
   字阶 14/14/13px）；不自绘卡片、阴影、调色板。
 - 结构照 app 自己的 SettingsView：平铺行 + 细线分组 + 左标签/右控件；控件一律用 kit。
-- **全中文标签**（`labels.js` 集中管理：链/agent/服务商；未知 ID 回退原样显示）；原始 ID 以小字/副标
-  保留，配置里写的永远是 ID —— 显示映射绝不参与保存。
+- **技术标识不翻译**：链名 / agent / provider / 档位模型原样显示（与配置和引擎一致）；
+  解释性文案保持中文；`labels.js` 只做 `provider/model` 的展示拆分，不参与保存。
 - 低频调参收进「高级」折叠（折叠状态跨重绘保留）；路径/错误码/名册计数只进「诊断信息」。
 - 选中行必须比未选中行**更清楚**（浅色下不能用 kit 的 selectionForeground——它偏灰，已在 index.html 覆盖）。
 - 窄栏（≤520px）标签在上、控件满宽；模型名允许换行，不许把 `-flash` 这种后缀截掉。

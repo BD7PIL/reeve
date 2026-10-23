@@ -58,8 +58,8 @@ const PLAN = [
   { id: '06-chain-saved', tab: 'chain', note: '保存 → 生效中 → 已生效（预览只写内存，但会模拟热更）', steps: [click('+ 添加模型'), { type: 'deepseek' }, clickSel('.oc-list-scroll .oc-sdk-row', 0), click('保存并应用')], settle: 3600, expect: ['已生效'], writes: 1 },
   { id: '07-chain-menu', tab: 'chain', note: '链卡「更多」：设为默认链 / 删除（档位在用时拒绝并说明）', steps: [click('更多')], expect: ['删除（'] },
   { id: '08-chain-new', tab: 'chain', note: '＋ 新增链 → 链名输入 + 创建/取消', steps: [click('+ 新增链'), { scrollSel: '[data-act="new-chain-row"]', block: 'end' }], expect: ['创建'] },
-  { id: '09-tier-mapping', tab: 'chain', height: 820, note: '档位映射（真正生效的 chain_for_model 编辑面）', steps: [{ scrollSel: '[data-tier="reeve/pro"]', block: 'center' }], expect: ['档位映射', 'REEVE pro（强推理）'] },
-  { id: '10-chain-policy', tab: 'chain', height: 820, note: '重试与回退：数字字段 + 开关 + 高级折叠', steps: [{ scrollSel: '[data-policy="max_fallback_attempts"]', block: 'center' }], expect: ['最多尝试次数', '冷却结束后回到首选'] },
+  { id: '09-tier-mapping', tab: 'chain', height: 820, note: 'chain_for_model（真正生效的档位映射编辑面）', steps: [{ scrollSel: '[data-tier="reeve/pro"]', block: 'center' }], expect: ['chain_for_model', 'reeve/pro'] },
+  { id: '10-chain-policy', tab: 'chain', height: 820, note: '重试策略：数字字段 + 开关 + 高级折叠', steps: [{ scrollSel: '[data-policy="max_fallback_attempts"]', block: 'center' }], expect: ['最多尝试次数', '冷却结束后回到首选'] },
   { id: '11-chain-narrow', tab: 'chain', width: 380, note: '窄宽 380px：不横向溢出，单列落' },
   { id: '12-chain-dark', tab: 'chain', theme: 'dark', note: '路由链 · 深色' },
   { id: '13-stats-light', tab: 'stats', note: '调用统计：摘要数字格 + 链进度条 + 服务商列表', expect: ['请求统计', '按服务商'] },
@@ -357,7 +357,10 @@ for (const item of selected) {
   const text = await evaluate('document.body.innerText')
   for (const s of item.expect ?? []) if (!text.includes(s)) failures.push(`缺少文本：${s}`)
   for (const s of item.expectNot ?? []) if (text.includes(s)) failures.push(`不该出现：${s}`)
-  if (consoleErrors.length) failures.push(`控制台错误 ${consoleErrors.length} 条：${consoleErrors.slice(0, 2).join(' | ')}`)
+  // 跨页导航时宿主的旧消息端口会晚一步关闭，Chrome 报 "Could not establish connection"
+  // —— 这是页面切换噪声，不是面板错误；面板自己的启动失败已由 waitReady 的文本断言覆盖。
+  const appConsoleErrors = consoleErrors.filter((e) => !e.includes('Could not establish connection'))
+  if (appConsoleErrors.length) failures.push(`控制台错误 ${appConsoleErrors.length} 条：${appConsoleErrors.slice(0, 2).join(' | ')}`)
   if (item.writes != null) {
     const n = await evaluate('globalThis.__previewWrites?.length ?? 0')
     if (n !== item.writes) failures.push(`写入次数 ${n} ≠ ${item.writes}`)
@@ -378,7 +381,7 @@ for (const item of selected) {
   const shot = await send('Page.captureScreenshot', { format: 'png', ...(full ? { captureBeyondViewport: true } : {}) })
   const file = join(outDir, `${item.id}.png`)
   writeFileSync(file, Buffer.from(shot.result.data, 'base64'))
-  results.push({ id: item.id, note: item.note, file: `${item.id}.png`, scenario: item.scenario ?? null, failures, warnings, consoleErrors: [...consoleErrors] })
+  results.push({ id: item.id, note: item.note, file: `${item.id}.png`, scenario: item.scenario ?? null, failures, warnings, consoleErrors: [...appConsoleErrors] })
   const mark = failures.length ? '✗' : stepFailed ? '✗' : '✓'
   console.log(`${mark} ${item.id} — ${item.note}${failures.length ? `（${failures.length} 项失败）` : ''}`)
 }
