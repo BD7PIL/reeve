@@ -1,0 +1,15 @@
+{
+  "app": "openchamber-ui://app/index.html",
+  "host": "app",
+  "at": "2026-10-23T13:12:18.348Z",
+  "guest": "http://127.0.0.1:57123/api/guest-files/5rs6FLubvjMgdJQhyz4uExLc1ZFzexi6/panel/index.html",
+  "checks": {
+    "textLen": 1154,
+    "missing": [],
+    "overflow": false,
+    "tokens": []
+  },
+  "save": null,
+  "consoleErrors": [],
+  "failures": []
+}

@@ -1,0 +1,24 @@
+{
+  "$schema": "https://biomejs.dev/schemas/2.5.15/schema.json",
+  "formatter": {
+    "enabled": false
+  },
+  "linter": {
+    "enabled": true,
+    "rules": {
+      "recommended": true
+    }
+  },
+  "files": {
+    "includes": [
+      "plugin/src/**",
+      "plugin/test/**",
+      "extensions/reeve/src/**",
+      "extensions/reeve/check.mjs",
+      "scripts/**",
+      "!**/node_modules",
+      "!**/panel",
+      "!**/dist"
+    ]
+  }
+}

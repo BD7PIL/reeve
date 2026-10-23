@@ -1,0 +1,145 @@
+# 发布 `@bd7pil/reeve` 到 npm。
+#
+# 两条触发：
+#   push tag v<版本>   正路。标签必须与 plugin/package.json 的版本**逐字对上**，对不上就拒发。
+#   workflow_dispatch  彩排（默认 dry_run=true：只打包不发布；要真发就把它改成 false）。
+#
+# 凭据：**npm Trusted Publishing（OIDC）——不需要任何 secret**。
+#   npm 网站 → 该包 → Settings → Trusted publishing 填：BD7PIL / reeve / publish.yml。
+#   若你更想用 token（比如首次发布时 Trusted Publisher 还没配），加一个仓库 secret `NPM_TOKEN`：
+#   有它就用它，没有就是空串 → npm 自动回落到 OIDC（ocrc 的 publish.yml 同一手法）。
+#
+# provenance（供应链签名）要求：公开仓库 + 公开包 + `repository.url` 与 GitHub 仓库一致
+#   （plugin/package.json 里已经是 git+https://github.com/BD7PIL/reeve.git）。
+
+name: Publish plugin
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 只打包不发布（彩排）
+        type: boolean
+        default: true
+
+permissions:
+  contents: write   # 发布成功后补打标签 / 创建 GitHub Release
+  id-token: write   # OIDC：Trusted Publishing 与 provenance 都要它
+
+concurrency:
+  group: publish-reeve-plugin
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+
+      - name: npm ≥ 11.5.1（OIDC 发布的门槛）
+        # 钉大版本而不是 @latest：npm 12 把 `npm pack --json` 的输出形状从数组改成了对象
+        # （本地是在 11.x 上验的）。要升大版本时，先跑一次彩排（workflow_dispatch + dry_run）。
+        run: npm install -g npm@11
+
+      - name: 读版本 + 与标签对表
+        id: ver
+        run: |
+          set -euo pipefail
+          V="$(node -p "require('./plugin/package.json').version")"
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+          if [ "${GITHUB_REF_TYPE}" = "tag" ] && [ "${GITHUB_REF_NAME}" != "v$V" ]; then
+            echo "::error::标签 ${GITHUB_REF_NAME} 与 package.json 的 v$V 不一致"
+            exit 1
+          fi
+          echo "本次版本：$V"
+
+      - name: 这个版本必须还没发过（彩排跳过）
+        if: ${{ inputs.dry_run != true }}
+        run: |
+          set -euo pipefail
+          if npm view "@bd7pil/reeve@${{ steps.ver.outputs.version }}" version >/dev/null 2>&1; then
+            echo "::error::@bd7pil/reeve@${{ steps.ver.outputs.version }} 已存在；先改 plugin/package.json 的版本再发"
+            exit 1
+          fi
+          echo "✓ 注册表里还没有这个版本"
+
+      - name: 测试
+        run: npm --prefix plugin test
+
+      - name: npm 包内容断言（许可文本 / docs 与密钥隔离）
+        run: node scripts/check-plugin-pack.mjs
+
+      - name: 发布
+        working-directory: plugin
+        env:
+          # 没有这个 secret 时是空串 → npm 走 OIDC（Trusted Publishing）。
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ "${{ inputs.dry_run }}" = "true" ]; then
+            echo "彩排：只打包，不发布"
+            npm publish --access public --dry-run
+          else
+            V="${{ steps.ver.outputs.version }}"
+            for i in 1 2 3; do
+              if npm publish --access public --provenance; then exit 0; fi
+              if npm view "@bd7pil/reeve@$V" version >/dev/null 2>&1; then
+                echo "publish 实际已落地（客户端报错但 registry 有版本）"
+                exit 0
+              fi
+              if [ "$i" -eq 3 ]; then exit 1; fi
+              echo "publish 第 $i 次失败；$((i * 15))s 后重试"
+              sleep $((i * 15))
+            done
+          fi
+
+      - name: 派发路径补打标签（保持"标签↔版本"始终成立）
+        if: ${{ github.ref_type != 'tag' && inputs.dry_run != true }}
+        run: |
+          set -euo pipefail
+          V="${{ steps.ver.outputs.version }}"
+          git tag "v$V"
+          git push origin "v$V"
+
+      - name: 创建 GitHub Release（从 CHANGELOG 提取）
+        if: ${{ inputs.dry_run != true }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          V="${{ steps.ver.outputs.version }}"
+          awk -v v="$V" '
+            $0 ~ "^## " v "([ —-]|$)" { on=1; next }
+            on && /^## / { exit }
+            on { print }
+          ' CHANGELOG.md > /tmp/release-notes.md
+          # CHANGELOG 缺该版本小节时不再让发布链红掉：用占位 notes + warning（真修复是提交里带小节）
+          if [ ! -s /tmp/release-notes.md ]; then
+            echo "::warning::CHANGELOG.md has no '## $V' section — release notes fell back to a link"
+            {
+              echo "reeve $V"
+              echo
+              echo "See [CHANGELOG.md](https://github.com/$GITHUB_REPOSITORY/blob/main/CHANGELOG.md)."
+            } > /tmp/release-notes.md
+          fi
+          if gh release view "v$V" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "GitHub Release v$V 已存在，跳过"
+          else
+            gh release create "v$V" -R "$GITHUB_REPOSITORY" \
+              --verify-tag --latest \
+              --title "reeve $V" --notes-file /tmp/release-notes.md
+          fi
+
+      - name: 收尾说明
+        run: |
+          echo "安装方式（引擎配置里一行）：" 
+          echo '  "plugins": ["@bd7pil/reeve"]'
+          echo "包页：https://www.npmjs.com/package/@bd7pil/reeve"
