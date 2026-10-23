@@ -78,8 +78,14 @@
   （顶层页是 `openchamber-ui://`，面板 OOPIF 在 `http://127.0.0.1:<port>/api/guest-files/…/panel/index.html`；
   脚本按 `<html lang>` 自动选中/英文断言）。
 - 抓图：`node scripts/host-shot.mjs --app=openchamber-ui://app/index.html --cdp=http://127.0.0.1:9222 --out=…`。
-- 0.1.13 本机真宿主：PASS（文本 1155 字、console 0、无溢出）；面板显示中文（宿主 locale=zh-CN），
-  链卡/分区/更多 chevron 与预览一致。
+- 0.1.13 本机真宿主：PASS（文本 1154 字、console 0、无溢出）；面板显示中文（宿主 locale=zh-CN），
+  链卡/分区/更多 chevron 与预览一致；截图 `desktop-reeve-0.1.13.png`、报告 `desktop.json`。
+- 0.1.13 EL7 对端（4610）：**独立 headless Chrome**（自己的 user-data-dir、CDP 9333）+
+  `--login`：PASS（文本 1652 字、console 0、无溢出）；peer settings 无 locale → 面板全英文，
+  与宿主一致；截图 `peer-reeve-0.1.13.png`、报告 `peer-4610.json`。
+- 复跑对端：先 `ocrc remote up <peer>`，再
+  `PEER_UI_PASSWORD=$(ocrc … connect --json 取 uiPassword) node scripts/host-audit.mjs
+  --app=http://127.0.0.1:4610/ --cdp=http://127.0.0.1:9333 --login`。
 - **安全保存测试**（`--save`）：备份 `fallback.jsonc` → 面板里新增链 → 加模型 → 保存 →
   等「已生效」→ 轮询 GATE `chain_targets` → `finally` 回写并比对 sha256。仅空闲时跑：它会短暂改真配置。
 
@@ -91,6 +97,7 @@ node extensions/reeve/scripts/audit.mjs --fixture --locale=en --suffix=-en --onl
 node extensions/reeve/scripts/audit.mjs --only 19                        # 单项
 node extensions/reeve/scripts/audit.mjs --strict-contrast                 # 3–4.5 也算失败
 node scripts/host-audit.mjs --app=openchamber-ui://app/index.html --cdp=http://127.0.0.1:9222
+node scripts/host-audit.mjs --app=http://127.0.0.1:4610/ --cdp=http://127.0.0.1:9333 --login   # 对端
 ```
 
 `report.json`（中文主套）/ `report-en.json`（英文矩阵）里有每项的 failures/warnings/consoleErrors；
