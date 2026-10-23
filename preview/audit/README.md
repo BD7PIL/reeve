@@ -12,7 +12,7 @@
 > 0.1.11 面板（配插件 0.2.2）：**语言真正跟随 OpenChamber**（`ctx.locale` → en / zh-CN 两套词表；
 > 技术标识永不翻译）；版式改成宿主式 —— 分区是分隔带，**只有链是卡片**，模型行单行，
 > 布尔项是 checkbox row，保存条在页面级（切 tab 不丢）。主套 44 项跑 `--locale=zh-CN`；
-> 英文矩阵（01/09/19/24/25/28/40/41/42/43）输出 `*-en.png` 与 `report-en.json`。
+> 英文矩阵（01/09/19/22/24/25/28/40/41/42/43）输出 `*-en.png` 与 `report-en.json`。
 >
 > 复核时抓到的三个真实缺陷并已修：`[hidden]` 被 `display:flex` 盖过（切 tab 后旧 tab 仍显示）、
 > 档位下拉的百分比宽度按 shrink-to-fit 父级解析（塌成 1–2 个字）、首帧闭包用旧快照
@@ -69,7 +69,7 @@
 
 - 44 张中文截图逐项过了审计门（步骤点击、控制台零错误、零溢出、宿主 token、可访问名、对比度）。
 - 本轮人工看图：01/02/05/09/10/12/13/15/19/24/25/28/31/40/41/42/43/44 逐张核对布局/层级/截断/空态。
-- 英文矩阵 10 张（`*-en.png`）核对无中文残留、术语一致（Free lane / Chains / Stats / Tasks / Retry policy）。
+- 英文矩阵 11 张（`*-en.png`）核对无中文残留、术语一致（Free lane / Chains / Stats / Tasks / Retry policy）。
 - 历史轮的多模态复审记录见 git 历史。
 
 ## 真宿主复审
@@ -87,7 +87,7 @@
 
 ```bash
 node extensions/reeve/scripts/audit.mjs --fixture --locale=zh-CN          # 主套（44 项）
-node extensions/reeve/scripts/audit.mjs --fixture --locale=en --suffix=-en --only 01,09,19,24,25,28,40,41,42,43
+node extensions/reeve/scripts/audit.mjs --fixture --locale=en --suffix=-en --only 01,09,19,22,24,25,28,40,41,42,43
 node extensions/reeve/scripts/audit.mjs --only 19                        # 单项
 node extensions/reeve/scripts/audit.mjs --strict-contrast                 # 3–4.5 也算失败
 node scripts/host-audit.mjs --app=openchamber-ui://app/index.html --cdp=http://127.0.0.1:9222
