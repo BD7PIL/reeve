@@ -21,7 +21,7 @@
 // 预览读真快照与真配置；**写只进内存**，不会改 ~/.config/opencode/reeve/fallback.jsonc。
 
 import { spawn } from 'node:child_process'
-import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -141,27 +141,53 @@ mkdirSync(outDir, { recursive: true })
 const onlyList = only ? only.split(',').map((s) => s.trim()).filter(Boolean) : null
 const selected = PLAN.filter((p) => !onlyList || onlyList.some((o) => p.id.includes(o)))
 for (const item of selected) rmSync(join(outDir, `${item.id}${suffix}.png`), { force: true })
-const profile = join(tmpdir(), 'reeve-audit-chrome')
-try { rmSync(profile, { recursive: true, force: true }) } catch { /* Windows 句柄没放开：留着无妨 */ }
+// 每次运行用**独立临时 profile**：固定目录会被残留的浏览器实例锁住，
+// 新实例会握手即退（对旧实例 hand-off），换端口也救不回来 —— CI 的 exit 3 就是这么来的。
+const profile = mkdtempSync(join(tmpdir(), 'reeve-audit-chrome-'))
 
-const browser = spawn(chrome, [
-  '--headless=new', '--disable-gpu', '--hide-scrollbars', '--no-first-run', '--no-default-browser-check',
-  // 容器/CI 里 Chrome 的沙箱起不来（CDP 目标不会出现）：CI 下关沙箱 + 共享内存目录
-  ...(process.env.CI ? ['--no-sandbox', '--disable-dev-shm-usage'] : []),
-  `--remote-debugging-port=${debugPort}`, `--user-data-dir=${profile}`, 'about:blank',
-], { stdio: ['ignore', 'ignore', 'ignore'] })
+/** 收掉浏览器整棵进程树：Windows 上 child.kill() 只杀根进程，Edge/Chrome 的子进程会泄漏成僵尸。 */
+function killBrowserTree(proc) {
+  if (!proc || proc.exitCode !== null) return
+  if (process.platform === 'win32') {
+    try {
+      spawn('taskkill', ['/PID', String(proc.pid), '/T', '/F'], { stdio: 'ignore' })
+    } catch { proc.kill() }
+  } else {
+    proc.kill()
+  }
+}
 
+// 浏览器启动是 CI 上最大的 flake 源。两个坑都实测过：
+//   · Edge headless 会**自重启**——spawn 的根进程秒退（exitCode 0），真浏览器是子进程继续握 CDP 端口；
+//     所以不能把"根进程退出"当死亡，只认端口出不出得来。
+//   · 根进程 kill 杀不掉 Edge 的子进程树 → 残留实例锁住固定 profile/端口，后续启动全废；
+//     所以 profile 每次独立临时目录，收尾用 taskkill /T（Windows）。
+let browser
 let target
-for (let i = 0; i < 60; i++) {
-  try {
-    const r = await fetch(`http://127.0.0.1:${debugPort}/json/new?about:blank`, { method: 'PUT' })
-    if (r.ok) { target = await r.json(); break }
-  } catch { /* 还没起来 */ }
-  await wait(250)
+let cdpPort = debugPort
+for (let launch = 1; launch <= 3 && !target; launch++) {
+  const port = debugPort + launch - 1
+  browser = spawn(chrome, [
+    '--headless=new', '--disable-gpu', '--hide-scrollbars', '--no-first-run', '--no-default-browser-check',
+    // 容器/CI 里 Chrome 的沙箱起不来（CDP 目标不会出现）：CI 下关沙箱 + 共享内存目录
+    ...(process.env.CI ? ['--no-sandbox', '--disable-dev-shm-usage'] : []),
+    `--remote-debugging-port=${port}`, `--user-data-dir=${profile}`, 'about:blank',
+  ], { stdio: ['ignore', 'ignore', 'ignore'] })
+  for (let i = 0; i < 60; i++) {
+    try {
+      const r = await fetch(`http://127.0.0.1:${port}/json/new?about:blank`, { method: 'PUT' })
+      if (r.ok) { target = await r.json(); cdpPort = port; break }
+    } catch { /* 还没起来（或根进程已自重启、端口由子进程接管） */ }
+    await wait(250)
+  }
+  if (!target?.webSocketDebuggerUrl) {
+    killBrowserTree(browser)
+    await wait(500)
+  }
 }
 if (!target?.webSocketDebuggerUrl) {
-  console.error('CDP 页面目标没起来')
-  browser.kill(); server?.kill()
+  console.error('CDP 页面目标没起来（3 次启动尝试都失败）')
+  server?.kill()
   process.exit(3)
 }
 
@@ -421,6 +447,19 @@ if (failed.length) {
   for (const f of failed) for (const reason of f.failures) console.error(`  · ${f.id} ${reason}`)
 }
 socket.close()
-browser.kill()
+// 先走 CDP 的 Browser.close（能关掉 Edge 自重启后**脱离进程树**的子进程），再兜底杀树。
+// Browser.close 只在**浏览器级** WS 上有效（/json/version 的那个），页面级 WS 会静默忽略。
+try {
+  const ver = await (await fetch(`http://127.0.0.1:${cdpPort}/json/version`)).json()
+  const bws = new WebSocket(ver.webSocketDebuggerUrl)
+  await Promise.race([
+    new Promise((res, rej) => { bws.addEventListener('open', res, { once: true }); bws.addEventListener('error', rej, { once: true }) }),
+    wait(1500),
+  ])
+  bws.send(JSON.stringify({ id: 1, method: 'Browser.close' }))
+  await wait(800)
+  try { bws.close() } catch { /* 已随浏览器断开 */ }
+} catch { /* 浏览器已不在：兜底会处理 */ }
+killBrowserTree(browser)
 server?.kill()
 process.exit(failed.length ? 1 : 0)
