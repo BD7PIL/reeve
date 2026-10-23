@@ -1,6 +1,6 @@
 {
   "name": "reeve",
-  "version": "0.1.12",
+  "version": "0.1.13",
   "private": true,
   "type": "module",
   "description": "REEVE orchestration panel: chains, chain_for_model, retry policy, free lane, request stats, task ledger",

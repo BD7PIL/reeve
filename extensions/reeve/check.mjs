@@ -154,6 +154,13 @@ check('语言门禁：面板 UI 源码（剥注释）不含 CJK；action label /
   for (const f of readdirSync(srcDir).filter((n) => n.endsWith('.js') && n !== 'i18n.js')) {
     const body = stripComments(readFileSync(join(srcDir, f), 'utf8'))
     if (/[\u4e00-\u9fff]/.test(body)) throw new Error(`${f} 里还有中文 UI 文案（应进 i18n 词表）`)
+    // placeholder / aria 名是宿主可见文案：必须走 t()，不许直接写字符串（'default 3' 曾漏网）
+    for (const m of body.matchAll(/(?:placeholder|ariaLabel)\s*:\s*(['"])([^'"]*)\1/g)) {
+      throw new Error(`${f} 里 ${m[0]} 是硬编码文案（应走 t()）`)
+    }
+    for (const m of body.matchAll(/['"]aria-label['"]\s*:\s*(['"])([^'"]*)\1/g)) {
+      throw new Error(`${f} 里 ${m[0]} 是硬编码文案（应走 t()）`)
+    }
   }
   const label = pkg.openchamber.contributes.actions?.find((a) => a.id === 'reeve-inspect')?.label ?? ''
   if (/[\u4e00-\u9fff]/.test(label)) throw new Error(`action label 不能是中文：${label}`)
