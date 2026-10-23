@@ -6,6 +6,7 @@
 //   node extensions/reeve/scripts/audit.mjs --only 19        # 只跑序号含 19 的项
 //   node extensions/reeve/scripts/audit.mjs --no-serve       # 复用已在跑的预览（PREVIEW_PORT）
 //   node extensions/reeve/scripts/audit.mjs --strict-contrast # 3–4.5 的对比度也算失败
+//   node extensions/reeve/scripts/audit.mjs --locale=zh-CN|en  # 语言矩阵（默认 zh-CN，与宿主当前设置一致）
 //
 // 断言（任一失败 → 退出码 1，report.json 里逐项记录）：
 //   · 步骤必须点到（fail-fast，不再"拍了张错状态的图继续跑"）
@@ -34,6 +35,11 @@ const base = `http://127.0.0.1:${port}`
 
 const argv = process.argv.slice(2)
 const only = argv.includes('--only') ? argv[argv.indexOf('--only') + 1] : null
+const localeArg = argv.find((a) => a.startsWith('--locale='))?.slice('--locale='.length)
+const locale = localeArg === 'en' ? 'en' : 'zh-CN'
+// 语言矩阵分开存图/报告（主套仍写 report.json；英文矩阵用 report-en.json）
+const suffix = argv.find((a) => a.startsWith('--suffix='))?.slice('--suffix='.length) ?? ''
+const L = (en, zh) => (locale === 'zh-CN' ? zh : en)
 const full = argv.includes('--full')
 const serve = !argv.includes('--no-serve')
 const fixture = argv.includes('--fixture') || process.env.REEVE_AUDIT_FIXTURE === '1' || process.env.CI === 'true'
@@ -50,46 +56,50 @@ const typeSel = (selector, text) => ({ typeSel: selector, text })
  * `scenario` 走 preview/host-shim.js 的注入（不动真实文件）；`expect` 是必须出现的文本。
  */
 const PLAN = [
-  { id: '01-chain-default', tab: 'chain', note: '路由链首屏：链卡（含免费兜底行）+ 档位/模型/更多', expect: ['Free lane', 'Total attempts 4 = free 3 + paid 1'] },
-  { id: '02-chain-row-selected', tab: 'chain', note: '选中模型 → 动作条（上移/下移/更换模型/移除）', steps: [clickSel('.oc-sdk-row', 1)], expect: ['Selected: '] },
-  { id: '03-chain-picker', tab: 'chain', note: '「更换模型」→ 搜索 + 模型列表 + 手填', steps: [clickSel('.oc-sdk-row', 1), click('Replace')], expect: ['Replace '] },
-  { id: '04-chain-picker-search', tab: 'chain', note: '搜索 deepseek → 只留命中的模型', steps: [clickSel('.oc-sdk-row', 1), click('Replace'), { type: 'deepseek' }] },
-  { id: '05-chain-added', tab: 'chain', note: '加进链尾 → 未保存徽标 + 底部保存条', steps: [click('+ Add model'), { type: 'deepseek' }, clickSel('.oc-list-scroll .oc-sdk-row', 0)], expect: ['Unsaved', 'Save & apply'] },
-  { id: '06-chain-saved', tab: 'chain', note: '保存 → 生效中 → 已生效（预览只写内存，但会模拟热更）', steps: [click('+ Add model'), { type: 'deepseek' }, clickSel('.oc-list-scroll .oc-sdk-row', 0), click('Save & apply')], settle: 3600, expect: ['Applied'], writes: 1 },
-  { id: '07-chain-menu', tab: 'chain', note: '链卡「更多」：设为默认链 / 删除（档位在用时拒绝并说明）', steps: [click('More')], expect: ['Delete ('] },
-  { id: '08-chain-new', tab: 'chain', note: '＋ 新增链 → 链名输入 + 创建/取消', steps: [click('+ New chain'), { scrollSel: '[data-act="new-chain-row"]', block: 'end' }], expect: ['Create'] },
+  { id: '01-chain-default', tab: 'chain', note: '路由链首屏：链卡（含免费兜底行）+ 档位/模型/更多', expect: [L('Free lane', '免费车道'), L('Total attempts 4 = free 3 + paid 1', '总尝试 4 次 = 免费 3 + 付费 1')] },
+  { id: '02-chain-row-selected', tab: 'chain', note: '选中模型 → 动作条（上移/下移/更换模型/移除）', steps: [clickSel('.oc-sdk-row', 1)], expect: [L('Selected: ', '已选：')] },
+  { id: '03-chain-picker', tab: 'chain', note: '「更换模型」→ 搜索 + 模型列表 + 手填', steps: [clickSel('.oc-sdk-row', 1), click(L('Replace', '替换'))], expect: [L('Replace ', '替换 ')] },
+  { id: '04-chain-picker-search', tab: 'chain', note: '搜索 deepseek → 只留命中的模型', steps: [clickSel('.oc-sdk-row', 1), click(L('Replace', '替换')), { type: 'deepseek' }] },
+  { id: '05-chain-added', tab: 'chain', note: '加进链尾 → 未保存徽标 + 页面级保存条', steps: [click(L('+ Add model', '+ 添加模型')), { type: 'deepseek' }, clickSel('.oc-list-scroll .oc-sdk-row', 0)], expect: [L('Unsaved', '未保存'), L('Save & apply', '保存并应用')] },
+  { id: '06-chain-saved', tab: 'chain', note: '保存 → 生效中 → 已生效（预览只写内存，但会模拟热更）', steps: [click(L('+ Add model', '+ 添加模型')), { type: 'deepseek' }, clickSel('.oc-list-scroll .oc-sdk-row', 0), click(L('Save & apply', '保存并应用'))], settle: 3600, expect: [L('Applied', '已生效')], writes: 1 },
+  { id: '07-chain-menu', tab: 'chain', note: '链卡「更多」：设为默认链 / 删除（档位在用时拒绝并说明）', steps: [click(L('More', '更多'))], expect: [L('Delete (', '删除（')] },
+  { id: '08-chain-new', tab: 'chain', note: '＋ 新增链 → 链名输入 + 创建/取消', steps: [click(L('+ New chain', '+ 新建链')), { scrollSel: '[data-act="new-chain-row"]', block: 'end' }], expect: [L('Create', '创建')] },
   { id: '09-tier-mapping', tab: 'chain', height: 820, note: 'chain_for_model（真正生效的档位映射编辑面）', steps: [{ scrollSel: '[data-tier="reeve/pro"]', block: 'center' }], expect: ['chain_for_model', 'reeve/pro'] },
-  { id: '10-chain-policy', tab: 'chain', height: 820, note: '重试策略：数字字段 + 开关 + 高级折叠', steps: [{ scrollSel: '[data-policy="max_fallback_attempts"]', block: 'center' }], expect: ['Max attempts', 'Return to primary after cooldown'] },
+  { id: '10-chain-policy', tab: 'chain', height: 820, note: '重试策略：数字字段 + 开关 + 高级折叠', steps: [{ scrollSel: '[data-policy="max_fallback_attempts"]', block: 'center' }], expect: [L('Max attempts', '最大尝试次数'), L('Return to primary after cooldown', '冷却结束后回到首选')] },
   { id: '11-chain-narrow', tab: 'chain', width: 380, note: '窄宽 380px：不横向溢出，单列落' },
   { id: '12-chain-dark', tab: 'chain', theme: 'dark', note: '路由链 · 深色' },
-  { id: '13-stats-light', tab: 'stats', note: '调用统计：摘要数字格 + 链进度条 + 服务商列表', expect: ['Requests', 'By provider'] },
+  { id: '13-stats-light', tab: 'stats', note: '调用统计：摘要数字格 + 链进度条 + 服务商列表', expect: [L('Requests', '请求'), L('By provider', '按提供商')] },
   { id: '14-stats-dark', tab: 'stats', theme: 'dark', note: '调用统计 · 深色' },
-  { id: '15-ledger-light', tab: 'ledger', note: '任务记录：摘要数字格 + 子任务列表', expect: ['Tasks'] },
-  { id: '16-chain-dirty-discard', tab: 'chain', note: '删模型 →「丢弃改动」→ 回到改动前', steps: [clickSel('.oc-sdk-row', 1), clickSel('[data-act="remove"]', 0), click('Discard')] },
+  { id: '15-ledger-light', tab: 'ledger', note: '任务记录：摘要数字格 + 子任务列表', expect: [L('Tasks', '任务')] },
+  { id: '16-chain-dirty-discard', tab: 'chain', note: '删模型 →「丢弃改动」→ 回到改动前', steps: [clickSel('.oc-sdk-row', 1), clickSel('[data-act="remove"]', 0), click(L('Discard', '放弃修改'))] },
   { id: '17-chain-keyboard', tab: 'chain', note: '键盘：选中后 Alt+↓ 换位（W3C APG）', steps: [clickSel('.oc-sdk-row', 1), { key: 'ArrowDown', alt: true }] },
   { id: '18-chain-selected-dark', tab: 'chain', theme: 'dark', note: '深色下的选中行 + 动作条', steps: [clickSel('.oc-sdk-row', 1)] },
-  { id: '19-free-default', tab: 'chain', note: '免费车道：开关/模型数/发现源 + 展开摘要', steps: [{ scrollSel: '[data-section="free"]', block: 'start' }], expect: ['Free models', 'Expandable now', '10 free models'] },
-  { id: '20-free-cooling', tab: 'chain', scenario: 'free-cooling', note: '免费模型冷却中（摘要行）', steps: [clickSel('[data-act="free-refresh"]'), { scrollSel: '[data-free="expand"]', block: 'center' }], expect: ['cooling'] },
-  { id: '21-free-empty', tab: 'chain', scenario: 'free-empty', note: '没有可展开的免费模型（空态）', steps: [{ scrollSel: '[data-section="free"]', block: 'start' }], expect: ['No free models to expand right now'] },
-  { id: '22-free-error', tab: 'chain', scenario: 'free-error', note: '免费车道运行态读取失败', steps: [{ scrollSel: '[data-section="free"]', block: 'start' }], expect: ['runtime read failed'] },
-  { id: '23-free-max-dirty', tab: 'chain', note: '改免费模型数 → 未保存徽标（即时出现，不重绘）', steps: [typeSel('[data-free="max"] input', '1')], settle: 600, expect: ['Unsaved'] },
+  { id: '19-free-default', tab: 'chain', note: '免费车道：开关/模型数/发现源 + 展开摘要', steps: [{ scrollSel: '[data-section="free"]', block: 'start' }], expect: [L('Free models', '免费模型数'), L('Expandable now', '当前可展开'), L('10 free models', '10 个免费模型')] },
+  { id: '20-free-cooling', tab: 'chain', scenario: 'free-cooling', note: '免费模型冷却中（摘要行）', steps: [clickSel('[data-act="free-refresh"]'), { scrollSel: '[data-free="expand"]', block: 'center' }], expect: [L('cooling', '冷却')] },
+  { id: '21-free-empty', tab: 'chain', scenario: 'free-empty', note: '没有可展开的免费模型（空态）', steps: [{ scrollSel: '[data-section="free"]', block: 'start' }], expect: [L('No free models to expand right now', '当前没有可展开的免费模型')] },
+  { id: '22-free-error', tab: 'chain', scenario: 'free-error', note: '免费车道运行态读取失败', steps: [{ scrollSel: '[data-section="free"]', block: 'start' }], expect: [L('runtime read failed', '运行态读取失败')] },
+  { id: '23-free-max-dirty', tab: 'chain', note: '改免费模型数 → 未保存徽标（即时出现，不重绘）', steps: [typeSel('[data-free="max"] input', '1')], settle: 600, expect: [L('Unsaved', '未保存')] },
   { id: '24-free-prefer-add', tab: 'chain', note: '固定一个免费模型进偏好（高级折叠内）', steps: [clickSel('[data-section="free"] details.oc-advanced > summary'), typeSel('[data-free="prefer-add"] input', 'deepseek-v4.1-flash-free'), clickSel('[data-act="free-add"]'), { scrollSel: '[data-free-prefer="deepseek-v4.1-flash-free"]', block: 'center' }], expect: ['deepseek-v4.1-flash-free'] },
-  { id: '25-gate-down', tab: 'chain', scenario: 'gate-down', note: '路由引擎没起：徽标 + 横幅 + 页签仍可用', expect: ['Router is not running', 'Router not ready'] },
-  { id: '26-gate-problems', tab: 'chain', scenario: 'gate-problems', note: '配置 problems 横幅', expect: ['Config has 2 problem(s)'] },
-  { id: '27-config-parse-error', tab: 'chain', scenario: 'config-parse-error', note: '配置解析失败：横幅', expect: ['Config parse error'] },
-  { id: '28-config-missing', tab: 'chain', scenario: 'config-missing', note: '配置读不到：横幅 + 诊断里有 tried 列表', steps: [clickSel('[data-section="diag"] > summary')], expect: ['Cannot read router config', 'NOT_FOUND'] },
-  { id: '29-ledger-missing', tab: 'chain', scenario: 'ledger-missing', note: '快照读不到：数据未就绪 + 下一步提示', expect: ['Data not ready', 'Snapshot unavailable', 'Run a model call'] },
-  { id: '30-ledger-denied', tab: 'ledger', scenario: 'ledger-denied', note: '快照未授权：权限提示（不是"空数据"）', expect: ['No task data yet', 'permission'] },
-  { id: '31-save-fail', tab: 'chain', scenario: 'save-fail', note: '写入失败：notice + 没生效', steps: [click('+ Add model'), { type: 'deepseek' }, clickSel('.oc-list-scroll .oc-sdk-row', 0), click('Save & apply')], settle: 2200, expect: ['Write failed', 'Not applied'] },
-  { id: '32-apply-stall', tab: 'chain', scenario: 'apply-stall', note: '写了但没热更：停在生效中', steps: [click('+ Add model'), { type: 'deepseek' }, clickSel('.oc-list-scroll .oc-sdk-row', 0), click('Save & apply')], settle: 2200, expect: ['Applying'] },
-  { id: '33-policy-dirty', tab: 'chain', note: '改策略数字 → 未保存（即时出现，不重绘）', steps: [{ scrollSel: '[data-section="policy"]', block: 'start' }, typeSel('[data-policy="max_fallback_attempts"] input', '5')], settle: 600, expect: ['Unsaved'] },
-  { id: '34-ledger-filter-empty', tab: 'ledger', note: '筛选运行中（0 条）≠ 没有任务', steps: [click('Running 0')], expect: ['No records in this filter'] },
-  { id: '35-stats-empty', tab: 'stats', scenario: 'empty-stats', note: '没有请求数据的空态', expect: ['No request data yet'] },
-  { id: '36-stats-stale', tab: 'stats', scenario: 'stale', note: '台账旧行的窗口放宽提示', expect: ['All rows are older than'] },
+  { id: '25-gate-down', tab: 'chain', scenario: 'gate-down', note: '路由引擎没起：徽标 + 横幅 + 页签仍可用', expect: [L('Router is not running', '路由未运行'), L('Router not ready', '路由未就绪')] },
+  { id: '26-gate-problems', tab: 'chain', scenario: 'gate-problems', note: '配置 problems 横幅', expect: [L('Config has 2 problems', '配置有 2 个问题')] },
+  { id: '27-config-parse-error', tab: 'chain', scenario: 'config-parse-error', note: '配置解析失败：横幅', expect: [L('Config parse error', '配置解析失败')] },
+  { id: '28-config-missing', tab: 'chain', scenario: 'config-missing', note: '配置读不到：横幅 + 诊断里有 tried 列表', steps: [clickSel('[data-section="diag"] > summary')], expect: [L('Cannot read router config', '读不到路由配置'), 'NOT_FOUND'] },
+  { id: '29-ledger-missing', tab: 'chain', scenario: 'ledger-missing', note: '快照读不到：数据未就绪 + 下一步提示', expect: [L('Data not ready', '数据未就绪'), L('Snapshot unavailable', '快照不可用'), L('Run a model call', '发起一次模型调用')] },
+  { id: '30-ledger-denied', tab: 'ledger', scenario: 'ledger-denied', note: '快照未授权：权限提示（不是"空数据"）', expect: [L('No task data yet', '还没有任务数据'), L('permission', '权限')] },
+  { id: '31-save-fail', tab: 'chain', scenario: 'save-fail', note: '写入失败：notice + 没生效', steps: [click(L('+ Add model', '+ 添加模型')), { type: 'deepseek' }, clickSel('.oc-list-scroll .oc-sdk-row', 0), click(L('Save & apply', '保存并应用'))], settle: 2200, expect: [L('Write failed', '写入失败'), L('Not applied', '未生效')] },
+  { id: '32-apply-stall', tab: 'chain', scenario: 'apply-stall', note: '写了但没热更：停在生效中', steps: [click(L('+ Add model', '+ 添加模型')), { type: 'deepseek' }, clickSel('.oc-list-scroll .oc-sdk-row', 0), click(L('Save & apply', '保存并应用'))], settle: 2200, expect: [L('Applying', '应用中')] },
+  { id: '33-policy-dirty', tab: 'chain', note: '改策略数字 → 未保存（即时出现，不重绘）', steps: [{ scrollSel: '[data-section="policy"]', block: 'start' }, typeSel('[data-policy="max_fallback_attempts"] input', '5')], settle: 600, expect: [L('Unsaved', '未保存')] },
+  { id: '34-ledger-filter-empty', tab: 'ledger', note: '筛选运行中（0 条）≠ 没有任务', steps: [click(L('Running 0', '运行中 0'))], expect: [L('No records in this filter', '这个筛选下没有记录')] },
+  { id: '35-stats-empty', tab: 'stats', scenario: 'empty-stats', note: '没有请求数据的空态', expect: [L('No request data yet', '还没有请求数据')] },
+  { id: '36-stats-stale', tab: 'stats', scenario: 'stale', note: '台账旧行的窗口放宽提示', expect: [L('All rows are older than', '所有记录都早于')] },
   { id: '37-ledger-dark', tab: 'ledger', theme: 'dark', note: '任务记录 · 深色' },
-  { id: '38-chain-loading', tab: 'chain', scenario: 'slow-config', skipReady: true, settle: 1200, note: '读取中的加载态', expect: ['Reading router config'] },
-  { id: '40-chain-narrow-306', tab: 'chain', width: 306, note: '宿主侧栏 306px：不溢出、徽标与更多可见、免费行仍可读', expect: ['Free lane'] },
-  { id: '39-gate-running', tab: 'chain', scenario: 'gate-running', note: '主徽标：运行中 + 排队（primary 色）', expect: ['2 running'] },
+  { id: '38-chain-loading', tab: 'chain', scenario: 'slow-config', skipReady: true, settle: 1200, note: '读取中的加载态', expect: [L('Reading router config', '正在读取路由配置')] },
+  { id: '40-chain-narrow-306', tab: 'chain', width: 306, note: '宿主侧栏 306px：不溢出、徽标与更多可见、免费行仍可读', expect: [L('Free lane', '免费车道')] },
+  { id: '39-gate-running', tab: 'chain', scenario: 'gate-running', note: '主徽标：运行中 + 排队（primary 色）', expect: [L('2 running', '2 个运行中')] },
+  { id: '41-chain-selected-306', tab: 'chain', width: 306, note: '306px：选中行 + 动作条（Selected 前缀收起，按钮仍在）', steps: [clickSel('.oc-sdk-row', 1)], expect: [L('Replace', '替换'), L('Remove', '移除')] },
+  { id: '42-stats-306', tab: 'stats', width: 306, note: '306px：统计行拆两行，不溢出', expect: [L('By chain', '按链')] },
+  { id: '43-free-advanced-306', tab: 'chain', width: 306, note: '306px：免费车道高级折叠（偏好/禁用/白名单）', steps: [clickSel('[data-section="free"] details.oc-advanced > summary'), { scrollSel: '[data-free="prefer"]', block: 'center' }], expect: [L('Preference order', '偏好顺序')] },
+  { id: '44-gate-down-306', tab: 'chain', width: 306, scenario: 'gate-down', note: '306px + 路由没起：徽标与横幅都不挤坏', expect: [L('Router is not running', '路由未运行'), L('Router not ready', '路由未就绪')] },
 ]
 
 const chrome = [
@@ -128,8 +138,9 @@ if (serve) {
 
 mkdirSync(outDir, { recursive: true })
 // 只清这次要重拍的截图（--only 不能把整套图删掉）
-const selected = PLAN.filter((p) => !only || p.id.includes(only))
-for (const item of selected) rmSync(join(outDir, `${item.id}.png`), { force: true })
+const onlyList = only ? only.split(',').map((s) => s.trim()).filter(Boolean) : null
+const selected = PLAN.filter((p) => !onlyList || onlyList.some((o) => p.id.includes(o)))
+for (const item of selected) rmSync(join(outDir, `${item.id}${suffix}.png`), { force: true })
 const profile = join(tmpdir(), 'reeve-audit-chrome')
 try { rmSync(profile, { recursive: true, force: true }) } catch { /* Windows 句柄没放开：留着无妨 */ }
 
@@ -316,7 +327,7 @@ async function waitReady(item) {
   const deadline = Date.now() + 10_000
   while (Date.now() < deadline) {
     const text = await evaluate(`(() => document.querySelector('#root')?.innerText || '')()`)
-    if (text.length > 30 && !text.includes('Reading router config') && !text.includes('面板未能启动')) return
+    if (text.length > 30 && !text.includes('Reading router config') && !text.includes('正在读取路由配置') && !text.includes('Panel failed to start') && !text.includes('面板启动失败')) return
     if (item.expect?.some((s) => text.includes(s))) return
     await wait(200)
   }
@@ -327,7 +338,7 @@ for (const item of selected) {
   const width = item.width ?? 660
   await send('Emulation.setDeviceMetricsOverride', { width, height: item.height ?? 1080, deviceScaleFactor: 2, mobile: false })
   consoleErrors = []
-  const q = [`tab=${item.tab}`, `theme=${item.theme ?? 'light'}`, ...(fixture ? ['fixture=ci'] : []), ...(item.scenario ? [`scenario=${item.scenario}`] : []), ...(item.applyDelay ? [`applyDelay=${item.applyDelay}`] : [])].join('&')
+  const q = [`tab=${item.tab}`, `theme=${item.theme ?? 'light'}`, `locale=${locale}`, ...(fixture ? ['fixture=ci'] : []), ...(item.scenario ? [`scenario=${item.scenario}`] : []), ...(item.applyDelay ? [`applyDelay=${item.applyDelay}`] : [])].join('&')
   await send('Page.navigate', { url: `${base}/?${q}` })
   await waitReady(item)
   await wait(item.settle ?? 900)
@@ -379,15 +390,16 @@ for (const item of selected) {
   }
 
   const shot = await send('Page.captureScreenshot', { format: 'png', ...(full ? { captureBeyondViewport: true } : {}) })
-  const file = join(outDir, `${item.id}.png`)
+  const file = join(outDir, `${item.id}${suffix}.png`)
   writeFileSync(file, Buffer.from(shot.result.data, 'base64'))
-  results.push({ id: item.id, note: item.note, file: `${item.id}.png`, scenario: item.scenario ?? null, failures, warnings, consoleErrors: [...appConsoleErrors] })
+  results.push({ id: item.id, note: item.note, file: `${item.id}${suffix}.png`, scenario: item.scenario ?? null, failures, warnings, consoleErrors: [...appConsoleErrors] })
   const mark = failures.length ? '✗' : stepFailed ? '✗' : '✓'
   console.log(`${mark} ${item.id} — ${item.note}${failures.length ? `（${failures.length} 项失败）` : ''}`)
 }
 
 const report = {
   generatedAt: new Date().toISOString(),
+  locale,
   fixture,
   strictContrast,
   total: results.length,
@@ -395,7 +407,7 @@ const report = {
   warned: results.filter((r) => r.warnings.length).length,
   items: results,
 }
-writeFileSync(join(outDir, 'report.json'), `${JSON.stringify(report, null, 2)}\n`)
+writeFileSync(join(outDir, `report${suffix}.json`), `${JSON.stringify(report, null, 2)}\n`)
 
 const failed = results.filter((r) => r.failures.length)
 const warned = results.filter((r) => r.warnings.length)

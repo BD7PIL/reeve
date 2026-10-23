@@ -13,14 +13,21 @@ await import('../src/panel/main.js')
 // `?tab=stats|ledger`：真宿主是靠点击切 tab 的，预览也照做（点真按钮，不绕过面板状态）。
 const want = new URLSearchParams(location.search).get('tab')
 if (want && want !== 'chain') {
-  const label = { chain: 'Chains', stats: 'Stats', ledger: 'Tasks' }[want]
+  // 语言跟随宿主：两种语言的 tab 文案都要能点到
+  const labels = { chain: ['Chains', '链'], stats: ['Stats', '统计'], ledger: ['Tasks', '任务'] }[want] ?? []
   const clickTab = () => {
-    const btn = [...document.querySelectorAll('#root button')].find((b) => b.textContent?.trim().startsWith(label))
+    const btn = [...document.querySelectorAll('#root button')].find((b) => labels.some((l) => b.textContent?.trim().startsWith(l)))
     if (btn) {
       btn.click()
       return true
     }
     return false
   }
-  if (!clickTab()) setTimeout(clickTab, 150)
+  // 宿主 locale 在 onReady 后才生效，标签可能晚一拍才变中文
+  if (!clickTab()) {
+    let tries = 0
+    const timer = setInterval(() => {
+      if (clickTab() || ++tries > 20) clearInterval(timer)
+    }, 100)
+  }
 }

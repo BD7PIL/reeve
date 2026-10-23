@@ -42,7 +42,7 @@ npm install                  # 一次：devDeps 钉了宿主 SDK（2.3.2）+ esb
 node build.mjs               # src/panel/main.js → panel/main.js（classic IIFE）
 node check.mjs               # manifest / 打包完整性 / 写路径守门 / fallback-edit 单测
 node test/fallback-edit.test.mjs   # 纯函数单测（check.mjs 也会跑）
-node scripts/audit.mjs --fixture   # 40 项动线审计（断言 + 截图 + report.json）
+node scripts/audit.mjs --fixture   # 44 项动线审计（断言 + 截图 + report.json）
 node scripts/preview.mjs           # 真面板挂假宿主：?tab=&theme=&scenario=&fixture=ci
 ```
 
@@ -93,4 +93,4 @@ curl -b <会话 cookie> -X PUT -H 'Content-Type: application/json' \
 - 错误/空/加载/脏态必须一眼可读，并给出下一步（刷新/重新读取/批准权限）；
   文本编辑即时点亮保存条（不重绘，不打断输入）。
 
-相关：`preview/audit/README.md`（40 项审计与结论）、`plugin/src/gate/free.js`（免费车道的实现与注释）。
+相关：`preview/audit/README.md`（44 项审计与结论）、`plugin/src/gate/free.js`（免费车道的实现与注释）。

@@ -13,9 +13,10 @@
 // （temp + rename，GATE 那边永远看不到半截 JSON；`fallback-edit.js` 保证只重写被改的几节。
 
 import { applySave, parseJsonc, planSave, viewOf } from './fallback-edit.js'
+import { problemText, t, tn } from './i18n.js'
 import { agentLabel, chainLabel, modelRefParts, providerLabel, tierLabel } from './labels.js'
-import { badge, banner, button, checkbox, field, fieldRow, list, menu, search, section as kitSection, select, separator, spinner } from './kit.js'
-import { el, fallbackConfigPathFor, fmtClock, readGateConfig } from './util.js'
+import { badge, banner, button, checkbox, field, fieldRow, kitIcon, list, menu, search, section as kitSection, select, separator, spinner } from './kit.js'
+import { el, fallbackConfigPathFor, readGateConfig } from './util.js'
 
 const clone = (v) => JSON.parse(JSON.stringify(v ?? {}))
 const chainNames = (view) => Object.keys(view?.chains ?? {})
@@ -23,7 +24,19 @@ const chainNames = (view) => Object.keys(view?.chains ?? {})
 /** 引擎档位（chain_for_model 的编辑面只露这四个；未知映射原样保留、只读展示。 */
 const TIER_MODELS = ['reeve/flash', 'reeve/standard', 'reeve/pro', 'reeve/multimodal']
 
-export function createChainTab({ host, onNeedPoll, readInfo = null }) {
+/** 写入/校验错误 → 本地化文案（fallback-edit 抛的是带 code 的错误）。 */
+const errText = (err) => {
+  if (err?.code === 'problem.save.refused') {
+    return t('problem.save.refused', {
+      n: err.problems?.length ?? 0,
+      list: (err.problems ?? []).map(problemText).join('; '),
+    })
+  }
+  if (err?.code === 'problem.save.selfCheck') return t('problem.save.selfCheck', { error: err.detail ?? '' })
+  return err instanceof Error ? err.message : String(err)
+}
+
+export function createChainTab({ host, onNeedPoll, readInfo = null, onStateChange = null }) {
   const state = {
     live: '',
     view: null,
@@ -42,9 +55,15 @@ export function createChainTab({ host, onNeedPoll, readInfo = null }) {
     save: { status: 'idle', at: null, error: null, planned: null },
     // 折叠块的展开状态要跨重绘保留 —— 否则「Advanced」里点一下按钮，重绘后块又合上了
     openBlocks: {},
+    // 最近一次渲染的落点：页面级保存条（在 main.js）要用它触发保存/放弃
+    section: null,
+    snapshot: null,
   }
 
-  /** 从盘上读一次配置。**有Unsaved改动时不覆盖**（用户的编辑优先。 */
+  /** 把保存态交给页面（页头徽标 + 页面级保存条都在 main.js；切 tab 不丢）。 */
+  const publish = () => onStateChange?.({ dirty: state.dirty, save: state.save, snapshot: state.snapshot })
+
+  /** 从盘上读一次配置。**有未保存改动时不覆盖**（用户的编辑优先）。 */
   async function load(snapshot, { force = false } = {}) {
     const res = await readGateConfig(host, snapshot)
     if (!res.ok) {
@@ -56,7 +75,7 @@ export function createChainTab({ host, onNeedPoll, readInfo = null }) {
     try {
       view = viewOf(parseJsonc(res.content)).view
     } catch (err) {
-      state.loadError = `Config parse error: ${String(err?.message ?? err)}`
+      state.loadError = t('config.parseError', { error: String(err?.message ?? err) })
       state.loadTried = [{ path: res.path ?? fallbackConfigPathFor(snapshot), code: 'PARSE_ERROR' }]
       return
     }
@@ -64,7 +83,7 @@ export function createChainTab({ host, onNeedPoll, readInfo = null }) {
     state.loadError = null
     state.path = res.path
     if (state.dirty && !force) {
-      if (sig !== state.sourceSig) state.notice = 'Config changed on disk (you have unsaved edits; keeping yours)'
+      if (sig !== state.sourceSig) state.notice = t('config.changedOnDisk')
       state.sourceSig = sig
       return
     }
@@ -84,15 +103,10 @@ export function createChainTab({ host, onNeedPoll, readInfo = null }) {
     onNeedPoll?.()
   }
 
-  /** 文本框类编辑的脏反馈：**不重绘**（重绘会打断输入焦点，只把保存条/徽标点亮。
-   *  引用由 render() 挂在 state.ui 上。 */
+  /** 文本框类编辑的脏反馈：**不重绘**（重绘会打断输入焦点），只点亮页头徽标与保存条。 */
   function markDirty() {
     state.dirty = true
-    state.ui?.badge?.handle.update({ label: 'Unsaved', tone: 'warning' })
-    if (state.ui?.savebar) {
-      state.ui.savebar.hidden = false
-      state.ui.saveBtn?.handle.update({ disabled: false })
-    }
+    publish()
     onNeedPoll?.()
   }
 
@@ -102,7 +116,7 @@ export function createChainTab({ host, onNeedPoll, readInfo = null }) {
 
   /** 这一节相对"上次读到的盘上内容"有没有改（用来把"Unsaved"钉到具体的节。 */
   const sectionChanged = (a, b) => JSON.stringify(a ?? null) !== JSON.stringify(b ?? null)
-  const dirtyHead = (changed) => (state.dirty && changed ? badge({ label: 'Unsaved', tone: 'warning' }).node : null)
+  const dirtyHead = (changed) => (state.dirty && changed ? badge({ label: t('save.unsaved'), tone: 'warning' }).node : null)
 
   /** 播报给读屏（aria-live：动作完成后确认一次，别让键盘用户猜。 */
   const announce = (text) => {
@@ -120,7 +134,7 @@ export function createChainTab({ host, onNeedPoll, readInfo = null }) {
     const to = at + delta
     if (at < 0 || to < 0 || to >= targets.length) return
     ;[targets[at], targets[to]] = [targets[to], targets[at]]
-    announce(`${ref} Moved to position ${to + 1}`)
+    announce(t('chain.moved', { ref, position: to + 1 }))
     mutate(section, snapshot, () => setTargets(chain, targets))
     focusRow(chain, to)
   }
@@ -170,7 +184,7 @@ export function createChainTab({ host, onNeedPoll, readInfo = null }) {
       moveSelected(chain, sel, +1, section, snapshot)
     } else if (event.key === 'Delete') {
       event.preventDefault()
-      announce(`Removed ${sel}`)
+      announce(t('chain.removed', { ref: sel }))
       removeSelected(chain, sel, section, snapshot)
     } else if (event.key === 'Enter') {
       event.preventDefault()
@@ -189,7 +203,7 @@ export function createChainTab({ host, onNeedPoll, readInfo = null }) {
   function placeTarget(chain, ref, replaceRef, section, snapshot) {
     const r = String(ref ?? '').trim()
     if (!r.includes('/')) {
-      state.notice = `Unknown model: ${ref}(use provider/model)`
+      state.notice = t('chain.unknownModel', { ref })
       render(section, snapshot)
       return
     }
@@ -207,7 +221,7 @@ export function createChainTab({ host, onNeedPoll, readInfo = null }) {
   function addChain(name, section, snapshot) {
     const n = String(name ?? '').trim()
     if (!n || !/^[\w.-]+$/.test(n) || state.view.chains[n]) {
-      state.notice = !n || !/^[\w.-]+$/.test(n) ? 'Chain name: letters/digits/. _ -' : `Chain ${n} already exists`
+      state.notice = !n || !/^[\w.-]+$/.test(n) ? t('chain.nameRule') : t('chain.exists', { name: n })
       render(section, snapshot)
       return
     }
@@ -241,8 +255,9 @@ export function createChainTab({ host, onNeedPoll, readInfo = null }) {
   async function save(snapshot, section) {
     const planned = planSave(state.view)
     if (planned.problems.length) {
-      state.save = { status: 'failed', at: Date.now(), error: planned.problems[0], planned: null }
-      state.notice = `Fix ${planned.problems.length} problem(s) first: ${planned.problems.join('；')}`
+      const list = planned.problems.map(problemText)
+      state.save = { status: 'failed', at: Date.now(), error: list.join('; '), planned: null }
+      state.notice = t('save.fixProblems', { n: planned.problems.length, list: list.join('; ') })
       render(section, snapshot)
       return
     }
@@ -253,14 +268,14 @@ export function createChainTab({ host, onNeedPoll, readInfo = null }) {
       const changed = ALL_SECTIONS.filter((k) => sectionChanged(state.view?.[k], state.baseView?.[k]))
       const { text } = applySave(state.text ?? '', planned, { sections: changed })
       const res = await host.writeFile(fallbackConfigPathFor(snapshot), text)
-      if (res && res.written === false) throw new Error('Host did not confirm the write')
+      if (res && res.written === false) throw new Error(t('save.hostNoConfirm'))
       state.dirty = false
       state.notice = null
       state.save = { status: 'waiting', at: Date.now(), error: null, planned }
       onNeedPoll?.()
       await load({ ...snapshot, gate: { ...(snapshot?.gate ?? {}), from: state.path } }, { force: true })
     } catch (err) {
-      state.save = { status: 'failed', at: Date.now(), error: err instanceof Error ? err.message : String(err), planned: null }
+      state.save = { status: 'failed', at: Date.now(), error: errText(err), planned: null }
       state.notice = state.save.error
     }
     render(section, snapshot)
@@ -316,22 +331,23 @@ export function createChainTab({ host, onNeedPoll, readInfo = null }) {
     const head = el('div', { class: 'oc-chain-head' })
     const titleRow = el('div', { class: 'oc-chain-title' })
     const left = el('div', { class: 'oc-chain-title-main' })
-    left.append(el('span', { class: 'oc-label', text: chainLabel(chain) }))
-    if (state.view.default_chain === chain) left.append(badge({ label: 'default', tone: 'primary' }).node)
+    left.append(el('span', { class: 'oc-chain-name', text: chainLabel(chain) }))
+    if (state.view.default_chain === chain) left.append(badge({ label: t('chain.defaultBadge'), tone: 'primary' }).node)
     if (targets.includes('@free')) left.append(badge({ label: '@free', tone: 'info' }).node)
     const right = el('div', { class: 'oc-bar' })
     right.append(
       menu({
-        label: 'More',
+        label: t('action.more'),
+        iconName: 'chevron',
         variant: 'ghost',
         size: 'xs',
         data: { 'data-act': 'chain-menu', 'data-chain': chain },
         items: [
-          { id: 'default', label: 'Set as default', disabled: state.view.default_chain === chain },
+          { id: 'default', label: t('action.setDefault'), disabled: state.view.default_chain === chain },
           { separator: true },
           {
             id: 'delete',
-            label: tierUsers.length > 0 ? `Delete (${tierUsers.map(tierLabel).join(', ')} in use)` : 'Delete chain',
+            label: tierUsers.length > 0 ? t('chain.deleteInUse', { tiers: tierUsers.map(tierLabel).join(', ') }) : t('chain.delete'),
             destructive: true,
             disabled: tierUsers.length > 0 || chainNames(state.view).length <= 1,
           },
@@ -345,11 +361,11 @@ export function createChainTab({ host, onNeedPoll, readInfo = null }) {
     titleRow.append(left, right)
     const paidCount = targets.filter((t) => t !== '@free').length
     head.append(titleRow)
-    head.append(el('span', { class: 'oc-micro oc-muted', text: targets.includes('@free') ? `${paidCount} models + @free` : `${paidCount} models` }))
+    head.append(el('span', { class: 'oc-micro oc-muted', text: tn(targets.includes('@free') ? 'chain.countFree' : 'chain.count', paidCount) }))
     card.append(head)
 
     if (targets.length === 0) {
-      card.append(el('span', { class: 'oc-micro oc-muted', text: 'No models yet — add one so the router has something to try.' }))
+      card.append(el('span', { class: 'oc-micro oc-muted', text: t('chain.empty') }))
     } else {
       const sel = state.selected?.chain === chain ? state.selected.ref : null
       // kit 的行是 role=option / tabindex=-1（roving tabindex→ 容器按 listbox 做，
@@ -359,7 +375,7 @@ export function createChainTab({ host, onNeedPoll, readInfo = null }) {
         'data-chain-list': chain,
         role: 'listbox',
         tabindex: '0',
-        'aria-label': `${chainLabel(chain)} models (↑/↓ select · Alt+↑/↓ move · Enter replace · Delete remove)`,
+        'aria-label': t('chain.modelsAria', { chain: chainLabel(chain) }),
       })
       listWrap.addEventListener('keydown', (event) => onListKeydown(event, chain, section, snapshot))
       queueMicrotask(() => {
@@ -367,54 +383,55 @@ export function createChainTab({ host, onNeedPoll, readInfo = null }) {
         const row = [...listWrap.querySelectorAll('.oc-sdk-row')].find((r) => (r.textContent || '').includes(sel))
         if (row?.id) listWrap.setAttribute('aria-activedescendant', row.id)
       })
-      listWrap.append(
-        list({
-          ariaLabel: `${chainLabel(chain)} models`,
-          selectedId: sel,
-          items: targets.map((ref, i) => {
-            if (ref === '@free') {
-              const free = state.view.free ?? {}
-              const maxAttempts = Math.max(1, Number(state.view.policy?.max_fallback_attempts ?? 3))
-              const cap = Math.max(0, Math.min(Number(free.max ?? 0), maxAttempts - 1))
-              return {
-                id: ref,
-                leading: String(i + 1),
-                title: 'Free lane',
-                subtitle: 'Auto-discovered free models; paid fallback on failure',
-                meta: free.enabled === false ? 'Disabled' : `up to ${cap}`,
-                badge: { label: 'auto', tone: 'info' },
-              }
-            }
-            const usage = usageOf(snapshot, ref)
-            const parts = modelRefParts(ref)
+      const listKit = list({
+        ariaLabel: t('chain.modelsListAria', { chain: chainLabel(chain) }),
+        selectedId: sel,
+        items: targets.map((ref, i) => {
+          if (ref === '@free') {
+            const free = state.view.free ?? {}
+            const maxAttempts = Math.max(1, Number(state.view.policy?.max_fallback_attempts ?? 3))
+            const cap = Math.max(0, Math.min(Number(free.max ?? 0), maxAttempts - 1))
             return {
               id: ref,
               leading: String(i + 1),
-              title: parts.title,
-              subtitle: parts.sub,
-              meta: usage ?? undefined,
+              title: t('chain.freeTitle'),
+              meta: free.enabled === false ? t('chain.freeDisabled') : t('chain.freeUpTo', { n: cap }),
+              badge: { label: t('chain.autoBadge'), tone: 'info' },
             }
-          }),
-          onSelect: (ref) => {
-            state.selected = state.selected?.ref === ref ? null : { chain, ref }
-            state.picker = null
-            render(section, snapshot)
-          },
-        }).node,
-      )
+          }
+          const usage = usageOf(snapshot, ref)
+          const parts = modelRefParts(ref)
+          return {
+            id: ref,
+            leading: String(i + 1),
+            title: parts.title,
+            subtitle: parts.sub,
+            meta: usage ?? undefined,
+          }
+        }),
+        onSelect: (ref) => {
+          state.selected = state.selected?.ref === ref ? null : { chain, ref }
+          state.picker = null
+          render(section, snapshot)
+        },
+      })
+      // 窄栏（≤360）隐藏 provider 副标，靠 title 保留完整 ref
+      const rows = listKit.node.querySelectorAll('.oc-sdk-row')
+      rows.forEach((row, i) => { if (targets[i]) row.setAttribute('title', targets[i]) })
+      listWrap.append(listKit.node)
       card.append(listWrap)
 
       // 选中之后才出现的动作条（同权按钮不成群：这里up to四个，而且针对的是"这一models"
       if (sel) {
         const at = targets.indexOf(sel)
-        const bar = el('div', { class: 'oc-bar oc-bar-between', 'data-act': 'row-actions', 'data-ref': sel, role: 'group', 'aria-label': `Selected ${sel}` })
-        bar.append(el('span', { class: 'oc-micro oc-muted oc-truncate', text: `Selected: ${sel}` }))
+        const bar = el('div', { class: 'oc-bar oc-bar-between', 'data-act': 'row-actions', 'data-ref': sel, role: 'group', 'aria-label': t('chain.selected', { ref: sel }) })
+        bar.append(el('span', { class: 'oc-micro oc-muted oc-truncate oc-selected-label', text: t('chain.selected', { ref: sel }) }))
         const acts = el('div', { class: 'oc-bar' })
         acts.append(
-          button({ label: 'Up', variant: 'secondary', size: 'xs', disabled: at <= 0, data: { 'data-act': 'up', 'aria-keyshortcuts': 'Alt+ArrowUp' }, onClick: () => moveSelected(chain, sel, -1, section, snapshot) }).node,
-          button({ label: 'Down', variant: 'secondary', size: 'xs', disabled: at < 0 || at >= targets.length - 1, data: { 'data-act': 'down', 'aria-keyshortcuts': 'Alt+ArrowDown' }, onClick: () => moveSelected(chain, sel, +1, section, snapshot) }).node,
+          button({ label: t('action.up'), variant: 'secondary', size: 'xs', disabled: at <= 0, data: { 'data-act': 'up', 'aria-keyshortcuts': 'Alt+ArrowUp' }, onClick: () => moveSelected(chain, sel, -1, section, snapshot) }).node,
+          button({ label: t('action.down'), variant: 'secondary', size: 'xs', disabled: at < 0 || at >= targets.length - 1, data: { 'data-act': 'down', 'aria-keyshortcuts': 'Alt+ArrowDown' }, onClick: () => moveSelected(chain, sel, +1, section, snapshot) }).node,
           button({
-            label: 'Replace',
+            label: t('action.replace'),
             variant: 'secondary',
             size: 'xs',
             data: { 'data-act': 'swap', 'aria-keyshortcuts': 'Enter' },
@@ -423,7 +440,7 @@ export function createChainTab({ host, onNeedPoll, readInfo = null }) {
               render(section, snapshot)
             },
           }).node,
-          button({ label: 'Remove', variant: 'ghost', size: 'xs', data: { 'data-act': 'remove', 'aria-keyshortcuts': 'Delete' }, onClick: () => removeSelected(chain, sel, section, snapshot) }).node,
+          button({ label: t('action.remove'), variant: 'destructive', size: 'xs', data: { 'data-act': 'remove', 'aria-keyshortcuts': 'Delete' }, onClick: () => removeSelected(chain, sel, section, snapshot) }).node,
         )
         bar.append(acts)
         card.append(bar)
@@ -432,12 +449,12 @@ export function createChainTab({ host, onNeedPoll, readInfo = null }) {
 
     // 加模型：动线 = 点一下 → 出现搜索 + 手填
     if (state.picker?.chain === chain) {
-      card.append(separator({ label: state.picker.replaceRef ? `Replace ${state.picker.replaceRef}` : 'Add to end' }))
+      card.append(separator({ label: state.picker.replaceRef ? t('chain.replaceSeparator', { ref: state.picker.replaceRef }) : t('chain.addToEnd') }))
       card.append(renderPicker(chain, snapshot, section))
     } else {
       card.append(
         button({
-          label: '+ Add model',
+          label: t('action.addModel'),
           variant: 'ghost',
           size: 'xs',
           data: { 'data-act': 'add' },
@@ -457,14 +474,14 @@ export function createChainTab({ host, onNeedPoll, readInfo = null }) {
     const q = String(state.picker.query ?? '').toLowerCase()
     const matches = all.filter((c) => !q || c.ref.toLowerCase().includes(q)).slice(0, 30)
     const wrap = el('div', { class: 'oc-inset' })
-    wrap.append(search({ value: state.picker.query, placeholder: 'Search models (provider/model)', onChange: (v) => { state.picker.query = v; render(section, snapshot) } }).node)
+    wrap.append(search({ value: state.picker.query, placeholder: t('chain.searchPlaceholder'), onChange: (v) => { state.picker.query = v; render(section, snapshot) } }).node)
     if (matches.length === 0) {
-      wrap.append(el('span', { class: 'oc-micro oc-muted', text: all.length ? 'No matches — enter one below.' : 'Model catalog is empty (the router has not listed any) — enter one below.' }))
+      wrap.append(el('span', { class: 'oc-micro oc-muted', text: all.length ? t('chain.noMatches') : t('chain.catalogEmpty') }))
     } else {
       const scroll = el('div', { class: 'oc-list-scroll' })
       scroll.append(
         list({
-          ariaLabel: 'Available models',
+          ariaLabel: t('chain.availableModels'),
           selectedId: null,
           items: matches.map((c) => {
             const parts = modelRefParts(c.ref)
@@ -472,7 +489,7 @@ export function createChainTab({ host, onNeedPoll, readInfo = null }) {
               id: c.ref,
               title: parts.title,
               subtitle: parts.sub,
-              meta: c.sources?.includes('gate') ? 'available' : 'in use',
+              meta: c.sources?.includes('gate') ? t('chain.available') : t('chain.inUse'),
             }
           }),
           onSelect: (ref) => placeTarget(chain, ref, state.picker.replaceRef, section, snapshot),
@@ -482,10 +499,10 @@ export function createChainTab({ host, onNeedPoll, readInfo = null }) {
     }
     const manual = el('div', { class: 'oc-bar' })
     const apply = (v) => placeTarget(chain, v, state.picker.replaceRef, section, snapshot)
-    const f = field({ value: state.picker.manual, placeholder: 'provider/model', mono: true, onChange: (v) => { state.picker.manual = v; addBtn.handle.update({ disabled: !v.includes('/') }) } })
-    const addBtn = button({ label: 'Add', variant: 'secondary', size: 'xs', disabled: !String(state.picker.manual ?? '').includes('/'), onClick: () => apply(state.picker.manual) })
+    const f = field({ value: state.picker.manual, placeholder: t('chain.manualPlaceholder'), mono: true, onChange: (v) => { state.picker.manual = v; addBtn.handle.update({ disabled: !v.includes('/') }) } })
+    const addBtn = button({ label: t('action.add'), variant: 'secondary', size: 'xs', disabled: !String(state.picker.manual ?? '').includes('/'), onClick: () => apply(state.picker.manual) })
     manual.append(el('span', { class: 'oc-grow' }, [f.node]), addBtn.node)
-    manual.append(button({ label: 'Cancel', variant: 'ghost', size: 'xs', onClick: () => { state.picker = null; render(section, snapshot) } }).node)
+    manual.append(button({ label: t('action.cancel'), variant: 'ghost', size: 'xs', onClick: () => { state.picker = null; render(section, snapshot) } }).node)
     wrap.append(manual)
     return wrap
   }
@@ -496,11 +513,11 @@ export function createChainTab({ host, onNeedPoll, readInfo = null }) {
   function renderTierMapping(section, snapshot) {
     const rows = []
     for (const model of TIER_MODELS) {
-      const cell = el('div', { class: 'oc-field-control', 'data-tier': model })
+      const cell = el('div', { class: 'oc-field-control oc-select-field', 'data-tier': model })
       cell.append(
         select({
           value: state.view.chain_for_model?.[model] ?? null,
-          placeholder: 'Follow default chain',
+          placeholder: t('tier.followDefault'),
           options: [
             ...chainNames(state.view).map((c) => ({ id: c, label: chainLabel(c), hint: c })),
           ],
@@ -510,24 +527,24 @@ export function createChainTab({ host, onNeedPoll, readInfo = null }) {
           }),
         }).node,
       )
-      rows.push(fieldRow({ label: tierLabel(model), control: cell }))
+      rows.push(fieldRow({ label: tierLabel(model), control: cell, controlClass: 'oc-select-field' }))
     }
     // 未知映射（例如 provider/model → 链：面板不编辑，但保存时原样保留 —— 这里只展示
     const others = Object.entries(state.view.chain_for_model ?? {}).filter(([m]) => !TIER_MODELS.includes(m))
     if (others.length > 0) {
       const block = el('div', { class: 'oc-col', 'data-tier-others': '', style: 'gap:2px;padding:8px 0' })
-      block.append(el('span', { class: 'oc-micro oc-muted', text: 'Other mappings (read-only here; edit config to change)' }))
+      block.append(el('span', { class: 'oc-micro oc-muted', text: t('tier.others') }))
       for (const [model, chain] of others) {
         block.append(el('div', { class: 'oc-bar oc-bar-between', 'data-tier-other': model }, [
           el('span', { class: 'oc-micro oc-mono oc-truncate', text: model }),
-          el('span', { class: 'oc-micro oc-muted', text: `→ ${chainLabel(chain)}（${chain}` }),
+          el('span', { class: 'oc-micro oc-muted', text: t('tier.otherLine', { model, chain: chainLabel(chain) }) }),
         ]))
       }
       rows.push(block)
     }
     const tierSection = kitSection({
       title: 'chain_for_model',
-      hint: 'Which chain each reeve/* request uses (save to apply)',
+      hint: t('tier.sectionHint'),
       body: rows,
       headRight: dirtyHead(sectionChanged(state.view.chain_for_model, state.baseView?.chain_for_model)),
     })
@@ -535,17 +552,13 @@ export function createChainTab({ host, onNeedPoll, readInfo = null }) {
     return tierSection
   }
 
-  /** kit 的 checkbox 是个 `button[role=checkbox]`；标签用行标题，所以按钮本身要补可访问名。 */
-  const checkboxNamed = (props, name) => {
-    const kit = checkbox(props)
-    kit.node.querySelector('button')?.setAttribute('aria-label', name)
-    return kit
-  }
+  /** 布尔项：方框在左、标签/说明在右（宿主的 checkbox row），不用「左标签 + 右开关」那套。 */
+  const checkRow = (props, data = {}) => el('div', { class: 'oc-check-row', ...data }, [checkbox(props).node])
 
   function renderPolicy(section, snapshot) {
     const p = state.view.policy ?? {}
     const numRow = (label, key, value, description, placeholder) => {
-      const cell = el('div', { class: 'oc-field-control', 'data-policy': key })
+      const cell = el('div', { class: 'oc-field-control oc-num-field', 'data-policy': key })
       cell.append(
         field({
           value: value == null ? '' : String(value),
@@ -557,32 +570,30 @@ export function createChainTab({ host, onNeedPoll, readInfo = null }) {
           },
         }).node,
       )
-      return fieldRow({ label, description, control: cell })
+      return fieldRow({ label, description, control: cell, controlClass: 'oc-num-field' })
     }
-    const switchCell = el('div', { class: 'oc-field-control', 'data-policy': 'restore_primary_after_cooldown' })
-    switchCell.append(
-      checkboxNamed({
-        label: '',
-        checked: p.restore_primary_after_cooldown === true,
-        onChange: (checked) => {
-          state.view.policy = { ...state.view.policy, restore_primary_after_cooldown: checked }
-          mutate(section, snapshot, () => {})
-        },
-      }, 'Return to primary after cooldown').node,
-    )
-    // 低频调参收进「Advanced」：default值够用，不跟常用项抢位置
-    const advanced = detailsBlock('policy-advanced', 'Advanced')
+    const restoreRow = checkRow({
+      label: t('policy.restore'),
+      description: t('policy.restoreDesc'),
+      checked: p.restore_primary_after_cooldown === true,
+      onChange: (checked) => {
+        state.view.policy = { ...state.view.policy, restore_primary_after_cooldown: checked }
+        mutate(section, snapshot, () => {})
+      },
+    }, { 'data-policy': 'restore_primary_after_cooldown' })
+    // 低频调参收进「Advanced」：默认值够用，不跟常用项抢位置
+    const advanced = detailsBlock('policy-advanced', t('common.advanced'))
     const advancedBody = el('div', { class: 'oc-col' })
-    advancedBody.append(numRow('Provider retries', 'provider_retries', p.provider_retries, 'Retries for transient upstream errors', 'default 1'))
+    advancedBody.append(numRow(t('policy.providerRetries'), 'provider_retries', p.provider_retries, t('policy.providerRetriesDesc'), t('policy.providerRetriesPlaceholder')))
     advanced.append(advancedBody)
     const policySection = kitSection({
-      title: 'Retry policy',
-      hint: 'Changes apply after save (hot reload within seconds)',
+      title: t('policy.title'),
+      hint: t('policy.hint'),
       headRight: dirtyHead(sectionChanged(state.view.policy, state.baseView?.policy)),
       body: [
-        numRow('Max attempts', 'max_fallback_attempts', p.max_fallback_attempts, 'Stop after this many models', 'default 3'),
-        numRow('Cooldown (s)', 'cooldown_seconds', p.cooldown_seconds, 'Failed models are skipped for this long', 'default 60'),
-        fieldRow({ label: 'Return to primary after cooldown', description: 'Default off: stick to the fallback model after a switch', control: switchCell }),
+        numRow(t('policy.maxAttempts'), 'max_fallback_attempts', p.max_fallback_attempts, t('policy.maxAttemptsDesc'), t('policy.maxAttemptsPlaceholder')),
+        numRow(t('policy.cooldown'), 'cooldown_seconds', p.cooldown_seconds, t('policy.cooldownDesc'), t('policy.cooldownPlaceholder')),
+        restoreRow,
         advanced,
       ],
     })
@@ -604,17 +615,16 @@ export function createChainTab({ host, onNeedPoll, readInfo = null }) {
     })
 
     const rows = []
-    const switchCell = el('div', { class: 'oc-field-control', 'data-free': 'enabled' })
-    switchCell.append(
-      checkboxNamed({
-        label: '',
+    rows.push(
+      checkRow({
+        label: t('free.enable'),
+        description: t('free.enableDesc'),
         checked: f.enabled !== false,
         onChange: (checked) => update({ enabled: checked }),
-      }, 'Enable free lane').node,
+      }, { 'data-free': 'enabled' }),
     )
-    rows.push(fieldRow({ label: 'Enable free lane', description: 'When off, @free expands to nothing and chains go straight to paid models', control: switchCell }))
 
-    const maxCell = el('div', { class: 'oc-field-control', 'data-free': 'max' })
+    const maxCell = el('div', { class: 'oc-field-control oc-num-field', 'data-free': 'max' })
     maxCell.append(
       field({
         value: f.max == null ? '' : String(f.max),
@@ -628,27 +638,29 @@ export function createChainTab({ host, onNeedPoll, readInfo = null }) {
     )
     const budgetHint =
       f.enabled === false
-        ? 'Free lane is off'
+        ? t('free.off')
         : Number(f.max ?? 0) > maxAttempts - 1
-          ? `Total attempts ${maxAttempts}: free capped at ${cap}`
-          : `Total attempts ${maxAttempts} = free ${cap} + paid ${maxAttempts - cap}`
-    rows.push(fieldRow({ label: 'Free models', description: budgetHint, control: maxCell }))
+          ? t('free.capped', { total: maxAttempts, cap })
+          : t('free.split', { total: maxAttempts, cap, paid: maxAttempts - cap })
+    rows.push(fieldRow({ label: t('free.models'), description: budgetHint, control: maxCell, controlClass: 'oc-num-field' }))
 
     const providerIds = [...new Set(['opencode', 'openrouter', 'nvidia', ...(f.providers ?? [])])]
     for (const id of providerIds) {
       const st = provStatus.get(id)
       const enabled = (f.providers ?? []).includes(id)
+      const ready = Boolean(st?.ready) && !runtime?.error
       const desc = runtime?.error
-        ? 'Runtime unknown (read failed)'
+        ? t('free.runtimeReadFailed')
         : st
           ? st.ready
-            ? `${st.models} free models${st.error ? ` · discovery error: ${st.error}` : ''}`
-            : st.error ?? 'not ready (no key / no discovery source)'
-          : 'runtime not ready (router down or not refreshed)'
-      const cell = el('div', { class: 'oc-field-control', 'data-free-provider': id })
-      cell.append(
-        checkboxNamed({
-          label: '',
+            ? st.error
+              ? t('free.discoveryError', { count: tn('free.modelsFound', st.models), error: st.error })
+              : tn('free.modelsFound', st.models)
+            : st.error ?? t('free.notReadyNoKey')
+          : t('free.runtimeNotReady')
+      const row = el('div', { class: 'oc-check-row oc-check-with-state', 'data-free-provider': id }, [
+        checkbox({
+          label: providerLabel(id),
           checked: enabled,
           onChange: (checked) => {
             const next = new Set(f.providers ?? [])
@@ -656,20 +668,25 @@ export function createChainTab({ host, onNeedPoll, readInfo = null }) {
             else next.delete(id)
             update({ providers: providerIds.filter((p) => next.has(p)) })
           },
-        }, `${providerLabel(id)} participates in free lane`).node,
-      )
-      rows.push(fieldRow({ label: providerLabel(id), description: desc, control: cell }))
+        }).node,
+        el('div', { class: 'oc-provider-state' }, [
+          el('span', { class: `oc-dot${ready ? ' oc-dot-ok' : ' oc-dot-warn'}` }),
+          el('span', { class: 'oc-micro oc-muted', text: desc }),
+        ]),
+      ])
+      rows.push(row)
     }
 
     // Current expansion（只读运行态：一行摘要；逐models列表在「Diagnostics」
     const expandLine = el('div', { class: 'oc-bar oc-bar-between', 'data-free': 'expand' })
-    if (!runtime) expandLine.append(el('span', { class: 'oc-micro oc-muted', text: 'runtime not ready (router down / plugin not refreshed)' }))
-    else if (runtime.error) expandLine.append(el('span', { class: 'oc-micro oc-muted', text: `runtime read failed: ${runtime.error}` }))
+    const expandCount = runtime?.expand?.length ?? 0
+    if (!runtime) expandLine.append(el('span', { class: 'oc-micro oc-muted', text: t('free.runtimeNotReady') }))
+    else if (runtime.error) expandLine.append(el('span', { class: 'oc-micro oc-muted', text: t('free.runtimeReadFailedDetail', { error: runtime.error }) }))
     else {
       const coolingN = (runtime.cooling ?? []).filter((c) => (runtime.expand ?? []).includes(c.ref)).length
-      expandLine.append(el('span', { class: 'oc-micro oc-muted', text: (runtime.expand ?? []).length === 0 ? 'No free models to expand right now' : `Expandable now: ${runtime.expand.length}${coolingN ? ` (${coolingN} cooling)` : ''}` }))
+      expandLine.append(el('span', { class: 'oc-micro oc-muted', text: expandCount === 0 ? t('free.expandNone') : coolingN ? t('free.expandCooling', { n: expandCount, cooling: coolingN }) : tn('free.expandNow', expandCount) }))
     }
-    expandLine.append(button({ label: 'Refresh', variant: 'ghost', size: 'xs', data: { 'data-act': 'free-refresh' }, onClick: () => onNeedPoll?.() }).node)
+    expandLine.append(button({ label: t('action.refresh'), variant: 'ghost', size: 'xs', data: { 'data-act': 'free-refresh' }, onClick: () => onNeedPoll?.() }).node)
     rows.push(expandLine)
 
     // ---- Advanced：偏好/Deny/白名单/调参 ----
@@ -678,33 +695,33 @@ export function createChainTab({ host, onNeedPoll, readInfo = null }) {
     // Preference order（prefer：↑/↓ 调序、Deny进 deny、直接Remove
     const prefer = [...(f.prefer ?? [])]
     const preferBlock = el('div', { class: 'oc-col', 'data-free': 'prefer', style: 'gap:4px' })
-    if (prefer.length === 0) preferBlock.append(el('span', { class: 'oc-micro oc-muted', text: 'No pinned preference: use discovery order' }))
+    if (prefer.length === 0) preferBlock.append(el('span', { class: 'oc-micro oc-muted', text: t('free.preferEmpty') }))
     prefer.forEach((ref, i) => {
       const row = el('div', { class: 'oc-bar oc-bar-between', 'data-free-prefer': ref })
       row.append(el('span', { class: 'oc-micro oc-mono oc-truncate', text: `${i + 1}. ${ref}` }))
       const acts = el('div', { class: 'oc-bar' })
       acts.append(
-        button({ label: 'Up', variant: 'ghost', size: 'xs', disabled: i === 0, data: { 'data-act': 'free-up' }, onClick: () => {
+        button({ label: t('action.up'), variant: 'ghost', size: 'xs', disabled: i === 0, data: { 'data-act': 'free-up' }, onClick: () => {
           const next = [...prefer]
           ;[next[i - 1], next[i]] = [next[i], next[i - 1]]
           update({ prefer: next })
         } }).node,
-        button({ label: 'Down', variant: 'ghost', size: 'xs', disabled: i === prefer.length - 1, data: { 'data-act': 'free-down' }, onClick: () => {
+        button({ label: t('action.down'), variant: 'ghost', size: 'xs', disabled: i === prefer.length - 1, data: { 'data-act': 'free-down' }, onClick: () => {
           const next = [...prefer]
           ;[next[i + 1], next[i]] = [next[i], next[i + 1]]
           update({ prefer: next })
         } }).node,
-        button({ label: 'Deny', variant: 'ghost', size: 'xs', data: { 'data-act': 'free-deny' }, onClick: () => {
+        button({ label: t('action.deny'), variant: 'ghost', size: 'xs', data: { 'data-act': 'free-deny' }, onClick: () => {
           update({ prefer: prefer.filter((r) => r !== ref), deny: [...(f.deny ?? []), ref] })
         } }).node,
-        button({ label: 'Remove', variant: 'ghost', size: 'xs', data: { 'data-act': 'free-remove' }, onClick: () => update({ prefer: prefer.filter((r) => r !== ref) }) }).node,
+        button({ label: t('action.remove'), variant: 'ghost', size: 'xs', data: { 'data-act': 'free-remove' }, onClick: () => update({ prefer: prefer.filter((r) => r !== ref) }) }).node,
       )
       row.append(acts)
       preferBlock.append(row)
     })
     const addCell = el('div', { class: 'oc-bar', 'data-free': 'prefer-add' })
     let draft = ''
-    const addBtn = button({ label: 'Add', variant: 'secondary', size: 'xs', data: { 'data-act': 'free-add' }, onClick: () => {
+    const addBtn = button({ label: t('action.add'), variant: 'secondary', size: 'xs', data: { 'data-act': 'free-add' }, onClick: () => {
       const ref = draft.trim()
       if (!ref) return
       if ((f.prefer ?? []).includes(ref)) return
@@ -712,30 +729,30 @@ export function createChainTab({ host, onNeedPoll, readInfo = null }) {
     } })
     addCell.append(
       el('span', { class: 'oc-grow' }, [
-        field({ value: '', placeholder: 'Pin a model (provider/model or model name)', mono: true, onChange: (v) => { draft = v; addBtn.handle.update({ disabled: !v.trim() }) } }).node,
+        field({ value: '', placeholder: t('free.pinPlaceholder'), mono: true, onChange: (v) => { draft = v; addBtn.handle.update({ disabled: !v.trim() }) } }).node,
       ]),
       addBtn.node,
     )
     preferBlock.append(addCell)
-    advancedRows.push(blockRow('Preference order', 'Preferred models first, then discovery order; bare model names allowed', preferBlock))
+    advancedRows.push(blockRow(t('free.preferTitle'), t('free.preferDesc'), preferBlock))
 
     const deny = [...(f.deny ?? [])]
     const denyBlock = el('div', { class: 'oc-col', 'data-free': 'deny', style: 'gap:4px' })
-    if (deny.length === 0) denyBlock.append(el('span', { class: 'oc-micro oc-muted', text: 'No denied models' }))
+    if (deny.length === 0) denyBlock.append(el('span', { class: 'oc-micro oc-muted', text: t('free.denyEmpty') }))
     deny.forEach((ref) => {
       const row = el('div', { class: 'oc-bar oc-bar-between', 'data-free-deny': ref })
       row.append(el('span', { class: 'oc-micro oc-mono oc-truncate', text: ref }))
-      row.append(button({ label: 'Restore', variant: 'ghost', size: 'xs', data: { 'data-act': 'free-restore' }, onClick: () => update({ deny: deny.filter((r) => r !== ref) }) }).node)
+      row.append(button({ label: t('action.restore'), variant: 'ghost', size: 'xs', data: { 'data-act': 'free-restore' }, onClick: () => update({ deny: deny.filter((r) => r !== ref) }) }).node)
       denyBlock.append(row)
     })
-    advancedRows.push(blockRow('Deny', 'Never expand these (e.g. known rate-limited models)', denyBlock))
+    advancedRows.push(blockRow(t('free.denyTitle'), t('free.denyDesc'), denyBlock))
 
     // NVIDIA 没Fix `:free` 标记（免费是账号额度→ 白名单
-    const staticCell = el('div', { class: 'oc-field-control', 'data-free': 'static' })
+    const staticCell = el('div', { class: 'oc-field-control oc-text-field', 'data-free': 'static' })
     staticCell.append(
       field({
         value: (f.static?.nvidia ?? []).join(', '),
-        placeholder: 'comma-separated model names',
+        placeholder: t('free.nvidiaPlaceholder'),
         mono: true,
         onChange: (v) => {
           const list = String(v).split(/[,，\s]+/).map((s) => s.trim()).filter(Boolean)
@@ -744,10 +761,10 @@ export function createChainTab({ host, onNeedPoll, readInfo = null }) {
         },
       }).node,
     )
-    advancedRows.push(fieldRow({ label: 'NVIDIA allowlist', description: 'No :free suffix; only models listed here are expanded', control: staticCell }))
+    advancedRows.push(fieldRow({ label: t('free.nvidiaTitle'), description: t('free.nvidiaDesc'), control: staticCell, controlClass: 'oc-text-field' }))
 
     const numFreeRow = (label, key, value, description, placeholder) => {
-      const cell = el('div', { class: 'oc-field-control', 'data-free': key })
+      const cell = el('div', { class: 'oc-field-control oc-num-field', 'data-free': key })
       cell.append(
         field({
           value: value == null ? '' : String(value),
@@ -759,13 +776,13 @@ export function createChainTab({ host, onNeedPoll, readInfo = null }) {
           },
         }).node,
       )
-      return fieldRow({ label, description, control: cell })
+      return fieldRow({ label, description, control: cell, controlClass: 'oc-num-field' })
     }
-    advancedRows.push(numFreeRow('Refresh interval (s)', 'refresh_seconds', f.refresh_seconds, 'How often to refresh the public model list', 'default 300'))
-    advancedRows.push(numFreeRow('Failures before cooldown', 'failure_threshold', f.failure_threshold, 'Consecutive failures per free model', 'default 3'))
-    advancedRows.push(numFreeRow('Cooldown (s)', 'failure_cooldown_seconds', f.failure_cooldown_seconds, 'How long a model stays out after the threshold', 'default 600'))
+    advancedRows.push(numFreeRow(t('free.refreshInterval'), 'refresh_seconds', f.refresh_seconds, t('free.refreshIntervalDesc'), t('free.refreshIntervalPlaceholder')))
+    advancedRows.push(numFreeRow(t('free.failures'), 'failure_threshold', f.failure_threshold, t('free.failuresDesc'), t('free.failuresPlaceholder')))
+    advancedRows.push(numFreeRow(t('free.cooldown'), 'failure_cooldown_seconds', f.failure_cooldown_seconds, t('free.cooldownDesc'), t('free.cooldownPlaceholder')))
 
-    const advanced = detailsBlock('free-advanced', 'Advanced')
+    const advanced = detailsBlock('free-advanced', t('common.advanced'))
     const advancedBody = el('div', { class: 'oc-col' })
     for (const r of advancedRows) advancedBody.append(r)
     advanced.append(advancedBody)
@@ -775,14 +792,14 @@ export function createChainTab({ host, onNeedPoll, readInfo = null }) {
       rows.unshift(
         banner({
           tone: 'error',
-          title: 'Free lane runtime read error',
-          body: `${runtime.error}. Expansion falls back to configured preferences/paid models; click Refresh to retry.`,
+          title: t('gate.notReadyTitle'),
+          body: t('gate.notReadyBody', { error: runtime.error }),
         }),
       )
     }
     const freeSection = kitSection({
-      title: 'Free lane',
-      hint: 'Controls how @free expands (save to apply)',
+      title: t('free.title'),
+      hint: t('free.hint'),
       body: rows,
       headRight: dirtyHead(sectionChanged(state.view.free, state.baseView?.free)),
     })
@@ -802,7 +819,9 @@ export function createChainTab({ host, onNeedPoll, readInfo = null }) {
     const node = el('details', { class: 'oc-advanced' })
     if (state.openBlocks[key]) node.setAttribute('open', '')
     node.addEventListener('toggle', () => { state.openBlocks[key] = node.open })
-    node.append(el('summary', { class: 'oc-micro oc-muted', text: summaryText }))
+    const summary = el('summary', { class: 'oc-micro oc-muted' })
+    summary.append(kitIcon(el('span', { class: 'oc-chev' }), 'chevron', 12), el('span', { text: summaryText }))
+    node.append(summary)
     return node
   }
 
@@ -819,28 +838,28 @@ export function createChainTab({ host, onNeedPoll, readInfo = null }) {
       row.append(el('span', { class: 'oc-micro oc-mono oc-truncate', text: value }))
       facts.append(row)
     }
-    line('Config file', `${path}${gate?.port ? ` (router :${gate.port}${gate.from ? ` · ${gate.from}` : ''})` : ' (not running)'}`)
-    if (info?.path) line('Snapshot', info.path)
-    for (const t of state.loadTried ?? []) line('Config read attempts', `${t.path}（${t.code}`)
-    for (const t of info?.tried ?? []) line('Snapshot read attempts', `${t.path}（${t.code}`)
-    for (const p of gate?.problems ?? []) line('Config problems', p)
-    const t = snapshot?.agentTable
-    if (t) {
-      const vis = (t.visible ?? []).map((a) => `${agentLabel(a.id)}(${a.id})`).join(', ') || '(none)'
-      const roster = snapshot.roster ? `roster ${snapshot.roster.count}` : 'roster not injected'
-      const hiddenN = Array.isArray(t.hidden) ? t.hidden.length : Number(t.hidden ?? 0)
-      line('Agents', `visible ${vis} · hidden ${hiddenN} · ${roster}`)
+    const fromOther = gate?.from && gate.from !== path ? ` · ${gate.from}` : ''
+    line(t('diag.configFile'), `${path}${gate?.port ? ` (router :${gate.port}${fromOther})` : ` (${t('diag.notRunning')})`}`)
+    if (info?.path) line(t('diag.snapshot'), info.path)
+    for (const a of state.loadTried ?? []) line(t('diag.configAttempts'), `${a.path} (${a.code})`)
+    for (const a of info?.tried ?? []) line(t('diag.snapshotAttempts'), `${a.path} (${a.code})`)
+    for (const p of gate?.problems ?? []) line(t('diag.problems'), p)
+    const table = snapshot?.agentTable
+    if (table) {
+      const vis = (table.visible ?? []).map((a) => agentLabel(a.id)).join(', ') || t('diag.none')
+      const roster = snapshot.roster ? t('diag.rosterInjected', { n: snapshot.roster.count }) : t('diag.rosterMissing')
+      const hiddenN = Array.isArray(table.hidden) ? table.hidden.length : Number(table.hidden ?? 0)
+      line(t('diag.agents'), t('diag.agentsValue', { visible: vis, hidden: hiddenN, roster }))
     }
-    if (snapshot?.registered) line('Registered', `agent ${snapshot.registered.agents?.length ?? 0} · skill ${snapshot.registered.skills?.length ?? 0}`)
+    if (snapshot?.registered) line(t('diag.registered'), t('diag.registeredValue', { agents: snapshot.registered.agents?.length ?? 0, skills: snapshot.registered.skills?.length ?? 0 }))
     if (runtime?.expand?.length) {
       const cooling = new Map((runtime.cooling ?? []).map((c) => [c.ref, c]))
       for (const ref of runtime.expand) {
         const c = cooling.get(ref)
-        line('Free expansion', c ? `${ref}（cooling ${Math.max(1, Math.round((c.until - Date.now()) / 1000))}s` : `${ref}（ready`)
+        line(t('diag.freeExpansion'), c ? t('diag.expansionCooling', { ref, seconds: Math.max(1, Math.round((c.until - Date.now()) / 1000)) }) : t('diag.expansionReady', { ref }))
       }
     }
-    const diag = detailsBlock('diag', 'Diagnostics')
-    diag.classList.add('oc-card', 'oc-diag-card')
+    const diag = detailsBlock('diag', t('diag.diagnostics'))
     diag.setAttribute('data-section', 'diag')
     diag.append(facts)
     return diag
@@ -848,12 +867,15 @@ export function createChainTab({ host, onNeedPoll, readInfo = null }) {
 
   function render(section, snapshot) {
     if (!section) return
+    state.section = section
+    state.snapshot = snapshot
     section.__snapshot = snapshot
     if (state.view === null && !state.loadError) {
       const loadRow = el('div', { class: 'oc-bar', 'data-act': 'config-loading', style: 'padding:8px 0' })
-      loadRow.append(spinner({}), el('span', { class: 'oc-micro oc-muted', text: 'Reading router config…' }))
+      loadRow.append(spinner({}), el('span', { class: 'oc-micro oc-muted', text: t('config.reading') }))
       section.replaceChildren(loadRow)
-      void load(snapshot).then(() => render(section, snapshot))
+      // 读取期间 main 可能已经拿到了更新的快照：用最新的那份重画，别让旧闭包把运行态画丢
+      void load(snapshot).then(() => render(section, state.snapshot ?? snapshot))
       return
     }
     syncSave(snapshot)
@@ -862,35 +884,26 @@ export function createChainTab({ host, onNeedPoll, readInfo = null }) {
     const gate = snapshot?.gate ?? null
     const s = state.save
 
-    // 头一行：保存状态徽标（markDirty 会原地更新它，所以把 kit 句柄存在 state.ui
-    const top = el('div', { class: 'oc-bar oc-bar-between' })
-    top.append(el('div', { class: 'oc-bar' }))
-    const right = el('div', { class: 'oc-bar' })
-    const statusBadge = badge({ label: '…', tone: 'neutral' })
-    const paintBadge = () => {
-      if (s.status === 'failed' || s.status === 'timeout') statusBadge.handle.update({ label: 'Not applied', tone: 'error' })
-      else if (s.status === 'waiting') statusBadge.handle.update({ label: 'Applying…', tone: 'info' })
-      else if (state.dirty) statusBadge.handle.update({ label: 'Unsaved', tone: 'warning' })
-      else if (s.status === 'applied') statusBadge.handle.update({ label: `Applied ${fmtClock(s.at)}`, tone: 'success' })
-      else statusBadge.handle.update({ label: 'Saved', tone: 'neutral' })
-    }
-    paintBadge()
-    right.append(statusBadge.node)
-    top.append(right)
-    section.append(top)
-
     if (state.loadError) {
+      const reason =
+        state.loadError === 'NOT_FOUND'
+          ? t('config.error.notFound')
+          : state.loadError === 'NOT_GRANTED'
+            ? t('config.error.notGranted')
+            : state.loadError === 'BAD_PATH'
+              ? t('config.error.badPath')
+              : state.loadError
       section.append(
         banner({
           tone: 'error',
-          title: 'Cannot read router config',
-          body: `${state.loadError} (details under Diagnostics)`,
+          title: t('config.cannotReadTitle'),
+          body: t('config.cannotReadBody', { error: reason }),
         }),
       )
       section.append(
         el('div', { class: 'oc-bar', style: 'padding:8px 0' }, [
           button({
-            label: 'Retry',
+            label: t('action.retry'),
             variant: 'secondary',
             size: 'xs',
             data: { 'data-act': 'config-retry' },
@@ -901,51 +914,52 @@ export function createChainTab({ host, onNeedPoll, readInfo = null }) {
               render(section, snapshot)
             },
           }).node,
-          el('span', { class: 'oc-micro oc-muted', text: 'Fix the file, then retry. Chains/policy/free lane are read-only while config is unavailable.' }),
+          el('span', { class: 'oc-micro oc-muted', text: t('config.retryHint') }),
         ]),
       )
       section.append(renderDiagnostics(section, snapshot))
+      publish()
       return
     }
-    // 快照读不到时也要给出原因 + 下一步（不能只靠页头一枚 chip；详情在「Tasks」tab
+    // 快照读不到时也要给出原因 + 下一步；详情在「Tasks」tab
     const info = typeof readInfo === 'function' ? readInfo() : null
     if (info && info.ok === false) {
-      const codes = (info.tried ?? []).map((t) => t.code)
+      const codes = (info.tried ?? []).map((x) => x.code)
       const hint = codes.includes('NOT_GRANTED')
-        ? 'Filesystem permission is not granted: approve it in Settings → Extensions, then refresh.'
+        ? t('snapshot.hint.fs')
         : codes.length > 0 && codes.every((c) => c === 'NOT_FOUND')
-          ? 'The plugin has not written a snapshot yet; run a model call and it will.'
-          : 'Refresh to retry。'
+          ? t('snapshot.hint.notFound')
+          : t('snapshot.hint.retry')
       section.append(
-        banner({ tone: 'warning', title: 'Snapshot unavailable', body: hint }),
+        banner({ tone: 'warning', title: t('snapshot.unavailableTitle'), body: hint }),
       )
     }
-    if (gate?.error) section.append(banner({ tone: 'warning', title: 'Router is not running', body: String(gate.error) }))
-    if (gate?.problems?.length) section.append(banner({ tone: 'warning', title: `Config has ${gate.problems.length} problem(s)`, body: gate.problems.slice(0, 3).join('；') }))
+    if (gate?.error) section.append(banner({ tone: 'warning', title: t('gate.notRunningTitle'), body: String(gate.error) }))
+    if (gate?.problems?.length) section.append(banner({ tone: 'warning', title: tn('config.problemsTitle', gate.problems.length), body: gate.problems.slice(0, 3).join('; ') }))
     if (state.notice) section.append(banner({ tone: s.status === 'failed' ? 'error' : 'info', title: state.notice }))
 
     const chainRows = chainNames(state.view).map((chain) => renderChainCard(chain, snapshot, section))
-    // 新增链：入口一行（或展开成一行输入
+    // 新增链：入口一行（或展开成一行输入）
     if (state.addingChain) {
-      const row = el('div', { class: 'oc-bar', 'data-act': 'new-chain-row', style: 'padding:8px 0' })
-      const ok = button({ label: 'Create', variant: 'secondary', size: 'xs', disabled: !state.newChainName.trim(), onClick: () => addChain(state.newChainName, section, snapshot) })
+      const row = el('div', { class: 'oc-bar', 'data-act': 'new-chain-row', style: 'padding:6px 0' })
+      const ok = button({ label: t('action.create'), variant: 'secondary', size: 'xs', disabled: !state.newChainName.trim(), onClick: () => addChain(state.newChainName, section, snapshot) })
       row.append(
         el('span', { class: 'oc-grow' }, [
           field({
             value: state.newChainName,
-            placeholder: 'New chain name, e.g. free-first',
+            placeholder: t('chain.createPlaceholder'),
             mono: true,
             onChange: (v) => { state.newChainName = v; ok.handle.update({ disabled: !v.trim() }) },
           }).node,
         ]),
         ok.node,
-        button({ label: 'Cancel', variant: 'ghost', size: 'xs', onClick: () => { state.addingChain = false; state.newChainName = ''; render(section, snapshot) } }).node,
+        button({ label: t('action.cancel'), variant: 'ghost', size: 'xs', onClick: () => { state.addingChain = false; state.newChainName = ''; render(section, snapshot) } }).node,
       )
       chainRows.push(row)
     } else {
       chainRows.push(
-        el('div', { style: 'padding:6px 0' }, [
-          button({ label: '+ New chain', variant: 'ghost', size: 'xs', data: { 'data-act': 'add-chain' }, onClick: () => { state.addingChain = true; render(section, snapshot) } }).node,
+        el('div', { style: 'padding:2px 0' }, [
+          button({ label: t('action.newChain'), variant: 'ghost', size: 'xs', data: { 'data-act': 'add-chain' }, onClick: () => { state.addingChain = true; render(section, snapshot) } }).node,
         ]),
       )
     }
@@ -953,7 +967,7 @@ export function createChainTab({ host, onNeedPoll, readInfo = null }) {
       sectionChanged(state.view.chains, state.baseView?.chains) ||
       sectionChanged(state.view.agents, state.baseView?.agents) ||
       state.view.default_chain !== state.baseView?.default_chain
-    section.append(kitSection({ title: 'Chains', hint: 'Try from top to bottom; fall through on failure', body: chainRows, headRight: dirtyHead(chainsDirty) }))
+    section.append(kitSection({ title: t('tab.chains'), hint: t('chains.sectionHint'), body: chainRows, headRight: dirtyHead(chainsDirty), divided: false }))
     section.append(renderTierMapping(section, snapshot))
     section.append(renderPolicy(section, snapshot))
     section.append(renderFree(section, snapshot))
@@ -962,56 +976,34 @@ export function createChainTab({ host, onNeedPoll, readInfo = null }) {
     const live = el('div', { class: 'oc-sr', 'aria-live': 'polite', text: state.live })
     section.append(live)
 
-    // 保存条：只在有改动 / 在飞 / 刚error时出现。句柄存在 state.ui，markDirty 原地点亮不重绘。
-    const needsBar = state.dirty || s.status === 'waiting' || s.status === 'failed' || s.status === 'timeout'
-    const bar = el('div', { class: 'oc-savebar' })
-    bar.hidden = !needsBar
-    const saveBtn = button({
-      label: 'Save & apply',
-      variant: 'default',
-      size: 'sm',
-      disabled: !state.dirty,
-      loading: s.status === 'waiting',
-      data: { 'data-act': 'save' },
-      onClick: () => void save(snapshot, section),
-    })
-    bar.append(saveBtn.node)
-    bar.append(
-      button({
-        label: 'Discard',
-        variant: 'ghost',
-        size: 'sm',
-        disabled: !state.dirty,
-        onClick: () => {
-          state.dirty = false
-          state.sourceSig = null
-          state.notice = null
-          state.selected = null
-          state.picker = null
-          state.save = { status: 'idle', at: null, error: null, planned: null }
-          state.view = null
-          state.baseView = null
-          render(section, snapshot)
-        },
-      }).node,
-    )
-    const text =
-      s.status === 'waiting'
-        ? 'Written; waiting for the router to apply (up to 5s)…'
-        : s.status === 'failed'
-          ? `Write failed: ${s.error}`
-          : s.status === 'timeout'
-            ? 'No router confirmation within 30s — see the problem above'
-            : 'Applies within seconds; only changed sections are rewritten, comments preserved'
-    bar.append(el('span', { class: 'oc-micro oc-muted', text }))
-    section.append(bar)
-    state.ui = { badge: statusBadge, savebar: bar, saveBtn }
+    publish()
   }
 
   return {
     render,
+    /** 当前停在别的 tab 时，refresh 也要把保存态对账一次。 */
+    sync: (snapshot) => {
+      if (!state.view) return
+      syncSave(snapshot)
+      publish()
+    },
     needsPoll: () => state.save.status === 'waiting' || state.dirty,
     isDirty: () => state.dirty,
     count: () => chainNames(state.view).length,
+    requestSave: () => {
+      if (state.section && state.snapshot) void save(state.snapshot, state.section)
+    },
+    requestDiscard: () => {
+      state.dirty = false
+      state.sourceSig = null
+      state.notice = null
+      state.selected = null
+      state.picker = null
+      state.save = { status: 'idle', at: null, error: null, planned: null }
+      state.view = null
+      state.baseView = null
+      if (state.section) render(state.section, state.snapshot)
+      else publish()
+    },
   }
 }

@@ -1,6 +1,6 @@
 {
   "name": "reeve",
-  "version": "0.1.10",
+  "version": "0.1.11",
   "private": true,
   "type": "module",
   "description": "REEVE orchestration panel: chains, chain_for_model, retry policy, free lane, request stats, task ledger",
@@ -38,7 +38,7 @@
       "actions": [
         {
           "id": "reeve-inspect",
-          "label": "查看编排",
+          "label": "REEVE",
           "where": "session",
           "mode": "open"
         }

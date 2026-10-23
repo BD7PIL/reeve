@@ -3,6 +3,8 @@
 // 只放**纯**东西（无宿主依赖除 readFile 外—— 三个 tab 都从这里拿同一套格式化，
 // 免得"延迟"在统计 tab 显示成 4.0s、在台账 tab 显示成 4000。
 
+import { t } from './i18n.js'
+
 export const el = (tag, props = {}, children = []) => {
   const node = document.createElement(tag)
   for (const [k, v] of Object.entries(props)) {
@@ -41,14 +43,14 @@ export const fmtMs = (value) => {
   return `${(ms / 60_000).toFixed(1)}m`
 }
 
-/** 相对时间：`3m ago`。快照是文件，读它的人需要知道"这是多久以前的数"。 */
+/** 相对时间：`3m ago` / `3 分钟前`。快照是文件，读它的人需要知道"这是多久以前的数"。 */
 export const fmtAgo = (ms, now = Date.now()) => {
   if (!ms) return '—'
   const d = Math.max(0, now - ms)
-  if (d < 60_000) return `${Math.round(d / 1000)}s ago`
-  if (d < 3600_000) return `${Math.round(d / 60_000)} m ago`
-  if (d < 86400_000) return `${(d / 3600_000).toFixed(1)}h ago`
-  return `${(d / 86400_000).toFixed(1)}d ago`
+  if (d < 60_000) return t('ago.seconds', { n: Math.round(d / 1000) })
+  if (d < 3600_000) return t('ago.minutes', { n: Math.round(d / 60_000) })
+  if (d < 86400_000) return t('ago.hours', { n: (d / 3600_000).toFixed(1) })
+  return t('ago.days', { n: (d / 86400_000).toFixed(1) })
 }
 
 /** 台账快照的候选位置（与 package.json 的 contributes.filesystem 一一对应。 */
@@ -78,12 +80,10 @@ export async function readSnapshot(host) {
   return { ok: false, code: tried.at(-1)?.code ?? 'UNKNOWN', tried }
 }
 
-export const STATE_LABEL = {
-  running: 'Running',
-  completed: 'Completed',
-  error: 'Error',
-  stopped: 'Stopped',
-  reconciled: 'Reconciled',
+export const stateLabel = (state) => {
+  const key = `state.${String(state ?? '')}`
+  const text = t(key)
+  return text === key ? String(state ?? '?') : text
 }
 export const STATE_TONE = {
   running: 'primary',
