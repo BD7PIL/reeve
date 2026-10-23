@@ -1,0 +1,213 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>REEVE</title>
+<style>
+  /* 页面骨架 only —— 配色、字号、圆角、控件几何**全归宿主**。
+     kit 自己注入控件样式；宿主在服务扩展文档时把它那份"外观"（GUEST_UI_LOOK_CSS）追加在后面。
+     这一份只放 kit 不给的**布局**，并且按宿主自己的设置页写法：
+       · 分区是**分隔带**（一条细线 + 留白），不是一张张卡片
+       · 只有"链"是实体卡（raised surface + border），因为一条链确实是一个可操作对象
+       · 行 = 左标签 + 右控件；布尔项用 checkbox row（方框在左）
+     字号：分区/链标题 14 / 模型行 13 / 字段标签 12.5 / 说明 11.5；不写死颜色。 */
+
+  html, body { margin: 0; min-height: 100%; background: transparent; }
+  body { font: inherit; color: inherit; }
+  #root { min-height: 100%; }
+  .oc-kit { display: contents; }
+  /* author 的 display:flex 会盖过 UA 的 [hidden] —— tab 段与保存条都靠它切换 */
+  [hidden] { display: none !important; }
+
+  .oc-page {
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    min-height: 100%;
+    max-width: 840px;
+    padding: 12px 12px 16px;
+  }
+
+  /* ── 基本盒子 ── */
+  .oc-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; }
+  .oc-bar-nowrap { flex-wrap: nowrap; }
+  .oc-bar-between { justify-content: space-between; }
+  .oc-col { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+  .oc-grow { flex: 1 1 auto; min-width: 0; }
+  .oc-push { margin-left: auto; }
+  .oc-truncate { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .oc-full { width: 100%; }
+
+  /* ── 字（宿主的设置页刻度）── */
+  .oc-title { font-size: 14px; font-weight: 600; }
+  .oc-label { font-size: 12.5px; font-weight: 500; }
+  .oc-meta { font-size: 13px; }
+  .oc-micro { font-size: 11.5px; }
+  .oc-muted { color: var(--surface-muted-foreground, color-mix(in srgb, currentColor 60%, transparent)); }
+  .oc-mono { font-family: var(--font-mono, ui-monospace, monospace); font-variant-numeric: tabular-nums; }
+  .oc-nowrap { white-space: nowrap; }
+
+  /* ── 分区：分隔带（细线 + 留白），只有"链"是卡片 ── */
+  .oc-section { display: flex; flex-direction: column; min-width: 0; }
+  .oc-section + .oc-section {
+    margin-top: 2px;
+    padding-top: 14px;
+    border-top: 1px solid color-mix(in srgb, var(--interactive-border, var(--surface-subtle)) 75%, transparent);
+  }
+  .oc-section-head { display: flex; align-items: baseline; gap: 8px; min-width: 0; padding-bottom: 6px; }
+  .oc-section-head .oc-label { font-size: 14px; font-weight: 600; }
+  .oc-section-body { display: flex; flex-direction: column; min-width: 0; }
+
+  /* 链是一张实体卡：名称/徽标/模型行/添加动作都在同一张卡里 */
+  .oc-chain-card {
+    gap: 6px;
+    padding: 8px 10px;
+    border: 1px solid color-mix(in srgb, var(--interactive-border, var(--surface-subtle)) 75%, transparent);
+    border-radius: calc(var(--radius, 9px) - 2px);
+    background: var(--surface-elevated, var(--surface-background, transparent));
+  }
+  .oc-chain-card + .oc-chain-card { margin-top: 2px; }
+  .oc-chain-head { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+  .oc-chain-title { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; }
+  .oc-chain-title-main { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; min-width: 0; }
+  .oc-chain-name { font-size: 14px; font-weight: 600; }
+
+  /* ── 模型行：单行（标题 · provider 副标 · 用量），32px 高 ── */
+  #root .oc-sdk-row { padding: 3px 6px; min-height: 32px; gap: 6px; }
+  #root .oc-sdk-row-lead { width: 18px; font-size: 11px; }
+  #root .oc-sdk-row-main { flex-direction: row; align-items: baseline; gap: 6px; }
+  #root .oc-sdk-row-title { flex: 0 1 auto; font-size: 13px; font-weight: 500; white-space: nowrap; }
+  #root .oc-sdk-row-sub { flex: 0 1 auto; font-size: 11.5px; white-space: nowrap; }
+  #root .oc-sdk-row-meta { font-size: 11.5px; }
+
+  /* 行间细线（宿主的 divide-y） */
+  .oc-divide > * + * { border-top: 1px solid var(--interactive-border, var(--surface-subtle)); }
+
+  /* 设置行：左标签/说明，右控件；宽度按控件类型给，不搞统一宽列 */
+  .oc-field-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-width: 0; padding: 7px 0; }
+  .oc-field-row > .oc-field-main { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+  .oc-field-row > .oc-field-main .oc-label { font-size: 12.5px; }
+  .oc-field-row > .oc-field-control { flex: 0 0 auto; min-width: 0; }
+  .oc-field-control.oc-num-field { width: 5.5rem; }
+  .oc-field-control.oc-select-field { width: min(14rem, 50%); }
+  .oc-field-control.oc-text-field { width: min(18rem, 60%); }
+  .oc-field-row > .oc-field-control .oc-sdk-field,
+  .oc-field-row > .oc-field-control .oc-sdk-select { width: 100%; }
+
+  /* 布尔项：宿主的 checkbox row（方框在左，标签 12.5，说明 11.5） */
+  .oc-check-row { display: flex; flex-direction: column; min-width: 0; padding: 2px 0; }
+  .oc-check-row .oc-sdk-check { width: 100%; }
+  .oc-check-row .oc-sdk-check-label { font-size: 12.5px; }
+  .oc-check-row .oc-sdk-check-desc { font-size: 11.5px; }
+  .oc-check-with-state { gap: 1px; }
+  .oc-provider-state { display: flex; align-items: center; gap: 4px; padding-left: 22px; min-width: 0; }
+  .oc-dot { flex: 0 0 auto; width: 6px; height: 6px; border-radius: 50%; background: var(--surface-muted-foreground, #999); }
+  .oc-dot-ok { background: var(--status-success, var(--oc-success, #517734)); }
+  .oc-dot-warn { background: var(--status-warning, var(--oc-warning, #886914)); }
+
+  /* 选中行：kit 的 selectionForeground 在浅色下对比度偏低 —— 正文色 + 主色竖条 */
+  #root .oc-sdk-row[aria-selected="true"] {
+    color: var(--surface-foreground);
+    background: color-mix(in srgb, var(--primary) 10%, transparent);
+    box-shadow: inset 2px 0 0 var(--primary);
+    border-radius: calc(var(--radius, 9px) - 4px);
+  }
+  #root .oc-sdk-row[aria-selected="true"] .oc-sdk-row-lead,
+  #root .oc-sdk-row[aria-selected="true"] .oc-sdk-row-sub,
+  #root .oc-sdk-row[aria-selected="true"] .oc-sdk-row-meta { color: var(--surface-muted-foreground); opacity: 1; }
+
+  /* 窄栏（宿主侧栏量级）：字段标签在上、控件满宽 */
+  @media (max-width: 520px) {
+    .oc-field-row { flex-direction: column; align-items: stretch; gap: 5px; }
+    .oc-field-row > .oc-field-control { width: 100%; }
+    .oc-field-control.oc-num-field { width: 5.5rem; }
+    .oc-section-head { flex-direction: column; align-items: flex-start; gap: 2px; }
+    .oc-section-head .oc-label { white-space: nowrap; }
+    .oc-bar-between { flex-wrap: nowrap; }
+    .oc-bar-between > .oc-bar { min-width: 0; }
+    .oc-selected-label { display: none; }
+    .oc-save-hint { display: none; }
+    #root .oc-sdk-row { align-items: flex-start; }
+  }
+  /* 宿主侧栏默认 ~306px：隐藏 provider 副标，靠 title 保留完整 ref */
+  @media (max-width: 360px) {
+    #root .oc-sdk-row-sub { display: none; }
+    .oc-bar-between { gap: 4px; flex-wrap: wrap; }
+    .oc-bar-between > .oc-bar:last-child { margin-left: auto; }
+  }
+
+  /* 需要分组的 inset（添加模型的搜索面板） */
+  .oc-inset {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-width: 0;
+    padding: 8px;
+    border: 1px solid var(--interactive-border, color-mix(in srgb, currentColor 25%, transparent));
+    border-radius: calc(var(--radius, 9px) - 2px);
+    background: color-mix(in srgb, var(--surface-elevated, transparent) 55%, transparent);
+  }
+
+  /* 「高级 / 诊断信息」折叠块：原生 details，chevron 旋转 */
+  .oc-advanced { display: flex; flex-direction: column; min-width: 0; padding: 2px 0; }
+  .oc-advanced > summary {
+    cursor: pointer; user-select: none; list-style: none;
+    display: flex; align-items: center; gap: 4px; padding: 5px 0;
+  }
+  .oc-chev { display: inline-flex; transition: transform 120ms ease; }
+  .oc-advanced[open] > summary .oc-chev { transform: rotate(180deg); }
+  .oc-advanced > summary::-webkit-details-marker { display: none; }
+  .oc-advanced[open] > summary { border-bottom: 1px solid var(--interactive-border, var(--surface-subtle)); margin-bottom: 4px; }
+  .oc-advanced > .oc-col { padding-bottom: 4px; }
+
+  .oc-list-scroll { max-height: 280px; overflow: auto; }
+  /* 台账行：一行一条记录，行间细线 */
+  .oc-ledger-list .oc-sdk-row + .oc-sdk-row { border-top: 1px solid var(--interactive-border); }
+  .oc-filter-bar { display: flex; flex-wrap: wrap; gap: 6px; padding: 2px 0; }
+  .oc-pre {
+    margin: 0; max-height: 220px; overflow: auto; padding: 8px;
+    border-radius: calc(var(--radius, 9px) - 2px);
+    background: var(--surface-muted, color-mix(in srgb, currentColor 8%, transparent));
+    font-family: var(--font-mono, ui-monospace, monospace); font-size: 12.5px; line-height: 1.5;
+    white-space: pre-wrap; overflow-wrap: anywhere;
+  }
+  .oc-sr { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
+
+  /* 页面级保存条：只在有改动/在飞/失败时出现；全宽、上边框，吸在底部 */
+  .oc-savebar {
+    position: sticky; bottom: 0; z-index: 2;
+    display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+    padding: 8px 0;
+    border-top: 1px solid var(--interactive-border, color-mix(in srgb, currentColor 25%, transparent));
+    background: var(--surface-background, Canvas);
+  }
+  .oc-savebar[hidden] { display: none; }
+  .oc-save-hint { margin-left: auto; text-align: right; min-width: 0; }
+
+  /* 摘要数字格：小灰标签 + 粗体数字 */
+  .oc-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(76px, 1fr)); gap: 6px 10px; padding: 4px 0; }
+  .oc-stat-label { font-size: 11.5px; color: var(--surface-muted-foreground, color-mix(in srgb, currentColor 60%, transparent)); }
+  .oc-stat-value { font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums; }
+
+  /* 统计里的一行：名字 | 次数 | 条 | 延迟 */
+  .oc-stat-row { display: grid; grid-template-columns: minmax(0, 1.1fr) max-content minmax(60px, 1fr) max-content; align-items: center; gap: 8px; min-height: 28px; }
+  .oc-stat-row-plain { grid-template-columns: minmax(0, 1.1fr) max-content max-content; }
+  .oc-stat-bar { display: flex; align-items: center; }
+  .oc-stat-bar > * { flex: 1 1 auto; }
+  .oc-stat-lat { text-align: right; }
+  @media (max-width: 520px) {
+    .oc-stat-row, .oc-stat-row-plain { grid-template-columns: minmax(0, 1fr) auto; gap: 1px 8px; min-height: 0; padding: 4px 0; }
+    .oc-stat-row > .oc-stat-name { grid-column: 1 / -1; }
+    .oc-stat-bar { display: none; }
+    .oc-stat-row > .oc-stat-calls { text-align: left; }
+    .oc-stat-lat { text-align: right; }
+  }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script src="./main.js"></script>
+</body>
+</html>
