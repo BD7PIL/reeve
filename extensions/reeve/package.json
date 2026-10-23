@@ -1,9 +1,9 @@
 {
   "name": "reeve",
-  "version": "0.1.9",
+  "version": "0.1.10",
   "private": true,
   "type": "module",
-  "description": "REEVE 编排视图 —— 路由链 / 档位映射 / 策略 / 免费车道 + 调用统计 + 任务记录",
+  "description": "REEVE orchestration panel: chains, chain_for_model, retry policy, free lane, request stats, task ledger",
   "license": "MIT",
   "author": "bd7pil",
   "repository": {
@@ -20,7 +20,7 @@
     "contributes": {
       "panel": {
         "id": "reeve",
-        "name": "REEVE 编排",
+        "name": "REEVE",
         "icon": "git-branch",
         "entry": "panel/index.html"
       },

@@ -3,6 +3,15 @@
 Newest first. Versions follow the plugin package (`plugin/package.json`); the
 panel extension has its own tags (`reeve-<version>`).
 
+## 0.2.1 — 2026-10-23
+
+English tier labels and panel identity. The four engine-visible model names are now
+`REEVE flash`, `REEVE standard`, `REEVE pro`, and `REEVE multimodal` (no
+Chinese parentheticals), and the OpenChamber panel is titled `REEVE` instead of
+`REEVE 编排`. Panel extension 0.1.10 also switches to a card-based layout matching
+OpenChamber's settings pages (surface cards, compact rows, chain cards, advanced
+diagnostics folded away). No routing behavior change.
+
 ## 0.2.0 — 2026-10-23
 
 **Breaking: the `reeve/manual` tier is removed.** The composer's model picker

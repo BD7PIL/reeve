@@ -28,10 +28,10 @@ import { join } from 'node:path'
  * 显示 1M），会提前触发压缩——0.2.0 修正。
  */
 export const REEVE_TIERS = Object.freeze([
-  { id: 'flash', modelID: 'reeve/flash', name: 'REEVE flash（免费优先链）', images: true },
-  { id: 'standard', modelID: 'reeve/standard', name: 'REEVE standard（通用中型链）', images: true },
-  { id: 'pro', modelID: 'reeve/pro', name: 'REEVE pro（强推理链）', images: true },
-  { id: 'multimodal', modelID: 'reeve/multimodal', name: 'REEVE multimodal（视觉链）', images: true },
+  { id: 'flash', modelID: 'reeve/flash', name: 'REEVE flash', images: true },
+  { id: 'standard', modelID: 'reeve/standard', name: 'REEVE standard', images: true },
+  { id: 'pro', modelID: 'reeve/pro', name: 'REEVE pro', images: true },
+  { id: 'multimodal', modelID: 'reeve/multimodal', name: 'REEVE multimodal', images: true },
 ])
 
 /** 四档共享的 limit（付费候选最小值；见 REEVE_TIERS 注释）。 */
