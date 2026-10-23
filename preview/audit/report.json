@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-23T09:03:41.061Z",
+  "generatedAt": "2026-10-23T09:50:09.591Z",
   "fixture": true,
   "strictContrast": false,
   "total": 40,
@@ -80,7 +80,7 @@
     },
     {
       "id": "09-tier-mapping",
-      "note": "档位映射（真正生效的 chain_for_model 编辑面）",
+      "note": "chain_for_model（真正生效的档位映射编辑面）",
       "file": "09-tier-mapping.png",
       "scenario": null,
       "failures": [],
@@ -89,7 +89,7 @@
     },
     {
       "id": "10-chain-policy",
-      "note": "重试与回退：数字字段 + 开关 + 高级折叠",
+      "note": "重试策略：数字字段 + 开关 + 高级折叠",
       "file": "10-chain-policy.png",
       "scenario": null,
       "failures": [],
