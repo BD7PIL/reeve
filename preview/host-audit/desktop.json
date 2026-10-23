@@ -1,8 +1,8 @@
 {
   "app": "openchamber-ui://app/index.html",
   "host": "app",
-  "at": "2026-10-23T12:31:55.047Z",
-  "guest": "http://127.0.0.1:57123/api/guest-files/JeMFhAn4ypqQQx23WMjYV5BJoIw3ttXj/panel/index.html",
+  "at": "2026-10-23T12:53:23.336Z",
+  "guest": "http://127.0.0.1:57123/api/guest-files/bvnS9Kjkvfpq4Y-NQGRHdFkRqInR_kou/panel/index.html",
   "checks": {
     "textLen": 1154,
     "missing": [],
