@@ -1,8 +1,8 @@
-// 任务记录 tab：本地记账的子任务列表（谁派的、什么状态、跑了多久）。
+// Tasks tab：本地记账的子Tasks列表（谁派的、什么状态、跑了多久。
 //
-// 会话树那一段**去掉了**：宿主自己就有会话列表（点日期/会话切换器），面板再抄一份只会
-// 让人分不清哪个才是权威。这里只留宿主没有的东西 —— 子任务台账。
-// 名册/注册数这类"编排面证据"是调试信息，收在「路由链」tab 的诊断信息里，这里不再展示。
+// 会话树那一段**去掉了**：宿主自己就有会话列表（点日期/会话切换器，面板再抄一份只会
+// 让人分不清哪个才是权威。这里只留宿主没有的东西 —— 子Tasks台账。
+// roster/注册数这类"编排面证据"是调试信息，收在「Chains」tab 的Diagnostics里，这里不再展示。
 
 import { button, empty, list, section as kitSection, stat } from './kit.js'
 import { agentLabel } from './labels.js'
@@ -11,7 +11,7 @@ import { STATE_LABEL, STATE_TONE, el, fmtDur } from './util.js'
 const mutedText = (text) => el('div', { class: 'oc-micro oc-muted', text })
 
 export function createLedgerTab({ host }) {
-  /** 列表过滤：全部 / 运行中 / 失败。默认全部。 */
+  /** 列表过滤：All / running / error。defaultAll。 */
   const state = { filter: 'all' }
   function render(section, snapshot, read) {
     section.replaceChildren()
@@ -20,10 +20,10 @@ export function createLedgerTab({ host }) {
       const denied = read?.tried?.some((t) => t.code === 'NOT_GRANTED' || t.code === 'BAD_PATH')
       section.append(
         empty({
-          title: '还没读到任务数据',
+          title: 'No task data yet',
           body: denied
-            ? '扩展的文件读取权限还没批准 —— 到 设置 → 扩展 批准「文件系统」后点刷新。'
-            : '它由插件写在 options.snapshotPath 指向的位置（默认 ~/.reeve/ledger.json）。',
+            ? 'Filesystem permission is not granted — approve it in Settings → Extensions, then refresh.'
+            : 'The plugin writes it to options.snapshotPath (default ~/.reeve/ledger.json).',
         }),
       )
       if (!denied && read?.tried?.length) {
@@ -40,18 +40,18 @@ export function createLedgerTab({ host }) {
     const facts = el('div', { class: 'oc-col' })
     const cells = el('div', { class: 'oc-stats' })
     cells.append(
-      stat('任务', String(tasks.length)),
-      stat('运行中', String(running.length)),
-      stat('失败', String(tasks.filter((t) => t.state === 'error').length), tasks.some((t) => t.state === 'error') ? 'err' : undefined),
-      stat('超时', String(deadline), deadline ? 'warn' : undefined),
+      stat('Tasks', String(tasks.length)),
+      stat('Running', String(running.length)),
+      stat('Errors', String(tasks.filter((t) => t.state === 'error').length), tasks.some((t) => t.state === 'error') ? 'err' : undefined),
+      stat('Timed out', String(deadline), deadline ? 'warn' : undefined),
     )
     facts.append(cells)
     section.append(facts)
 
     const filters = [
-      { id: 'all', label: '全部', n: tasks.length },
-      { id: 'running', label: '运行中', n: running.length },
-      { id: 'error', label: '失败', n: tasks.filter((t) => t.state === 'error').length },
+      { id: 'all', label: 'All', n: tasks.length },
+      { id: 'running', label: 'Running', n: running.length },
+      { id: 'error', label: 'Errors', n: tasks.filter((t) => t.state === 'error').length },
     ]
     const shown = state.filter === 'all' ? tasks : tasks.filter((t) => t.state === state.filter)
     const bar = el('div', { class: 'oc-row', 'data-act': 'ledger-filter' })
@@ -72,16 +72,16 @@ export function createLedgerTab({ host }) {
 
     const items = shown.map((task) => {
       const flags = []
-      if (task.timedOut) flags.push('超时')
-      if (task.statusUncertain) flags.push('状态不确定')
-      if (task.background) flags.push('后台')
-      // 子会话 ID 是实现细节，不进标题行（要查就在宿主的会话列表里）
+      if (task.timedOut) flags.push('timed out')
+      if (task.statusUncertain) flags.push('uncertain')
+      if (task.background) flags.push('background')
+      // 子会话 ID 是实现细节，不进标题行（要查就在宿主的会话列表里
       const dur = task.endedAt ? fmtDur(task.startedAt, task.endedAt) : fmtDur(task.startedAt)
       return {
         id: task.taskID,
         title: task.description || agentLabel(task.agent) || task.taskID,
         subtitle: [agentLabel(task.agent) ?? '?', ...flags].filter(Boolean).join(' · '),
-        // 有子会话的才是可打开的：给一个 › 暗示；没有的置灰（disabled，点了也不会假装能开）
+        // 有子会话的才是可打开的：给一个 › 暗示；没有的置灰（disabled，点了也不会假装能开
         meta: task.childSessionID ? `${dur} ›` : dur,
         disabled: !task.childSessionID,
         badge: { label: STATE_LABEL[task.state] ?? task.state ?? '?', tone: STATE_TONE[task.state] ?? 'neutral' },
@@ -99,12 +99,12 @@ export function createLedgerTab({ host }) {
         },
         emptyText:
           tasks.length === 0
-            ? '还没有任务记录 —— 编排者派出子任务后，这里会出现。'
-            : `这个筛选下没有记录（共 ${tasks.length} 条，换个筛选看看）。`,
-        ariaLabel: 'REEVE 任务记录',
+            ? 'No tasks yet — child tasks dispatched by the orchestrator will appear here.'
+            : `No records in this filter (${tasks.length} total; try another filter).`,
+        ariaLabel: 'REEVE tasks',
       }).node,
     )
-    card.append(mutedText('点一行打开子会话（宿主自己的会话视图）。这里只记本机派出的任务。'))
+    card.append(mutedText('Click a row with a child session to open it. Only tasks dispatched from this machine are recorded.'))
     section.append(card)
   }
 
