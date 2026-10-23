@@ -392,8 +392,18 @@ export default {
       await ctx.provider.transform((editor) => {
         const existing = editor.get('reeve')?.models
         const list = existing ? Array.from(existing.values()) : []
-        const merged = mergeTierModels(list, REEVE_TIERS, 'reeve')
-        if (merged.length !== list.length) editor.models.set('reeve', merged)
+        // 0.2.0 移除了 reeve/manual（单目标档位）。合并是**只增不删**的——旧配置里
+        // 显式写过的 manual 模型条目会残留，指到一个已经不存在的链上。这里吵出来，
+        // 让使用者把配置里的 `model: reeve/manual` / manual 链清掉（换 standard）。
+        const stale = list.filter((m) => m?.id === 'manual')
+        if (stale.length > 0) {
+          logger.warn(
+            '[reeve] reeve/manual 已在 0.2.0 移除（单目标档位；会话里直接选模型即可）。' +
+              '请把配置里的 "model": "reeve/manual" 改成 "reeve/standard"，并删掉 fallback 配置里的 manual 链。',
+          )
+        }
+        const merged = mergeTierModels(list.filter((m) => m?.id !== 'manual'), REEVE_TIERS, 'reeve')
+        if (merged.length !== list.length || stale.length > 0) editor.models.set('reeve', merged)
       })
       // agent 与 skill 从**插件自己的包**里注册（配置目录里不需要 agent/ 与 skill/ 两个目录）。
       // 配置优先：引擎里已经有的同名 agent（用户在配置目录里写的）一律不动。
@@ -645,6 +655,10 @@ function makeLogger() {
     debug: (msg) => {
       // 走 stderr；`opencode run --print-logs` 能看到
       console.error(prefix(String(msg)))
+    },
+    // 迁移警告这类"用户必须看到"的行：同样走 stderr（插件的约定通道），但打 ⚠️ 前缀。
+    warn: (msg) => {
+      console.error(`⚠️  ${prefix(String(msg))}`)
     },
   }
 }

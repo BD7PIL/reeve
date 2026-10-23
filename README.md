@@ -36,7 +36,7 @@ separate service, and no Bifrost/9router dependency** — those were retired in
 ## Requirements
 
 - Node.js **>= 22**
-- OpenCode **v2** (tested against 2.0.32)
+- OpenCode **v2** (tested against 2.0.32 and 2.1.3)
 - OpenChamber **>= 2.3.3** for the panel extension (2.5.0 tested)
 - One or more provider credentials in `~/.local/share/opencode/auth.json`
 
@@ -48,16 +48,17 @@ Add the plugin to `~/.config/opencode/opencode.jsonc` (or `opencode.json`):
 
 ```jsonc
 {
-  "model": "reeve/manual",
-  "plugins": ["@bd7pil/reeve@0.1.15"]
+  "model": "reeve/standard",
+  "plugins": ["@bd7pil/reeve@0.2.0"]
 }
 ```
 
 - `model` is required. Without it, a bare `opencode run` / a fresh composer
   session can use the engine's default model and silently bypass GATE.
-  `reeve/manual` is the single-target foreman tier; choose `reeve/standard`,
-  `reeve/pro`, or `reeve/flash` if you want a different default.
-- The plugin registers five tiers and all agents itself, and on first start adds
+  `reeve/standard` is the cost-first default; choose `reeve/pro`, `reeve/flash`,
+  or `reeve/multimodal` if you want a different one. 0.2.0 removed the
+  `reeve/manual` single-target tier — pick a model directly in the composer instead.
+- The plugin registers four tiers and all agents itself, and on first start adds
   `providers.reeve` (`http://127.0.0.1:18080/v1`) to the config if it is missing.
   The write is additive, backed up, and comment-preserving.
 - GATE listens on **18080** by default when the plugin starts it. If 8080 is
@@ -65,9 +66,9 @@ Add the plugin to `~/.config/opencode/opencode.jsonc` (or `opencode.json`):
 
 ```jsonc
 {
-  "model": "reeve/manual",
+  "model": "reeve/standard",
   "plugins": [
-    { "package": "@bd7pil/reeve@0.1.15", "options": { "gate": { "enabled": true, "port": 18080 } } }
+    { "package": "@bd7pil/reeve@0.2.0", "options": { "gate": { "enabled": true, "port": 18080 } } }
   ],
   "providers": {
     "reeve": {
@@ -94,9 +95,11 @@ snapshot and GATE config; it never starts sessions or prompts.
 |---|---|---|---|
 | `reeve/pro` | `reasoning` | planner, advisor, critic | strongest reasoning; text-first |
 | `reeve/standard` | `standard` | executor, reviewer | general-purpose mid tier, image-capable |
-| `reeve/manual` | `manual` | foreman | one target only, no automatic fallback |
 | `reeve/flash` | `free-first` | scout, librarian | free-first, then paid fallback |
 | `reeve/multimodal` | `vision` | looker | image/PDF via files on disk; also the image route |
+
+`foreman` is the visible primary orchestrator; it follows the session's model
+selection (top-level default `reeve/standard`).
 
 `looker` is a hidden, read-only subagent for images/PDFs **on disk**. Pasted
 images are handled by GATE directly (see below).
@@ -107,12 +110,11 @@ Default chains (editable in the panel; config at
 - `standard`: zhipu glm-5.3-flash → lmuai glm-5.3-flash → free → deepseek
 - `reasoning`: zhipu glm-5.3 → deepseek → lmuai glm-5.3-flash → free
 - `free-first`: free → zhipu glm-5.3-flash → lmuai → deepseek
-- `manual`: zhipu glm-5.3-flash (single target; failure is terminal)
 - `vision`: zhipu glm-5.3-flash → lmuai → free → deepseek
 
 ## Images
 
-All five tiers declare image input so the engine does not strip attachments
+All four tiers declare image input so the engine does not strip attachments
 before GATE sees them. When a request to `reasoning` contains an image, GATE
 routes **that request only** to the `vision` chain; the session model and
 composer selection do not change. Text requests to `reeve/pro` still use
@@ -148,6 +150,12 @@ Bifrost and 9router are retired; free routing is implemented natively.
 
 - Remove any per-agent `model` overrides; the plugin owns the agent definitions.
 - `reeve/coding` no longer exists — use `reeve/standard`.
+- 0.2.0 removed the `reeve/manual` tier and its chain. Use `reeve/standard` as
+  the default and pick a model directly in the composer when you want a specific
+  one. Remove the `manual` chain, `agents.foreman`, and the
+  `chain_for_model["reeve/manual"]` entry from your `fallback.jsonc`, and change
+  any `"model": "reeve/manual"` line to `reeve/standard`. The plugin logs a
+  warning when it still sees a stale manual registration.
 - Remove the old `free.image_models` static list; image filtering is dynamic.
 - Bifrost/9router config, binaries, and autostart entries are obsolete; delete them.
 - A top-level `model` line is still required.

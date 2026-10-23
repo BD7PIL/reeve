@@ -3,6 +3,35 @@
 Newest first. Versions follow the plugin package (`plugin/package.json`); the
 panel extension has its own tags (`reeve-<version>`).
 
+## 0.2.0 — 2026-10-23
+
+**Breaking: the `reeve/manual` tier is removed.** The composer's model picker
+already selects any model per session, so a fixed single-target tier added
+nothing: it pinned one model (zhipu glm-5.3-flash) with no fallback and turned
+any provider failure into a bare 502. Four tiers remain — `reeve/flash`,
+`reeve/standard`, `reeve/pro`, `reeve/multimodal`. The top-level default is now
+`reeve/standard`; `foreman` no longer pins a model and follows the session
+selection; the bundled config drops the `manual` chain, `agents.foreman`, and
+the `chain_for_model["reeve/manual"]` entry. The plugin logs a warning when it
+still sees a stale manual registration. Migrate: change
+`"model": "reeve/manual"` to `reeve/standard` and remove the manual entries
+from your `fallback.jsonc`.
+
+**Tier context limits are real now.** All tiers were hardcoded to
+200k context / 32k output while every paid chain candidate (GLM-5.3(-flash),
+DeepSeek V4 Flash, LMUAI GLM) is 1M context; the picker showed 200k for a tier
+whose direct-connect model shows 1M, triggering compaction far too early.
+Tiers now declare 1,000,000 / 131,072 — the minimum across paid candidates
+(the dynamic free pool does not participate in static limits).
+
+Panel extension 0.1.7 (same release): full redesign to OpenChamber's settings
+language — Chinese labels with raw IDs as secondary text, chain cards, a
+tier-mapping editor for the effective `chain_for_model` (replacing the
+non-functional `agent → chain` section), advanced fields folded away, a
+diagnostics disclosure, and save-fidelity fixes (unknown policy/chain keys are
+preserved, only changed sections are rewritten, `chain_for_model` is compared
+on apply, chain deletion refuses to silently drop tier mappings).
+
 ## 0.1.15 — 2026-10-23
 
 **Open-source release readiness: documentation, CI reliability, and release notes.**

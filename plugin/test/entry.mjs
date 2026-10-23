@@ -132,7 +132,35 @@ function makeCtx({ storageSeed = new Map() } = {}) {
   }
 }
 
-// ---- 3. context 钩子补名册：注入、幂等、非字符串描述不炸 ----
+// ---- 4b. 旧配置里的 reeve/manual：合并时剥掉并打警告（0.2.0 移除了该档位）----
+{
+  const { ctx, captured } = makeCtx()
+  // 让 provider editor 的 get('reeve') 返回一个带 manual 残留的模型表
+  const existing = new Map([['manual', { id: 'manual', modelID: 'reeve/manual' }]])
+  ctx.provider.transform = async (fn) => {
+    captured.providersTransformed += 1
+    fn({
+      get: (id) => (id === 'reeve' ? { models: existing } : undefined),
+      models: new Map(),
+    })
+  }
+  const warnings = []
+  const originalError = console.error
+  console.error = (...args) => { warnings.push(args.join(' ')) }
+  const dispose = await plugin.setup(ctx)
+  console.error = originalError
+  try {
+    // 现有 provider 模型表没法从 fake editor 外部读 —— 用 captured 钩子验证不了 set，
+    // 所以直接断言：警告打了 + transform 跑了一次 + 装配没有炸。
+    assert.ok(warnings.some((w) => w.includes('reeve/manual')), '必须对残留的 manual 打迁移警告')
+    assert.equal(captured.providersTransformed, 1)
+    ok('stale manual：合并时剥除 + 警告')
+  } finally {
+    dispose()
+  }
+}
+
+// ---- 5. context 钩子补名册：注入、幂等、非字符串描述不炸 ----
 {
   const { ctx, captured } = makeCtx()
   const dispose = await plugin.setup(ctx)

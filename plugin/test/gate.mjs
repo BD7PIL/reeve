@@ -269,22 +269,22 @@ const postJson = (gate, path, body) =>
   ok('图片检测：OpenAI/Anthropic/Gemini；reasoning→vision')
 }
 
-// ---- 1c. manual 单目标：只计划一次，不借助 default_chain/免费 ---- 
+// ---- 1c. 单目标链：只计划一次，不借助 default_chain/免费 ----
 {
   const sessions = createSessionStore({ now: () => 0, policy: {} })
   const config = cfg({
     providers: { p: { base_url: 'http://x.test', key: 'none' } },
-    chains: { manual: { targets: ['p/m'] } },
-    default_chain: 'manual',
+    chains: { solo: { targets: ['p/m'] } },
+    default_chain: 'solo',
     policy: { max_fallback_attempts: 6 },
   })
   config.env = {}
   config.auth = {}
-  const route = routeFor({ model: 'manual', sessionID: null }, { config, sessions })
+  const route = routeFor({ model: 'solo', sessionID: null }, { config, sessions })
   const plan = planAttempts(route, { config, sessions, sessionID: null })
-  assert.equal(plan.ordered.length, 1, 'manual 只有 1 个候选')
-  assert.equal(plan.chainName, 'manual')
-  ok('manual：单目标只计划一次（无自动回退）')
+  assert.equal(plan.ordered.length, 1, '单目标链只有 1 个候选')
+  assert.equal(plan.chainName, 'solo')
+  ok('单目标链：只计划一次（无自动回退）')
 }
 
 // ---- 2. 尝试计划：静态过滤、上限、冷却、多键 ----

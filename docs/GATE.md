@@ -1,9 +1,10 @@
-# GATE —— reeve 的代理层（0.1.13：五档位 + 图片路由）
+# GATE —— reeve 的代理层（0.2.0：四档位 + 图片路由）
 
-> 状态（2026-10-22）：**0.1.13 交付** —— 五档位 `reeve/flash|standard|pro|manual|multimodal`，
-> 链名 `reasoning` / `standard` / `free-first` / `manual` / `vision`；文本档位收到图片时由 GATE
+> 状态（2026-10-23）：**0.2.0 交付** —— 四档位 `reeve/flash|standard|pro|multimodal`，
+> 链名 `reasoning` / `standard` / `free-first` / `vision`；文本档位收到图片时由 GATE
 > 只把这一次请求改走 `vision`（会话模型/composer 不动）；免费池只保留 image-capable 模型。
-> 0.1.12 及以前见 `docs/GATE-ROLLBACK.md`；免费车道语义：`docs/FREE-LANE.md`。
+> **0.2.0 移除了 `reeve/manual` 单目标档位**（composer 可直接选模型；顶层默认 `reeve/standard`）。
+> 0.1.x 见 `docs/GATE-ROLLBACK.md`；免费车道语义：`docs/FREE-LANE.md`。
 
 ## 1. 交付物（本次）
 
@@ -29,7 +30,7 @@
 - 路由：`provider/model` 写了前缀却没人认识 → **404**；裸模型名才走 `default_chain`；agent 链与显式换模型的优先级见 `lanes.js`。
 - **图片路由**：`hasImage(body)` 检测 OpenAI `image_url` / Anthropic `image` / Gemini `inlineData`；
   `IMAGE_CHAINS = { reasoning: 'vision' }`。文本档位收到图片时只把本次请求改走 `vision`，会话模型不变。
-  standard/manual/flash 的普通链目标本身都是 image-capable，不需要改道。GATE 关闭时图片会按原模型能力被剥。
+  standard/flash 的普通链目标本身都是 image-capable，不需要改道。GATE 关闭时图片会按原模型能力被剥。
 - **免费车道**：链里 `@free` 在请求时展开成当前可发现、未冷却、有键的候选；免费最多占
   `max_fallback_attempts - 1` 跳；`free.require_image=true` 时按 `free.modality_url`（默认
   `https://models.dev/api.json`）的 `modalities.input` 动态过滤，只保留 image-capable 模型
@@ -48,20 +49,21 @@
 | --- | --- | --- | --- |
 | `reeve/pro` | `reasoning` | planner / advisor / critic | 强推理；glm-5.3 打头；图片请求改道 vision |
 | `reeve/standard` | `standard` | executor / reviewer | 通用中型；glm-5.3-flash → lmuai → @free → deepseek |
-| `reeve/manual` | `manual` | foreman | 单目标 glm-5.3-flash，无 fallback；失败 502，手动换 |
 | `reeve/flash` | `free-first` | scout / librarian | `@free`（只 image 模型）→ 中型/中转/官方 |
 | `reeve/multimodal` | `vision` | looker | 视觉链；GATE 图片改道与 looker 子代理共用 |
 
 `standard` 是成本优先（2 付费 + 3 免费 + deepseek 兜底）；`reasoning` 是可靠性优先
-（3 付费 + 3 免费）；`manual` 只有 1 个目标。引擎配置里**不要再覆盖 `agents.model`**；
+（3 付费 + 3 免费）。foreman 是可见的主编排 agent，**不钉模型**，跟随会话选择
+（顶层默认 `reeve/standard`）。0.2.0 删掉了 `reeve/manual` 单目标档位：要指定模型就在
+composer 里直接选（直连模型绕过 GATE，reeve/* 走链）。引擎配置里**不要再覆盖 `agents.model`**；
 删掉覆盖后插件会注册上表。GATE 的 `agents` 段（session→agent 桥）目前没有生产调用方，
 实际路由按请求的档位模型走 `chain_for_model`；改 `fallback.jsonc` 的 `agents` 段不会影响当前请求。
 `looker` 只能读磁盘路径；粘贴的内联图片由 GATE 图片路由直接交给 vision 链，不经过子代理。
 
 ## 3. 验收
 
-- 离线：`plugin/test/gate.mjs` 29 项、`plugin/test/free.mjs` 18 项；插件全量（unit 79 / reconcile 30 /
-  snapshot 9 / stats 9 / entry 4 / wiring 6 / runtime 6 / guard 2）。
+- 离线：`plugin/test/gate.mjs` 29 项、`plugin/test/free.mjs` 18 项；插件全量（unit 111 / reconcile 30 /
+  snapshot 9 / stats 11 / entry 5 / wiring 6 / runtime 6 / guard 2）。
 - 覆盖率门槛：global 95/79/95 + `src/index.js` 97/67/93 + `src/gate/` 97/84/96（只升不降）。
 - 真机：`scripts/accept-gate.sh` ①–⑨（①/② 免费车道、④ 关闭免费→付费、④b 死免费候选→付费、
   ⑤ 粘性、⑥ 冷却、⑦ 热更、⑧ 付费直连、⑨ Bifrost=0）；`scripts/accept-lifecycle.mjs`（DELETE 驱逐）+

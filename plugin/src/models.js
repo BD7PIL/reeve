@@ -1,4 +1,4 @@
-// 五个档位的**模型注册** —— 让 opencode.jsonc 里不再需要一份 models 映射。
+// 档位的**模型注册** —— 让 opencode.jsonc 里不再需要一份 models 映射。
 //
 // 为什么能做：v2 的插件 API 有 `ctx.provider.transform(editor => editor.models.set(id, models))`
 //（`packages/plugin/src/promise/provider.ts` @v2.0.27），`Model.Info` 也能从最小形状造出来。
@@ -17,18 +17,25 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 
 /**
- * 五个档位。全部声明能吃图：引擎才不会在发给 GATE 之前剥掉附件。
+ * 四个档位。全部声明能吃图：引擎才不会在发给 GATE 之前剥掉附件。
  * 真正“这档能不能收图”由 GATE 的图片路由决定：
  *   reasoning 的 glm-5.3 是纯文本 → 图片请求改走 vision；
  *   其余档位的链目标本身就是 image-capable。
+ *
+ * limit 是各档**付费候选的最小值**（GLM-5.3(-flash) / DeepSeek V4 Flash / LMUAI 均
+ * 1M 上下文；输出最小 131,072）。免费池是动态的，不参与静态 limit——窄上下文的
+ * 免费模型由引擎在请求时自行截断。0.1.x 曾写死 200k/32k，严重低估（同款 GLM 直连
+ * 显示 1M），会提前触发压缩——0.2.0 修正。
  */
 export const REEVE_TIERS = Object.freeze([
   { id: 'flash', modelID: 'reeve/flash', name: 'REEVE flash（免费优先链）', images: true },
   { id: 'standard', modelID: 'reeve/standard', name: 'REEVE standard（通用中型链）', images: true },
   { id: 'pro', modelID: 'reeve/pro', name: 'REEVE pro（强推理链）', images: true },
-  { id: 'manual', modelID: 'reeve/manual', name: 'REEVE manual（单模型，无回退）', images: true },
   { id: 'multimodal', modelID: 'reeve/multimodal', name: 'REEVE multimodal（视觉链）', images: true },
 ])
+
+/** 四档共享的 limit（付费候选最小值；见 REEVE_TIERS 注释）。 */
+export const TIER_LIMIT = Object.freeze({ context: 1_000_000, output: 131_072 })
 
 /** 造一个最小的 `Model.Info`（照 `Model.Info.default()` 的形状，能力按档位给）。 */
 export function buildTierModel(tier, providerID = 'reeve') {
@@ -47,7 +54,7 @@ export function buildTierModel(tier, providerID = 'reeve') {
     cost: [],
     status: 'active',
     enabled: true,
-    limit: { context: 200_000, output: 32_000 },
+    limit: { ...TIER_LIMIT },
   }
 }
 

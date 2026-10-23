@@ -11,7 +11,7 @@ the plugin; Bifrost and 9router are retired.
 ## Requirements
 
 - Node.js >= 22
-- OpenCode v2 (tested 2.0.32)
+- OpenCode v2 (tested 2.0.32 and 2.1.3)
 - Provider credentials in `~/.local/share/opencode/auth.json`
 - Optional panel: OpenChamber >= 2.3.3, extension `reeve` from
   `https://github.com/BD7PIL/reeve#reeve` or the `reeve-latest` zip
@@ -22,18 +22,18 @@ In `~/.config/opencode/opencode.jsonc`:
 
 ```jsonc
 {
-  "model": "reeve/manual",
+  "model": "reeve/standard",
   "plugins": ["@bd7pil/reeve"]
 }
 ```
 
-The plugin registers five tiers and all agents. On first start it adds
+The plugin registers four tiers and all agents. On first start it adds
 `providers.reeve` pointing at GATE (`http://127.0.0.1:18080/v1`) if missing; the
 write is additive and backed up. If 8080 is occupied, pin the port explicitly:
 
 ```jsonc
 {
-  "model": "reeve/manual",
+  "model": "reeve/standard",
   "plugins": [
     { "package": "@bd7pil/reeve", "options": { "gate": { "enabled": true, "port": 18080 } } }
   ],
@@ -55,9 +55,12 @@ session can use the engine default and bypass GATE.
 |---|---|---|
 | `reeve/pro` | `reasoning` | planner, advisor, critic |
 | `reeve/standard` | `standard` | executor, reviewer |
-| `reeve/manual` | `manual` | foreman (single target, no fallback) |
 | `reeve/flash` | `free-first` | scout, librarian |
 | `reeve/multimodal` | `vision` | looker (hidden, read-only, files on disk) |
+
+`foreman` is the visible primary orchestrator; it follows the session's model
+selection. 0.2.0 removed the `reeve/manual` single-target tier — pick a model
+directly in the composer when you want a specific one.
 
 All tiers declare image input. A text-first `reasoning` request containing an
 image is routed to the `vision` chain for that request only; the session model

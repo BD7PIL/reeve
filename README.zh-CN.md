@@ -33,7 +33,7 @@ GATE 是插件里的纯 JS：**没有代理二进制、没有独立服务、没�
 ## 环境要求
 
 - Node.js **>= 22**
-- OpenCode **v2**（实测 2.0.32）
+- OpenCode **v2**（实测 2.0.32 与 2.1.3）
 - OpenChamber **>= 2.3.3**（面板；实测 2.5.0）
 - `~/.local/share/opencode/auth.json` 里至少一个 provider 凭据
 
@@ -45,23 +45,24 @@ GATE 是插件里的纯 JS：**没有代理二进制、没有独立服务、没�
 
 ```jsonc
 {
-  "model": "reeve/manual",
-  "plugins": ["@bd7pil/reeve@0.1.15"]
+  "model": "reeve/standard",
+  "plugins": ["@bd7pil/reeve@0.2.0"]
 }
 ```
 
 - **`model` 必需**。不写的话，裸 `opencode run` / 新 composer 会话可能用引擎默认模型，
-  静默绕过 GATE。`reeve/manual` 是 foreman 的单目标档位；想换默认档位可用
-  `reeve/standard` / `reeve/pro` / `reeve/flash`。
-- 插件自己注册五个档位和全部 agent，并在首次启动时补 `providers.reeve`
+  静默绕过 GATE。`reeve/standard` 是成本优先的默认；想换可用
+  `reeve/pro` / `reeve/flash` / `reeve/multimodal`。0.2.0 移除了 `reeve/manual`
+  单目标档位——要指定模型就在 composer 里直接选。
+- 插件自己注册四个档位和全部 agent，并在首次启动时补 `providers.reeve`
   （`http://127.0.0.1:18080/v1`）；只加不改、先备份、保留注释。
 - 默认 GATE 端口 **18080**。如果 8080 被占用，显式写：
 
 ```jsonc
 {
-  "model": "reeve/manual",
+  "model": "reeve/standard",
   "plugins": [
-    { "package": "@bd7pil/reeve@0.1.15", "options": { "gate": { "enabled": true, "port": 18080 } } }
+    { "package": "@bd7pil/reeve@0.2.0", "options": { "gate": { "enabled": true, "port": 18080 } } }
   ],
   "providers": {
     "reeve": {
@@ -87,9 +88,10 @@ Settings → Extensions，安装：
 |---|---|---|---|
 | `reeve/pro` | `reasoning` | planner / advisor / critic | 最强推理；文本优先 |
 | `reeve/standard` | `standard` | executor / reviewer | 通用中型，支持图片 |
-| `reeve/manual` | `manual` | foreman | 单目标，无自动回退 |
 | `reeve/flash` | `free-first` | scout / librarian | 免费优先，失败走付费 |
 | `reeve/multimodal` | `vision` | looker | 磁盘图片/PDF；也是图片改道链 |
+
+`foreman` 是唯一可见的主编排 agent，跟随会话选择的模型（顶层默认 `reeve/standard`）。
 
 `looker` 是 hidden、只读的子代理，只处理**磁盘路径**的图片/PDF；粘贴图片由 GATE 直接改道。
 
@@ -98,12 +100,11 @@ Settings → Extensions，安装：
 - `standard`：zhipu glm-5.3-flash → lmuai glm-5.3-flash → 免费 → deepseek
 - `reasoning`：zhipu glm-5.3 → deepseek → lmuai glm-5.3-flash → 免费
 - `free-first`：免费 → zhipu glm-5.3-flash → lmuai → deepseek
-- `manual`：zhipu glm-5.3-flash（单目标；失败即终止）
 - `vision`：zhipu glm-5.3-flash → lmuai → 免费 → deepseek
 
 ## 图片
 
-五个档位都声明 image，引擎不会在 GATE 看到附件前把它剥掉。`reasoning` 收到图片时，
+四个档位都声明 image，引擎不会在 GATE 看到附件前把它剥掉。`reasoning` 收到图片时，
 GATE 只把**这一次请求**改走 `vision`；会话模型和 composer 选择都不变，文本请求仍走 GLM-5.3。
 
 OpenCode v2 里粘贴图片没有文件路径（base64 存在会话库里）；纯文本模型只能看到错误文本，
@@ -131,6 +132,10 @@ Bifrost 和 9router 已退役，免费路由是 GATE 原生实现。
 
 - 删掉配置里的 per-agent `model` 覆盖；agent 定义由插件负责。
 - `reeve/coding` 已不存在，改用 `reeve/standard`。
+- 0.2.0 移除了 `reeve/manual` 档位和 manual 链。默认用 `reeve/standard`，要指定模型就在
+  composer 里直接选。删掉 `fallback.jsonc` 里的 `manual` 链、`agents.foreman`、
+  `chain_for_model["reeve/manual"]`，把 `"model": "reeve/manual"` 改成 `reeve/standard`；
+  配置没清干净时插件启动会打警告。
 - 删掉旧的 `free.image_models` 静态列表；图片过滤已改为动态。
 - Bifrost/9router 的配置、二进制、自启项都已过时，直接删。
 - 顶层 `model` 仍然必需。

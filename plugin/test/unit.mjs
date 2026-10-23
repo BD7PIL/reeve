@@ -12,7 +12,7 @@ import { decideStop, VERDICT } from '../src/terminal-gate.js'
 import { STATE, REASON, STOP_CONFIRMATION_GRACE_MS } from '../src/constants.js'
 import { SUBAGENT_ROSTER, ROSTER_MARKER, buildSubagentRoster, withRoster } from '../src/roster.js'
 import { readdirSync, readFileSync } from 'node:fs'
-import { resolveGateEndpoint } from '../src/models.js'
+import { REEVE_TIERS, TIER_LIMIT, resolveGateEndpoint } from '../src/models.js'
 
 let pass = 0
 let fail = 0
@@ -249,6 +249,36 @@ section('名册：subagent 工具描述补名 + 与 agents/*.md 不漂移')
   ok('gate 同时给 port 与 host', JSON.stringify(e({ gate: { port: 1, host: '0.0.0.0' }, proxy: { port: 2 }, endpoint: { port: 3 } })) === JSON.stringify({ port: 1, host: '0.0.0.0' }))
 }
 
+
+// ---- 档位与 GATE 兜底配置的自洽（0.2.0 起四档位；改名/删链在这里先红，别等真引擎 404）----
+{
+  const ids = REEVE_TIERS.map((t) => t.id)
+  section('档位 × 兜底配置 自洽')
+  ok('四个档位：flash/standard/pro/multimodal', JSON.stringify(ids) === JSON.stringify(['flash', 'standard', 'pro', 'multimodal']), `实际：${ids.join(',')}`)
+  ok('不再注册 manual 档位', !ids.includes('manual'))
+  for (const t of REEVE_TIERS) {
+    ok(`档位 ${t.id} 的 limit = 1M/131072（付费候选最小值）`, t && TIER_LIMIT.context === 1_000_000 && TIER_LIMIT.output === 131_072)
+    ok(`档位 ${t.id} 声明能吃图`, t.images === true)
+  }
+  const bundled = JSON.parse(readFileSync(new URL('../default-fallback.json', import.meta.url), 'utf8'))
+  const chainNames = Object.keys(bundled.chains ?? {})
+  for (const [model, chain] of Object.entries(bundled.chain_for_model ?? {})) {
+    if (model.startsWith('reeve/')) {
+      ok(`chain_for_model.${model} 是注册过的档位`, ids.includes(model.slice('reeve/'.length)))
+    }
+    ok(`chain_for_model.${model} 指向存在的链`, chainNames.includes(chain), `链 ${chain} 不在 chains`)
+  }
+  for (const [agent, chain] of Object.entries(bundled.agents ?? {})) {
+    ok(`agents.${agent} 指向存在的链`, chainNames.includes(chain), `链 ${chain} 不在 chains`)
+  }
+  ok(`default_chain（${bundled.default_chain}）存在`, chainNames.includes(bundled.default_chain))
+  const foreman = readFileSync(new URL('../agents/foreman.md', import.meta.url), 'utf8')
+  ok('foreman.md 不再钉 reeve/manual', !/^\s*model:\s*reeve\/manual\s*$/m.test(foreman))
+  const pinned = /^\s*model:\s*(\S+)\s*$/m.exec(foreman)
+  ok('foreman.md 的 model 钉死行已删（跟随会话选择）', pinned === null, pinned ? `仍有 ${pinned[1]}` : '')
+  const structural = JSON.stringify({ chains: bundled.chains, agents: bundled.agents, chain_for_model: bundled.chain_for_model, default_chain: bundled.default_chain })
+  ok('兜底配置结构里没有 manual 链或映射', !structural.includes('manual'))
+}
 
 // ---- 版本常量不许漂：PLUGIN_VERSION / provision.json 必须等于 package.json 的 version ----
 {

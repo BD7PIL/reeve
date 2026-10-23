@@ -43,7 +43,7 @@ free-first 是 3 免费 + 3 付费。面板的「免费尝试次数」下面会�
 
 免费车道挂在 `free-first` 和 `standard`/`vision` 的尾部，默认给 `reeve/flash`（scout /
 librarian）和 `reeve/standard`（executor / reviewer）用；`reeve/pro`（planner / advisor /
-critic）走 `reasoning` 付费强推理，`reeve/manual`（foreman）单目标无 fallback。不要让所有
+critic）走 `reasoning` 付费强推理。不要让所有
 agent 都落到 `@free`，免费池里多是 flash 档，规划/评审质量会掉；也不要把所有 agent 都钉到
 最强推理，成本和延迟都没必要。
 

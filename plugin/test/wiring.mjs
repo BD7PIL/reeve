@@ -113,7 +113,7 @@ const CONFIG = {
     assert.ok(refs.includes('reeve/flash'), '候选含引擎档位模型')
     assert.ok(refs.includes('reeve/standard'), '候选含引擎档位模型（standard）')
     assert.ok(refs.includes('reeve/pro'), '候选含引擎档位模型（pro）')
-    assert.ok(refs.includes('reeve/manual'), '候选含引擎档位模型（manual）')
+    assert.ok(!refs.includes('reeve/manual'), '0.2.0 起 manual 档位不再注册')
     ok('gate 开：真起服务 / 快照 gate 段 / 统计读台账（两跳）/ 模型候选（含链候选）')
   } finally {
     dispose()
