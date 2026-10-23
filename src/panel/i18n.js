@@ -47,6 +47,7 @@ const EN = {
   'footer.hint.notFound': 'Run a model call; the plugin writes the snapshot',
   'footer.hint.retry': 'Refresh to retry',
   'panel.startFailed': 'Panel failed to start: {error}',
+  'refresh.error': 'Refresh failed: {error}',
 
   // ---- 保存状态 ----
   'save.saved': 'Saved',
@@ -292,6 +293,7 @@ const ZH = {
   'footer.hint.notFound': '发起一次模型调用；插件会写入快照',
   'footer.hint.retry': '刷新重试',
   'panel.startFailed': '面板启动失败：{error}',
+  'refresh.error': '刷新失败：{error}',
 
   'save.saved': '已保存',
   'save.unsaved': '未保存',
