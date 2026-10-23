@@ -121,7 +121,15 @@ jobs:
             on && /^## / { exit }
             on { print }
           ' CHANGELOG.md > /tmp/release-notes.md
-          test -s /tmp/release-notes.md
+          # CHANGELOG 缺该版本小节时不再让发布链红掉：用占位 notes + warning（真修复是提交里带小节）
+          if [ ! -s /tmp/release-notes.md ]; then
+            echo "::warning::CHANGELOG.md has no '## $V' section — release notes fell back to a link"
+            {
+              echo "reeve $V"
+              echo
+              echo "See [CHANGELOG.md](https://github.com/$GITHUB_REPOSITORY/blob/main/CHANGELOG.md)."
+            } > /tmp/release-notes.md
+          fi
           if gh release view "v$V" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             echo "GitHub Release v$V 已存在，跳过"
           else
