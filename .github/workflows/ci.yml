@@ -131,6 +131,7 @@ jobs:
             extensions/reeve/preview/audit/*.png
             extensions/reeve/preview/audit/report.json
           if-no-files-found: error
+          retention-days: 7
 
   config:
     name: 引擎配置样板
