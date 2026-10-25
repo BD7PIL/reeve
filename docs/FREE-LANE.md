@@ -29,6 +29,7 @@
 ```jsonc
 "standard": { "targets": ["zhipuai-coding-plan/glm-5.3-flash", "lmuai/glm-5.3-flash", "@free", "deepseek/deepseek-flash"] }
 "free-first": { "targets": ["@free", "zhipuai-coding-plan/glm-5.3-flash", "lmuai/glm-5.3-flash", "deepseek/deepseek-flash"] }
+"free-only": { "targets": ["@free"] }   // reeve/free 免费池专用链（0.2.5 起）：池空/全败 502，永不落付费
 ```
 
 **预算规则（硬）**：`@free` 最多占 `max_fallback_attempts - 1` 跳。
@@ -43,7 +44,8 @@ free-first 是 3 免费 + 3 付费。面板的「免费尝试次数」下面会�
 
 免费模型池挂在 `free-first` 和 `standard`/`vision` 的尾部，默认给 `reeve/flash`（scout /
 librarian）和 `reeve/standard`（executor / reviewer）用；`reeve/pro`（planner / advisor /
-critic）走 `reasoning` 付费强推理。不要让所有
+critic）走 `reasoning` 付费强推理。`reeve/free`（0.2.5 起）是只有 `[@free]` 的专用档：把
+"绝不花钱"做成档位语义，代价是池空/全败直接 502。不要让所有
 agent 都落到 `@free`，免费池里多是 flash 档，规划/评审质量会掉；也不要把所有 agent 都钉到
 最强推理，成本和延迟都没必要。
 

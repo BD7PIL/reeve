@@ -3,6 +3,28 @@
 Newest first. Versions follow the plugin package (`plugin/package.json`); the
 panel extension has its own tags (`reeve-<version>`).
 
+## 0.2.5 — 2026-10-25
+
+**New tier `reeve/free`: the free-pool-only chain.** `default-fallback.json`
+gains a `free-only` chain whose only target is `@free`, and `chain_for_model`
+maps the new fifth tier `reeve/free` to it. The guarantee is structural: the
+chain has no paid candidates, so when the free pool is disabled, empty, or every
+candidate fails, the request ends in a 502 — it never falls through to a paid
+target. Three new free-pool tests pin the success path (free candidates only,
+zero paid upstream calls), the exhausted path (502, zero paid calls), and the
+pool-disabled path (empty plan 502 with no upstream request). A unit test now
+pins the bundled mapping to exactly the five tier keys.
+
+**Panel (extension 0.1.15).** The `chain_for_model` editor shows a row for
+`reeve/free`; the `free-only` chain card renders like any chain (its `@free`
+row shows「免费模型池」). New audit item 45 pins the dedicated-chain card.
+
+**Upgrade note.** The user-level `fallback.jsonc` replaces the bundled default
+ wholesale (no per-key merge). Machines that already have one must add the two
+keys by hand — `chains["free-only"] = { "targets": ["@free"] }` and
+`chain_for_model["reeve/free"] = "free-only"` — or selecting `reeve/free`
+returns 404.
+
 ## 0.2.4 — 2026-10-24
 
 **Tier models expose reasoning-effort variants.** Every reeve tier

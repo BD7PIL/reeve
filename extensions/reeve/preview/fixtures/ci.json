@@ -44,6 +44,7 @@
         "reasoning",
         "standard",
         "free-first",
+        "free-only",
         "vision"
       ],
       "chain_targets": {
@@ -64,6 +65,9 @@
           "zhipuai-coding-plan/glm-5.3-flash",
           "lmuai/glm-5.3-flash",
           "deepseek/deepseek-flash"
+        ],
+        "free-only": [
+          "@free"
         ],
         "vision": [
           "zhipuai-coding-plan/glm-5.3-flash",
@@ -98,7 +102,8 @@
         "reeve/flash": "free-first",
         "reeve/standard": "standard",
         "reeve/pro": "reasoning",
-        "reeve/multimodal": "vision"
+        "reeve/multimodal": "vision",
+        "reeve/free": "free-only"
       },
       "default_chain": "standard",
       "problems": [],
@@ -185,6 +190,12 @@
         },
         {
           "ref": "reeve/multimodal",
+          "sources": [
+            "engine"
+          ]
+        },
+        {
+          "ref": "reeve/free",
           "sources": [
             "engine"
           ]
@@ -570,6 +581,11 @@
           "deepseek/deepseek-flash"
         ]
       },
+      "free-only": {
+        "targets": [
+          "@free"
+        ]
+      },
       "vision": {
         "targets": [
           "zhipuai-coding-plan/glm-5.3-flash",
@@ -592,7 +608,8 @@
       "reeve/flash": "free-first",
       "reeve/standard": "standard",
       "reeve/pro": "reasoning",
-      "reeve/multimodal": "vision"
+      "reeve/multimodal": "vision",
+      "reeve/free": "free-only"
     },
     "default_chain": "standard",
     "free": {

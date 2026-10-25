@@ -17,10 +17,13 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 
 /**
- * 四个档位。全部声明能吃图：引擎才不会在发给 GATE 之前剥掉附件。
+ * 五个档位。全部声明能吃图：引擎才不会在发给 GATE 之前剥掉附件。
  * 真正“这档能不能收图”由 GATE 的图片路由决定：
  *   reasoning 的 glm-5.3 是纯文本 → 图片请求改走 vision；
- *   其余档位的链目标本身就是 image-capable。
+ *   其余档位的链目标本身就是 image-capable（reeve/free 的免费池自带 require_image 过滤）。
+ *
+ * reeve/free 是免费池专用链（free-only = [@free]）：候选只有免费模型池，池空或
+ * 全败即 502，永不落到付费——这是档位语义，不是故障。
  *
  * limit 是各档**付费候选的最小值**（GLM-5.3(-flash) / DeepSeek V4 Flash / LMUAI 均
  * 1M 上下文；输出最小 131,072）。免费池是动态的，不参与静态 limit——窄上下文的
@@ -32,12 +35,13 @@ export const REEVE_TIERS = Object.freeze([
   { id: 'standard', modelID: 'reeve/standard', name: 'REEVE standard', images: true },
   { id: 'pro', modelID: 'reeve/pro', name: 'REEVE pro', images: true },
   { id: 'multimodal', modelID: 'reeve/multimodal', name: 'REEVE multimodal', images: true },
+  { id: 'free', modelID: 'reeve/free', name: 'REEVE free', images: true },
 ])
 
-/** 四档共享的 limit（付费候选最小值；见 REEVE_TIERS 注释）。 */
+/** 五档共享的 limit（付费候选最小值；见 REEVE_TIERS 注释）。 */
 export const TIER_LIMIT = Object.freeze({ context: 1_000_000, output: 131_072 })
 
-/** 四档共享的推理强度变体（id = reasoningEffort，形状与 opencode.jsonc 的 v2 variants 一致）。
+/** 五档共享的推理强度变体（id = reasoningEffort，形状与 opencode.jsonc 的 v2 variants 一致）。
  *  引擎把选中的变体翻译成请求体里的 `reasoning_effort`，GATE 只换 model、其余透传；
  *  上游不认识某个档位时由链换下一候选。每次 buildTierModel 生成新数组，不共享可变引用。 */
 export const TIER_VARIANTS = Object.freeze(['low', 'medium', 'high', 'xhigh', 'max'])

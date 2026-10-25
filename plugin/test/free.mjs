@@ -4,6 +4,7 @@
 //   · @free 展开：prefer → 发现序、deny、预算（maxAttempts - 1）、无键跳过
 //   · 全局冷却：连续失败到阈值 → 跳过；全部冷却 → 链只剩付费
 //   · 台账 auto 标记 / /gate/free 运行态 / 热更 / 并发一致
+//   · reeve/free 免费池专用链（free-only = [@free]）：成功只打免费 / 全败 502 不碰付费 / 池关空 plan
 //
 // 纪律：不出网（发现源全部 stub；任何非环回、非发现源的 URL 直接判红）、假时钟（不 sleep 等冷却）。
 //   node plugin/test/free.mjs
@@ -568,6 +569,67 @@ const OPENROUTER_FREE = ['vendor/a:free', 'vendor/b', 'vendor/c:free']
   const out = await lane.expand([{ free: true }, { provider: 'p', model: 'm' }])
   assert.deepEqual(out.targets, [{ provider: 'p', model: 'm' }])
   ok("过滤：all 全收 / 未知 filter 回落 / 默认 getAuth 安全")
+}
+
+// ---- 16. reeve/free 免费池专用链（free-only = [@free]，0.2.5）----
+{
+  // 成功路径：只打免费候选，付费模型零调用
+  const h = await harness({
+    discovery: { opencode: OPCODE_FREE },
+    config: { chains: { 'free-only': { targets: ['@free'] } }, chain_for_model: { 'reeve/free': 'free-only' }, default_chain: 'free-only' },
+  })
+  try {
+    const res = await post(h.gate, { model: 'reeve/free', stream: true, messages: [] })
+    assert.equal(res.status, 200)
+    assert.equal(res.fallback, '1/opencode/mimo-v2.6-flash-free', '专用链首跳就是免费候选')
+    const rows = await h.rows()
+    assert.ok(rows.length >= 1 && rows.every((r) => r.chain === 'free-only'), `台账链名 free-only（实际 ${JSON.stringify(rows.map((r) => r.chain))}）`)
+    assert.ok(rows.every((r) => r.provider === 'opencode' && r.auto === true), '台账全是免费自动候选')
+    assert.equal(h.upstream.calls.filter((c) => c.model === 'paid-ok').length, 0, '付费模型零调用（专用链语义）')
+    ok('free-only：成功路径只打免费候选，付费零调用')
+  } finally {
+    await h.close()
+  }
+}
+{
+  // 全败：502 收场，同样不碰付费
+  const h = await harness({
+    discovery: { opencode: ['fail-free', 'also-fail-free'] },
+    free: { max: 2 },
+    config: { chains: { 'free-only': { targets: ['@free'] } }, chain_for_model: { 'reeve/free': 'free-only' }, default_chain: 'free-only' },
+  })
+  try {
+    const res = await post(h.gate, { model: 'reeve/free', stream: true, messages: [] })
+    assert.equal(res.status, 502, '免费候选全败 → 502（不落到付费）')
+    const body = JSON.parse(res.text)
+    assert.equal(body.error.attempts.length, 2, '两个免费候选都试过')
+    assert.equal(h.upstream.calls.filter((c) => c.model === 'paid-ok').length, 0, '付费模型零调用')
+    const rows = await h.rows()
+    assert.ok(rows.length >= 1 && rows.every((r) => r.status === 'error' && r.auto === true), '台账全是免费失败行')
+    ok('free-only：免费全败 502，永不碰付费')
+  } finally {
+    await h.close()
+  }
+}
+{
+  // 池关：空 plan 直接 502，连上游都不碰
+  const h = await harness({
+    discovery: { opencode: OPCODE_FREE },
+    free: { enabled: false },
+    config: { chains: { 'free-only': { targets: ['@free'] } }, chain_for_model: { 'reeve/free': 'free-only' }, default_chain: 'free-only' },
+  })
+  try {
+    const res = await post(h.gate, { model: 'reeve/free', stream: true, messages: [] })
+    assert.equal(res.status, 502)
+    const body = JSON.parse(res.text)
+    assert.ok(body.error.message.includes('没有可用候选'), `502 体说没有可用候选（实际：${body.error.message}）`)
+    assert.deepEqual(body.error.skipped, [], '池关闭时 @free 被 expand 整个摘掉，不留在 plan 里')
+    assert.equal(h.upstream.calls.length, 0, '空 plan：一个上游请求都没有')
+    assert.equal((await h.rows()).length, 0, '空 plan：没有台账行')
+    ok('free-only：免费池关闭 → 空 plan 502，零上游请求')
+  } finally {
+    await h.close()
+  }
 }
 
 console.log(`\n免费模型池测试：${passed} 项全过`)

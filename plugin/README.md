@@ -27,7 +27,7 @@ In `~/.config/opencode/opencode.jsonc`:
 }
 ```
 
-The plugin registers four tiers and all agents. On first start it adds
+The plugin registers five tiers and all agents. On first start it adds
 `providers.reeve` pointing at GATE (`http://127.0.0.1:18080/v1`) if missing; the
 write is additive and backed up. If 8080 is occupied, pin the port explicitly:
 

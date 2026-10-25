@@ -56,9 +56,10 @@ Add the plugin to `~/.config/opencode/opencode.jsonc` (or `opencode.json`):
 - `model` is required. Without it, a bare `opencode run` / a fresh composer
   session can use the engine's default model and silently bypass GATE.
   `reeve/standard` is the cost-first default; choose `reeve/pro`, `reeve/flash`,
-  or `reeve/multimodal` if you want a different one. 0.2.0 removed the
+  `reeve/multimodal`, or `reeve/free` (free-pool-only, never spends) if you want a
+  different one. 0.2.0 removed the
   `reeve/manual` single-target tier — pick a model directly in the composer instead.
-- The plugin registers four tiers and all agents itself, and on first start adds
+- The plugin registers five tiers and all agents itself, and on first start adds
   `providers.reeve` (`http://127.0.0.1:18080/v1`) to the config if it is missing.
   The write is additive, backed up, and comment-preserving.
 - GATE listens on **18080** by default when the plugin starts it. If 8080 is
@@ -97,6 +98,7 @@ snapshot and GATE config; it never starts sessions or prompts.
 | `reeve/standard` | `standard` | executor, reviewer | general-purpose mid tier, image-capable |
 | `reeve/flash` | `free-first` | scout, librarian | free-first, then paid fallback |
 | `reeve/multimodal` | `vision` | looker | image/PDF via files on disk; also the image route |
+| `reeve/free` | `free-only` | — (pin agents yourself) | free pool only; 502 when the pool is out, never paid |
 
 `foreman` is the visible primary orchestrator; it follows the session's model
 selection (top-level default `reeve/standard`).
@@ -110,11 +112,13 @@ Default chains (editable in the panel; config at
 - `standard`: zhipu glm-5.3-flash → lmuai glm-5.3-flash → free → deepseek
 - `reasoning`: zhipu glm-5.3 → deepseek → lmuai glm-5.3-flash → free
 - `free-first`: free → zhipu glm-5.3-flash → lmuai → deepseek
+- `free-only`: free pool only (`[@free]`) — pool out or all candidates failing
+  means a 502; it never falls through to a paid target
 - `vision`: zhipu glm-5.3-flash → lmuai → free → deepseek
 
 ## Images
 
-All four tiers declare image input so the engine does not strip attachments
+All five tiers declare image input so the engine does not strip attachments
 before GATE sees them. When a request to `reasoning` contains an image, GATE
 routes **that request only** to the `vision` chain; the session model and
 composer selection do not change. Text requests to `reeve/pro` still use

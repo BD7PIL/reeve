@@ -1,8 +1,10 @@
-# GATE —— reeve 的代理层（0.2.0：四档位 + 图片路由）
+# GATE —— reeve 的代理层（五档位 + 图片路由）
 
-> 状态（2026-10-23）：**0.2.0 交付** —— 四档位 `reeve/flash|standard|pro|multimodal`，
-> 链名 `reasoning` / `standard` / `free-first` / `vision`；文本档位收到图片时由 GATE
+> 状态（2026-10-25）：**0.2.5 交付** —— 五档位 `reeve/flash|standard|pro|multimodal|free`，
+> 链名 `reasoning` / `standard` / `free-first` / `free-only` / `vision`；文本档位收到图片时由 GATE
 > 只把这一次请求改走 `vision`（会话模型/composer 不动）；免费池只保留 image-capable 模型。
+> **0.2.5 新增 `reeve/free` 免费池专用链**（`free-only = [@free]`：候选只有免费模型池，
+> 池空或全败即 502，永不落到付费）。
 > **0.2.0 移除了 `reeve/manual` 单目标档位**（composer 可直接选模型；顶层默认 `reeve/standard`）。
 > 0.1.x 见 `docs/GATE-ROLLBACK.md`；免费模型池语义：`docs/FREE-LANE.md`。
 
@@ -36,6 +38,8 @@
   `https://models.dev/api.json`）的 `modalities.input` 动态过滤，只保留 image-capable 模型
   （纯文本免费模型不进池；元数据拉不到就用上一份好数据，从未拿到则直接付费）；全部冷却/不可用 → 直接付费；
   失败按模型全局冷却（阈值/时长可配）；动态链不使用按索引的粘性指针。详见 `docs/FREE-LANE.md`。
+  **`reeve/free` 免费池专用链**（0.2.5 起）：`free-only = [@free]` 单目标链——链里没有付费候选，
+  免费池关闭/池空/全败都是 502，**永远不会为了成功而落到付费**；这是档位语义，不是故障。
 - 通道：`passthrough`（头逐字转发，含 UA 与 `x-opencode-session*`）｜`native`（最小头集）。
 - 密钥：`key:'none'` / `env.X` / 公开字面量 / `auth` 列表（auth.json，按序取第一个有键的）；
   多键轮转游标在服务侧。**台账/目录/响应体/`/gate/free` 里只有键名，没有键值**。
@@ -51,6 +55,7 @@
 | `reeve/standard` | `standard` | executor / reviewer | 通用中型；glm-5.3-flash → lmuai → @free → deepseek |
 | `reeve/flash` | `free-first` | scout / librarian | `@free`（只 image 模型）→ 中型/中转/官方 |
 | `reeve/multimodal` | `vision` | looker | 视觉链；GATE 图片改道与 looker 子代理共用 |
+| `reeve/free` | `free-only` | —（要钉自己改 agent frontmatter） | 免费池专用：只有 `[@free]`；池空/全败 502，永不落付费 |
 
 `standard` 是成本优先（2 付费 + 3 免费 + deepseek 兜底）；`reasoning` 是可靠性优先
 （3 付费 + 3 免费）。foreman 是可见的主编排 agent，**不钉模型**，跟随会话选择
@@ -62,7 +67,7 @@ composer 里直接选（直连模型绕过 GATE，reeve/* 走链）。引擎配�
 
 ## 3. 验收
 
-- 离线：`plugin/test/gate.mjs` 29 项、`plugin/test/free.mjs` 18 项；插件全量（unit 111 / reconcile 30 /
+- 离线：`plugin/test/gate.mjs` 29 项、`plugin/test/free.mjs` 21 项（含 free-only 专用链 3 项）；插件全量（unit 121 / reconcile 30 /
   snapshot 9 / stats 11 / entry 5 / wiring 6 / runtime 6 / guard 2）。
 - 覆盖率门槛：global 95/79/95 + `src/index.js` 97/67/93 + `src/gate/` 97/84/96（只升不降）。
 - 真机：`scripts/accept-gate.sh` ①–⑨（①/② 免费模型池、④ 关闭免费→付费、④b 死免费候选→付费、

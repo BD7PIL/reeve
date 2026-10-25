@@ -250,11 +250,11 @@ section('名册：subagent 工具描述补名 + 与 agents/*.md 不漂移')
 }
 
 
-// ---- 档位与 GATE 兜底配置的自洽（0.2.0 起四档位；改名/删链在这里先红，别等真引擎 404）----
+// ---- 档位与 GATE 兜底配置的自洽（0.2.5 起五档位；改名/删链在这里先红，别等真引擎 404）----
 {
   const ids = REEVE_TIERS.map((t) => t.id)
   section('档位 × 兜底配置 自洽')
-  ok('四个档位：flash/standard/pro/multimodal', JSON.stringify(ids) === JSON.stringify(['flash', 'standard', 'pro', 'multimodal']), `实际：${ids.join(',')}`)
+  ok('五个档位：flash/standard/pro/multimodal/free', JSON.stringify(ids) === JSON.stringify(['flash', 'standard', 'pro', 'multimodal', 'free']), `实际：${ids.join(',')}`)
   ok('不再注册 manual 档位', !ids.includes('manual'))
   for (const t of REEVE_TIERS) {
     ok(`档位 ${t.id} 的 limit = 1M/131072（付费候选最小值）`, t && TIER_LIMIT.context === 1_000_000 && TIER_LIMIT.output === 131_072)
@@ -270,8 +270,8 @@ section('名册：subagent 工具描述补名 + 与 agents/*.md 不漂移')
   }
   const bundled = JSON.parse(readFileSync(new URL('../default-fallback.json', import.meta.url), 'utf8'))
   const chainNames = Object.keys(bundled.chains ?? {})
-  ok('打包默认 chain_for_model 恰为四个档位键（zhipu 直投别名 0.2.4 退役）',
-    JSON.stringify(Object.keys(bundled.chain_for_model ?? {}).sort()) === JSON.stringify(['reeve/flash', 'reeve/multimodal', 'reeve/pro', 'reeve/standard']))
+  ok('打包默认 chain_for_model 恰为五个档位键（zhipu 直投别名 0.2.4 退役；reeve/free 0.2.5 加入）',
+    JSON.stringify(Object.keys(bundled.chain_for_model ?? {}).sort()) === JSON.stringify(['reeve/flash', 'reeve/free', 'reeve/multimodal', 'reeve/pro', 'reeve/standard']))
   for (const [model, chain] of Object.entries(bundled.chain_for_model ?? {})) {
     if (model.startsWith('reeve/')) {
       ok(`chain_for_model.${model} 是注册过的档位`, ids.includes(model.slice('reeve/'.length)))
