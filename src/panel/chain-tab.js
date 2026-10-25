@@ -21,8 +21,8 @@ import { el, fallbackConfigPathFor, readGateConfig } from './util.js'
 const clone = (v) => JSON.parse(JSON.stringify(v ?? {}))
 const chainNames = (view) => Object.keys(view?.chains ?? {})
 
-/** 引擎档位（chain_for_model 的编辑面只露这四个；未知映射原样保留、只读展示。 */
-const TIER_MODELS = ['reeve/flash', 'reeve/standard', 'reeve/pro', 'reeve/multimodal']
+/** 引擎档位（chain_for_model 的编辑面只露这五个；未知映射原样保留、只读展示。 */
+const TIER_MODELS = ['reeve/flash', 'reeve/standard', 'reeve/pro', 'reeve/multimodal', 'reeve/free']
 
 /** 写入/校验错误 → 本地化文案（fallback-edit 抛的是带 code 的错误）。 */
 const errText = (err) => {

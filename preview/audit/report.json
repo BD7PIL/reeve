@@ -1,9 +1,9 @@
 {
-  "generatedAt": "2026-10-23T16:54:28.357Z",
+  "generatedAt": "2026-10-25T09:22:37.409Z",
   "locale": "zh-CN",
   "fixture": true,
   "strictContrast": false,
-  "total": 44,
+  "total": 45,
   "failed": 0,
   "warned": 0,
   "items": [
@@ -399,6 +399,15 @@
       "note": "306px + 路由没起：徽标与横幅都不挤坏",
       "file": "44-gate-down-306.png",
       "scenario": "gate-down",
+      "failures": [],
+      "warnings": [],
+      "consoleErrors": []
+    },
+    {
+      "id": "45-free-only-chain",
+      "note": "免费池专用链 free-only（[@free]）：整卡只有免费模型池行，没有付费模型",
+      "file": "45-free-only-chain.png",
+      "scenario": null,
       "failures": [],
       "warnings": [],
       "consoleErrors": []

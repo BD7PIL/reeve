@@ -1,9 +1,9 @@
 {
-  "generatedAt": "2026-10-23T17:06:06.003Z",
+  "generatedAt": "2026-10-25T09:23:02.060Z",
   "locale": "en",
   "fixture": true,
   "strictContrast": false,
-  "total": 11,
+  "total": 12,
   "failed": 0,
   "warned": 0,
   "items": [
@@ -101,6 +101,15 @@
       "id": "43-free-advanced-306",
       "note": "306px：免费模型池高级折叠（偏好/禁用/白名单）",
       "file": "43-free-advanced-306-en.png",
+      "scenario": null,
+      "failures": [],
+      "warnings": [],
+      "consoleErrors": []
+    },
+    {
+      "id": "45-free-only-chain",
+      "note": "免费池专用链 free-only（[@free]）：整卡只有免费模型池行，没有付费模型",
+      "file": "45-free-only-chain-en.png",
       "scenario": null,
       "failures": [],
       "warnings": [],

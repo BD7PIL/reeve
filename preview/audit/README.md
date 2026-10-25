@@ -1,4 +1,4 @@
-# REEVE 面板 —— UI 断言审计（44 项 + 双语矩阵）
+# REEVE 面板 —— UI 断言审计（45 项 + 双语矩阵）
 
 > 由 `node extensions/reeve/scripts/audit.mjs --fixture` 生成截图与 `report.json`；本表是**逐项断言 + 人工结论**。
 > 改面板后必须重跑；图变了而结论没更新 = 没审。
@@ -11,8 +11,8 @@
 
 > 0.1.13 面板（配插件 0.2.2）：**语言真正跟随 OpenChamber**（`ctx.locale` → en / zh-CN 两套词表；
 > 技术标识永不翻译）；版式改成宿主式 —— 分区是分隔带，**只有链是卡片**，模型行单行，
-> 布尔项是 checkbox row，保存条在页面级（切 tab 不丢）。主套 44 项跑 `--locale=zh-CN`；
-> 英文矩阵（01/09/19/22/24/25/28/40/41/42/43）输出 `*-en.png` 与 `report-en.json`。
+> 布尔项是 checkbox row，保存条在页面级（切 tab 不丢）。主套 45 项跑 `--locale=zh-CN`；
+> 英文矩阵（01/09/19/22/24/25/28/40/41/42/43/45）输出 `*-en.png` 与 `report-en.json`。
 >
 > 复核时抓到的三个真实缺陷并已修：`[hidden]` 被 `display:flex` 盖过（切 tab 后旧 tab 仍显示）、
 > 档位下拉的百分比宽度按 shrink-to-fit 父级解析（塌成 1–2 个字）、首帧闭包用旧快照
@@ -22,6 +22,10 @@
 > （用户裁决；GATE 的 provider lane 概念在文档里同步改为「通道」）。44 项 zh 主套 + 11 项 en 矩阵
 > 全部重跑并逐张复核（`--fixture`，2026-10-24），report 均 0 fail。**注意**：不带 `--fixture` 的
 > 默认模式读**真机状态**（真台账/真免费池），断言会随机器状态漂移 —— 门禁一律用 `--fixture`。
+
+> 0.1.15 面板（配插件 0.2.5）：新增第 5 档 `reeve/free`（免费池专用链 `free-only`）——
+> 档位映射 5 行、链卡 5 张。45 项 zh 主套 + 12 项 en 矩阵全部重跑（`--fixture`，2026-10-25），
+> report 0 fail；45-free-only-chain 人工看图：整卡只有免费模型池行，无付费模型。
 
 | # | 项 | 结论（2026-10-23，0.1.13 双语 + 宿主式版式） |
 | --- | --- | --- |
@@ -33,7 +37,7 @@
 | 06 | `chain-saved` | ✅ 已生效（预览模拟热更后 `chain_targets` 真的变了） |
 | 07 | `chain-menu` | ✅ 「更多」带 chevron；档位在用的链拒绝删除并说明 |
 | 08 | `chain-new` | ✅ 行内新链表单（创建/取消）；控件宽度按内容 |
-| 09 | `tier-mapping` | ✅ `chain_for_model` 四个档位行；下拉宽 14rem，不再塌成 1–2 个字 |
+| 09 | `tier-mapping` | ✅ `chain_for_model` 档位行（0.1.15 起 5 行，含 reeve/free）；下拉宽 14rem，不再塌成 1–2 个字 |
 | 10 | `chain-policy` | ✅ 数字字段 5.5rem；布尔项为 checkbox row；provider retries 收进「高级」 |
 | 11 | `chain-narrow` | ✅ 380px：字段行纵排、控件满宽；无横向溢出 |
 | 12 | `chain-dark` | ✅ 链卡用宿主 elevated 面，正文/边框对比度达标 |
@@ -69,12 +73,13 @@
 | 42 | `stats-306` | ✅ 306px：统计行拆两行（名字 / 次数+延迟），隐藏条形 |
 | 43 | `free-advanced-306` | ✅ 306px：偏好/禁用/白名单与数字字段单列可读 |
 | 44 | `gate-down-306` | ✅ 306px + 路由没起：红色徽标与横幅都不挤坏 |
+| 45 | `free-only-chain` | ✅ 免费池专用链 free-only（`[@free]`，0.1.15 新项）：整卡只有免费模型池行（自动 · 最多 3 个），无付费模型 |
 
 ## 复审方法
 
-- 44 张中文截图逐项过了审计门（步骤点击、控制台零错误、零溢出、宿主 token、可访问名、对比度）。
-- 本轮人工看图：01/02/05/09/10/12/13/15/19/24/25/28/31/40/41/42/43/44 逐张核对布局/层级/截断/空态。
-- 英文矩阵 11 张（`*-en.png`）核对无中文残留、术语一致（Free lane / Chains / Stats / Tasks / Retry policy）。
+- 45 张中文截图逐项过了审计门（步骤点击、控制台零错误、零溢出、宿主 token、可访问名、对比度）。
+- 本轮人工看图：01/02/05/09/10/12/13/15/19/24/25/28/31/40/41/42/43/44/45 逐张核对布局/层级/截断/空态。
+- 英文矩阵 12 张（`*-en.png`）核对无中文残留、术语一致（Free pool / Chains / Stats / Tasks / Retry policy）。
 - 历史轮的多模态复审记录见 git 历史。
 
 ## 真宿主复审
@@ -97,8 +102,8 @@
 ## 怎么重跑
 
 ```bash
-node extensions/reeve/scripts/audit.mjs --fixture --locale=zh-CN          # 主套（44 项）
-node extensions/reeve/scripts/audit.mjs --fixture --locale=en --suffix=-en --only 01,09,19,22,24,25,28,40,41,42,43
+node extensions/reeve/scripts/audit.mjs --fixture --locale=zh-CN          # 主套（45 项）
+node extensions/reeve/scripts/audit.mjs --fixture --locale=en --suffix=-en --only 01,09,19,22,24,25,28,40,41,42,43,45
 node extensions/reeve/scripts/audit.mjs --only 19                        # 单项
 node extensions/reeve/scripts/audit.mjs --strict-contrast                 # 3–4.5 也算失败
 node scripts/host-audit.mjs --app=openchamber-ui://app/index.html --cdp=http://127.0.0.1:9222

@@ -100,6 +100,7 @@ const PLAN = [
   { id: '42-stats-306', tab: 'stats', width: 306, note: '306px：统计行拆两行，不溢出', expect: [L('By chain', '按链')] },
   { id: '43-free-advanced-306', tab: 'chain', width: 306, note: '306px：免费模型池高级折叠（偏好/禁用/白名单）', steps: [clickSel('[data-section="free"] details.oc-advanced > summary'), { scrollSel: '[data-free="prefer"]', block: 'center' }], expect: [L('Preference order', '偏好顺序')] },
   { id: '44-gate-down-306', tab: 'chain', width: 306, scenario: 'gate-down', note: '306px + 路由没起：徽标与横幅都不挤坏', expect: [L('Router is not running', '路由未运行'), L('Router not ready', '路由未就绪')] },
+  { id: '45-free-only-chain', tab: 'chain', note: '免费池专用链 free-only（[@free]）：整卡只有免费模型池行，没有付费模型', steps: [{ scrollSel: '[data-chain="free-only"]', block: 'center' }], expect: [L('Free pool', '免费模型池'), L('up to 3', '最多 3 个'), L('auto', '自动')] },
 ]
 
 const chrome = [
