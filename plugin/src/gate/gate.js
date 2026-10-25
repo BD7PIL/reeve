@@ -6,6 +6,7 @@
 //   POST /gate/session/:id/next 插件侧要"下一个候选"（流已开始/沉默这两类层内换不了的情形）
 //   GET  /gate/version          探针/测试用
 //   GET  /gate/free             免费模型池运行态（发现源/展开预览/冷却）——面板只读它
+//   GET  /gate/model-meta       档位元数据（成本/limit/发布时间，首跳语义）——插件填 Model.Info 用
 //
 // 纪律：① 只记录、不泄漏——台账里没有密钥（只记键的"名字"）；② 时间与 IO 全可注入（测试零 sleep、零真实出网）；
 // ③ 管理面只认环回；④ dispose 尽力而为、绝不因为清理炸掉（含"定时器已开"的情况）。
@@ -19,6 +20,7 @@ import { classifyFailure } from './classify.js'
 import { BUNDLED_FALLBACK_PATH, defaultFallbackConfigPath, loadGateConfig, normalizeGateConfig, watchGateConfig } from './config.js'
 import { createFreeLane } from './free.js'
 import { IMAGE_CHAINS, attemptKey, attemptRow, buildUpstreamRequest, hasImage, modelsPathOf, parseTarget, planAttempts, resolveKeyFor, routeFor } from './lanes.js'
+import { computeModelMeta } from './model-meta.js'
 import { createSessionStore } from './state.js'
 
 export const GATE_VERSION = '0.1.0'
@@ -354,6 +356,13 @@ export async function startGate({
         if (!LOOPBACK.has(remote)) return sendJson(res, 403, { error: { message: '管理面只认环回' } })
         if (req.method === 'GET' && url === '/gate/free') {
           return sendJson(res, 200, await freeLane.snapshot())
+        }
+        if (req.method === 'GET' && url === '/gate/model-meta') {
+          // 档位元数据：models.dev（已拉的那份；按需首拉，require_image=false 的机器不周期出网）
+          // + 当前链的首跳语义。查无条目的字段整个省略——诚实优于编数。
+          const st = await freeLane.ensureModality()
+          const pool = await freeLane.discovered().catch(() => [])
+          return sendJson(res, 200, computeModelMeta({ config, raw: st.raw, pool }))
         }
         if (req.method === 'POST' && url === '/gate/session') {
           const bodyText = await readBody(req, 1024 * 1024).catch(() => '{}')

@@ -38,8 +38,8 @@ export function createFreeLane({ getConfig, getAuth = () => ({}), now = Date.now
   /** ref -> { fails: number, until: number }（全局，跨 session：坏模型对所有人都坏） */
   const cooldowns = new Map()
   const inflight = new Map()
-  /** models.dev 的 modalities：{ at, map: Map<ref, boolean>|null, error, inflight } */
-  const modalityCache = { at: 0, map: null, error: null, inflight: null }
+  /** models.dev 的原始对象 + 派生的 modalities：{ at, raw, map, error, inflight }（raw 供 /gate/model-meta 用） */
+  const modalityCache = { at: 0, raw: null, map: null, error: null, inflight: null }
 
   const freeCfg = () => {
     const f = getConfig()?.free
@@ -111,12 +111,12 @@ export function createFreeLane({ getConfig, getAuth = () => ({}), now = Date.now
   }
 
   /**
-   * 免费池的模态元数据（models.dev）：只拉一次，TTL 6h；失败保留上一份好数据。
+   * models.dev 元数据（模态 + 成本/limit/发布时间的原始对象）：只拉一次，TTL 6h；失败保留上一份好数据。
    * 不能用 Zen 的 `/models`：它只有 id/object/created/owned_by，没有 modalities。
+   * 调用方决定是否需要：require_image 的发现路径、/gate/model-meta（按需首拉，不做周期性新出网）。
    */
   const loadModalities = async () => {
     const free = freeCfg()
-    if (free.require_image !== true) return modalityCache
     const ttlMs = Math.max(60, Number(free.modality_ttl_seconds ?? 21_600)) * 1000
     if (modalityCache.map && now() - modalityCache.at < ttlMs) return modalityCache
     if (modalityCache.inflight) return modalityCache.inflight
@@ -142,6 +142,7 @@ export function createFreeLane({ getConfig, getAuth = () => ({}), now = Date.now
             map.set(`${pid}/${mid}`, input ? input.includes('image') : model?.attachment === true)
           }
         }
+        modalityCache.raw = body ?? null
         modalityCache.map = map
         modalityCache.at = now()
         modalityCache.error = null
@@ -332,5 +333,5 @@ export function createFreeLane({ getConfig, getAuth = () => ({}), now = Date.now
     }
   }
 
-  return { expand, noteAttempt, isCooling, discovered, snapshot, runtime, warm, capFor }
+  return { expand, noteAttempt, isCooling, discovered, snapshot, runtime, warm, capFor, ensureModality: loadModalities, modalityRaw: () => modalityCache.raw }
 }

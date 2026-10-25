@@ -35,11 +35,12 @@ import { SnapshotWriter, buildSnapshot, projectAgentTable } from './snapshot.js'
 import { SUBAGENT_ROSTER, withRoster } from './roster.js'
 import { probeGate, startGate } from './gate/gate.js'
 import { defaultFallbackConfigPath } from './gate/config.js'
-import { REEVE_TIERS, BUILTINS_TO_HIDE, mergeTierModels, pickDefaultAgent, readEndpoint, resolveGateEndpoint } from './models.js'
+import { REEVE_TIERS, BUILTINS_TO_HIDE, STATIC_TIER_META, mergeTierModels, pickDefaultAgent, readEndpoint, resolveGateEndpoint } from './models.js'
 import { STATS_DEFAULTS, aggregateGateRows, aggregateLedger, buildStats, fetchGateFree, fetchGateModels, fetchGateVersion, mergeModelCandidates, readLedgerTail } from './stats.js'
 import { loadAgents, loadSkills } from './register.js'
 import { detectLocale, setLocale, t } from './locale.js'
-import { ensureProviderBlock, reeveProviderBlock } from './config-write.js'
+import { ensureProviderBlock, configuredReeveModelIdsSync, reeveProviderBlock } from './config-write.js'
+import { applyTierMeta, createTierMeta } from './tier-meta.js'
 
 const SUBAGENT_TOOL = 'subagent'
 /** GATE（唯一代理层）的默认端口（与写进配置的端点一致）。 */
@@ -208,6 +209,31 @@ export default {
       snapshotFlush()
     }
 
+    // ---- 档位元数据（成本/limit/发布时间）----
+    // 数据源是 GATE 的 /gate/model-meta（首跳语义；链在面板里改 → GATE 热更 → 这里跟着变，
+    // **免手工**）。transform 回调是同步的，所以这里只维护缓存；刷新挂在下面的 GATE 状态轮询上。
+    // GATE 没起 / 拉不到 → 回落 models.js 的 STATIC_TIER_META（静态兜底，发布时钉）。
+    const tierMeta = createTierMeta({ getGateBase: () => (gateState?.port ? `http://${gateState.host ?? '127.0.0.1'}:${gateState.port}` : null), logger })
+    let setupDone = false
+    let reloadUnavailableLogged = false
+    /** 数据变了就推一把引擎：rebuild 会重放 provider transform，composer 立刻拿到新元数据。
+     *  老引擎没有 provider.reload → 降级"下次 rebuild/重启生效"（功能仍对，只是不即时）。 */
+    const reloadProvider = async (reason) => {
+      try {
+        if (typeof ctx.provider?.reload !== 'function') {
+          if (!reloadUnavailableLogged) {
+            reloadUnavailableLogged = true
+            logger.debug('[reeve] 这个引擎不提供 provider.reload —— 档位元数据等下次 rebuild/重启生效')
+          }
+          return
+        }
+        await ctx.provider.reload()
+        logger.debug(`[reeve] provider.reload（${reason}）—— 档位元数据已推进 composer`)
+      } catch (err) {
+        logger.debug(`[reeve] provider.reload 失败（忽略，等下次 rebuild）：${String(err).slice(0, 160)}`)
+      }
+    }
+
     const admission = acquireAdmissionRuntime(ctx.location?.directory, { limits })
 
     // ---- ⑦ 性能统计（GATE 台账聚合 + 编排台账聚合 → 快照）----
@@ -314,9 +340,17 @@ export default {
       if (!next) return
       gateState = next
       const sig = gateSignature()
-      if (sig !== lastGateSig) {
+      const gateChanged = sig !== lastGateSig
+      if (gateChanged) {
         lastGateSig = sig
         snapshotFlush()
+      }
+      // 档位元数据：GATE 状态变了（链在面板里热更）就 force 刷，否则按 TTL；签名变了 →
+      // provider.reload 推进 composer（老引擎没有 reload → 降级"下次 rebuild/重启生效"）。
+      if (tierMeta) {
+        const before = tierMeta.signature
+        await tierMeta.refresh({ force: gateChanged })
+        if (setupDone && tierMeta.signature !== before) await reloadProvider('tier-meta')
       }
     }
 
@@ -403,7 +437,20 @@ export default {
           logger.warn(`[reeve] ${t('manual.warning')}`)
         }
         const merged = mergeTierModels(list.filter((m) => m?.id !== 'manual'), REEVE_TIERS, 'reeve')
-        if (merged.length !== list.length || stale.length > 0) editor.models.set('reeve', merged)
+        // 档位元数据（成本/limit/发布时间）：动态值优先（/gate/model-meta 跟随链，免手工），
+        // 拿不到回落 STATIC_TIER_META。**配置说话**：opencode.jsonc 里手写的
+        // providers.reeve.models.* 条目是使用者的，一个字段都不碰。
+        let metaChanged = false
+        // 同步读（transform 回调是同步的；rebuild 低频，一次小文件读可接受）。读失败 → 空集。
+        const configTierIds = configuredReeveModelIdsSync({})
+        for (const tier of REEVE_TIERS) {
+          if (configTierIds.has(tier.id)) continue
+          const model = merged.find((m) => m?.id === tier.id)
+          if (!model) continue
+          const meta = tierMeta.tierMeta(`reeve/${tier.id}`) ?? STATIC_TIER_META[tier.id] ?? null
+          if (applyTierMeta(model, meta)) metaChanged = true
+        }
+        if (merged.length !== list.length || stale.length > 0 || metaChanged) editor.models.set('reeve', merged)
       })
       // agent 与 skill 从**插件自己的包**里注册（配置目录里不需要 agent/ 与 skill/ 两个目录）。
       // 配置优先：引擎里已经有的同名 agent（用户在配置目录里写的）一律不动。
@@ -606,6 +653,9 @@ export default {
         logger.debug(`[reeve] 名册注入失败（忽略）：${String(err)}`)
       }
     })
+
+    // setup 完成：此后 tier-meta 签名变化才允许触发 provider.reload（注册阶段引擎自己会 rebuild）。
+    setupDone = true
 
     return () => {
       abort.abort()

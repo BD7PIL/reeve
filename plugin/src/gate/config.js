@@ -41,6 +41,9 @@ export const LANES = Object.freeze({ NATIVE: 'native', PASSTHROUGH: 'passthrough
 export const FREE_DEFAULTS = Object.freeze({
   enabled: true,
   max: 3,
+  // 免费档声明给引擎的 context 下限：池内模型在 models.dev 查无 limit 时用它
+  // （引擎按声明值提前压缩；宁可早压也不虚标 1M 让上游报错烧链）。
+  context_floor: 131_072,
   providers: Object.freeze(['opencode', 'openrouter', 'nvidia']),
   refresh_seconds: 300,
   failure_threshold: 3,
@@ -121,6 +124,7 @@ export function normalizeGateConfig(raw) {
   const free = {
     enabled: fSrc.enabled !== false,
     max: asInt(fSrc.max, 0, 8, FREE_DEFAULTS.max),
+    context_floor: asInt(fSrc.context_floor, 1_024, 10_000_000, FREE_DEFAULTS.context_floor),
     providers: freeProviders,
     refresh_seconds: asInt(fSrc.refresh_seconds, 30, 86_400, FREE_DEFAULTS.refresh_seconds),
     failure_threshold: asInt(fSrc.failure_threshold, 1, 20, FREE_DEFAULTS.failure_threshold),

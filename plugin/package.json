@@ -1,6 +1,6 @@
 {
   "name": "@bd7pil/reeve",
-  "version": "0.2.5",
+  "version": "0.2.6",
   "description": "REEVE orchestration layer for OpenCode v2: agent/skill registration, task ledger, GATE proxy (routing, fallback, ledger) and request stats",
   "license": "MIT",
   "author": "bd7pil",
@@ -13,7 +13,7 @@
     "node": ">=22"
   },
   "scripts": {
-    "test": "node test/unit.mjs && node test/reconcile.mjs && node test/snapshot.mjs && node test/gate.mjs && node test/free.mjs && node test/guard.mjs && node test/stats.mjs && node test/entry.mjs && node test/wiring.mjs && node test/runtime.mjs",
+    "test": "node test/unit.mjs && node test/reconcile.mjs && node test/snapshot.mjs && node test/gate.mjs && node test/free.mjs && node test/model-meta.mjs && node test/guard.mjs && node test/stats.mjs && node test/entry.mjs && node test/wiring.mjs && node test/runtime.mjs",
     "test:coverage": "c8 --reporter=text --reporter=json-summary --reports-dir=coverage --exclude=test/** --exclude=bench.mjs npm test",
     "check:coverage": "node ../scripts/check-coverage.mjs",
     "prepublishOnly": "npm test"

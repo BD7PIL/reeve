@@ -16,8 +16,9 @@
 | `plugin/src/gate/classify.js` | 错误分类：永不换（abort/上下文超限）/必换（额度·模型不存在·缺键）/状态码白名单/显式 isRetryable（带安全阀）/文本兜底（中英、retry-after） |
 | `plugin/src/gate/state.js` | 会话状态机：单向推进、冷却（按 session）、粘性、可选恢复、TTL 有界、去重推进（假时钟可测） |
 | `plugin/src/gate/lanes.js` | 路由、尝试计划（跳 no-op/无 provider/无键、上限、冷却顺延）、请求构造、多键轮转；`@free` 的解析 |
-| `plugin/src/gate/free.js` | **免费模型池**：发现（opencode/openrouter 公开列表 + nvidia 白名单）、TTL、失败保留上一份、`@free` 展开（prefer/deny/预算）、按模型的全局冷却 |
-| `plugin/src/gate/gate.js` | HTTP 服务：`/v1/chat/completions`、`/v1/models`、`/gate/session`、`/gate/session/:id/next`、`/gate/version`、**`/gate/free`**；台账 JSONL（不带密钥、超限轮转） |
+| `plugin/src/gate/free.js` | **免费模型池**：发现（opencode/openrouter 公开列表 + nvidia 白名单）、TTL、失败保留上一份、`@free` 展开（prefer/deny/预算）、按模型的全局冷却；models.dev 原始对象留档（`/gate/model-meta` 的数据源） |
+| `plugin/src/gate/model-meta.js` | **档位元数据**（0.2.6）：成本/limit/发布时间，按链首跳语义计算；三级别名解析，查无整体省略 |
+| `plugin/src/gate/gate.js` | HTTP 服务：`/v1/chat/completions`、`/v1/models`、`/gate/session`、`/gate/session/:id/next`、`/gate/version`、**`/gate/free`**、**`/gate/model-meta`**；台账 JSONL（不带密钥、超限轮转） |
 | `plugin/default-fallback.json` | 打包兜底配置（付费候选；免费模型池由用户配置决定） |
 | `plugin/test/gate.mjs` | 29 项离线验收（单元 + 集成 + 图片路由 + 并发 + detach） |
 | `plugin/test/free.mjs` | 18 项免费模型池验收（发现/TTL/展开/预算/冷却/热更/并发/无键/空目录/动态 image 过滤） |
@@ -40,6 +41,12 @@
   失败按模型全局冷却（阈值/时长可配）；动态链不使用按索引的粘性指针。详见 `docs/FREE-LANE.md`。
   **`reeve/free` 免费池专用链**（0.2.5 起）：`free-only = [@free]` 单目标链——链里没有付费候选，
   免费池关闭/池空/全败都是 502，**永远不会为了成功而落到付费**；这是档位语义，不是故障。
+- **档位元数据**（0.2.6 起）：`GET /gate/model-meta` 按**链首跳**给出每个档位的成本（input/output/
+  cache read+write）、context/output limit 与发布时间，插件合进 Model.Info（composer 弹层与会话
+  花费统计用它）。链在面板里改 → GATE 热更 → 元数据跟着变。数据源是已拉的 models.dev（零新增出网），
+  provider 名三级解析（精确键 → `canonical_model_id` → 全局唯一 model id）；**查无/歧义 → 字段整体
+  省略，绝不编数**。`@free` 首跳 cost 恒 $0，limit 取池内已知条目的最小值，全无数据走
+  `free.context_floor`（默认 131072）。
 - 通道：`passthrough`（头逐字转发，含 UA 与 `x-opencode-session*`）｜`native`（最小头集）。
 - 密钥：`key:'none'` / `env.X` / 公开字面量 / `auth` 列表（auth.json，按序取第一个有键的）；
   多键轮转游标在服务侧。**台账/目录/响应体/`/gate/free` 里只有键名，没有键值**。
@@ -67,7 +74,8 @@ composer 里直接选（直连模型绕过 GATE，reeve/* 走链）。引擎配�
 
 ## 3. 验收
 
-- 离线：`plugin/test/gate.mjs` 29 项、`plugin/test/free.mjs` 21 项（含 free-only 专用链 3 项）；插件全量（unit 121 / reconcile 30 /
+- 离线：`plugin/test/gate.mjs` 29 项、`plugin/test/free.mjs` 21 项（含 free-only 专用链 3 项）、
+  `plugin/test/model-meta.mjs` 3 项；插件全量（unit 139 / reconcile 30 /
   snapshot 9 / stats 11 / entry 5 / wiring 6 / runtime 6 / guard 2）。
 - 覆盖率门槛：global 95/79/95 + `src/index.js` 97/67/93 + `src/gate/` 97/84/96（只升不降）。
 - 真机：`scripts/accept-gate.sh` ①–⑨（①/② 免费模型池、④ 关闭免费→付费、④b 死免费候选→付费、

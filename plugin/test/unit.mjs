@@ -11,8 +11,12 @@ import { Supervisor } from '../src/supervisor.js'
 import { decideStop, VERDICT } from '../src/terminal-gate.js'
 import { STATE, REASON, STOP_CONFIRMATION_GRACE_MS } from '../src/constants.js'
 import { SUBAGENT_ROSTER, ROSTER_MARKER, buildSubagentRoster, withRoster } from '../src/roster.js'
-import { readdirSync, readFileSync } from 'node:fs'
-import { REEVE_TIERS, TIER_LIMIT, TIER_VARIANTS, buildTierModel, resolveGateEndpoint } from '../src/models.js'
+import { readdirSync, readFileSync, writeFileSync, mkdtempSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { REEVE_TIERS, TIER_LIMIT, TIER_VARIANTS, FREE_CONTEXT_FLOOR, STATIC_TIER_META, buildTierModel, resolveGateEndpoint } from '../src/models.js'
+import { applyTierMeta, createTierMeta } from '../src/tier-meta.js'
+import { configuredReeveModelIdsSync } from '../src/config-write.js'
 
 let pass = 0
 let fail = 0
@@ -261,6 +265,70 @@ section('名册：subagent 工具描述补名 + 与 agents/*.md 不漂移')
     ok(`档位 ${t.id} 声明能吃图`, t.images === true)
   }
   ok('推理强度变体五档', JSON.stringify(TIER_VARIANTS) === JSON.stringify(['low', 'medium', 'high', 'xhigh', 'max']))
+  {
+    const freeLimit = buildTierModel(REEVE_TIERS.find((t) => t.id === 'free')).limit
+    const paidLimit = buildTierModel(REEVE_TIERS.find((t) => t.id === 'standard')).limit
+    ok('free 档 context = FREE_CONTEXT_FLOOR（不虚标 1M）', freeLimit.context === FREE_CONTEXT_FLOOR && FREE_CONTEXT_FLOOR === 131_072 && freeLimit.output === TIER_LIMIT.output)
+    ok('付费四档 context 仍是 1M（链上付费候选最小值）', paidLimit.context === 1_000_000)
+  }
+  {
+    // STATIC_TIER_META = 动态元数据拿不到时的兜底（2026-10-25 从 models.dev 钉死；改链不归它管）。
+    ok('兜底：flash/free 首跳 @free → $0', STATIC_TIER_META.flash.cost.input === 0 && STATIC_TIER_META.free.cost.input === 0)
+    ok('兜底：standard = zhipu glm-5.3-flash（$0.15/$0.5/cache 0.03）', STATIC_TIER_META.standard.cost.input === 0.15 && STATIC_TIER_META.standard.cost.output === 0.5 && STATIC_TIER_META.standard.cost.cache_read === 0.03)
+    ok('兜底：pro = zhipu glm-5.3（$1.4/$4.4/cache 0.26）', STATIC_TIER_META.pro.cost.input === 1.4 && STATIC_TIER_META.pro.cost.output === 4.4 && STATIC_TIER_META.pro.cost.cache_read === 0.26)
+    ok('兜底：released 钉在发布日期', STATIC_TIER_META.pro.released === '2026-08-14' && STATIC_TIER_META.standard.released === '2026-08-26')
+    const model = buildTierModel(REEVE_TIERS.find((t) => t.id === 'pro'))
+    ok('applyTierMeta：cost/limit/released 合进 Model.Info 且 idempotent', applyTierMeta(model, { cost: STATIC_TIER_META.pro.cost, released: STATIC_TIER_META.pro.released }) === true && model.cost[0].cache.read === 0.26 && model.time.released === Date.parse('2026-08-14') && applyTierMeta(model, { cost: STATIC_TIER_META.pro.cost, released: STATIC_TIER_META.pro.released }) === false)
+    ok('applyTierMeta：limit 部分合并（缺 output 不动旧值）', applyTierMeta(model, { limit: { context: 262_144 } }) === true && model.limit.context === 262_144 && model.limit.output === 131_072)
+    ok('applyTierMeta：空 meta 不动、返回 false', applyTierMeta(model, null) === false && applyTierMeta(model, {}) === false)
+  }
+  {
+    // tier-meta 缓存：动态优先 / TTL / 失败保留上一份 / 签名不含 computedAt。
+    let base = 'http://127.0.0.1:18080'
+    let payload = { computedAt: 't1', tiers: { 'reeve/pro': { cost: { input: 1.4, output: 4.4, cache_read: 0.26, cache_write: 0 }, released: '2026-08-14' } } }
+    let t = 1_000_000
+    let fetches = 0
+    const meta = createTierMeta({
+      getGateBase: () => base,
+      now: () => t,
+      fetchImpl: async () => {
+        fetches += 1
+        return { ok: true, json: async () => payload }
+      },
+    })
+    await meta.refresh({})
+    ok('tier-meta：拉到后 tierMeta 命中、签名非空', meta.tierMeta('reeve/pro')?.cost?.input === 1.4 && meta.signature !== '')
+    const sigBefore = meta.signature
+    payload = { ...payload, computedAt: 't2' }
+    await meta.refresh({ force: true })
+    ok('tier-meta：只有 computedAt 变 → 签名不变（不触发无谓 reload）', meta.signature === sigBefore)
+    payload = { computedAt: 't3', tiers: { 'reeve/pro': { cost: { input: 9, output: 9, cache_read: 0, cache_write: 0 } } } }
+    await meta.refresh({ force: true })
+    ok('tier-meta：数据变 → 签名变 + 新值命中', meta.signature !== sigBefore && meta.tierMeta('reeve/pro').cost.input === 9)
+    t += 60_000
+    const f0 = fetches
+    await meta.refresh({})
+    ok('tier-meta：TTL 内 refresh 不拉取', fetches === f0)
+    t += 6 * 60_000
+    await meta.refresh({})
+    ok('tier-meta：TTL 过期才重拉（值不变）', fetches === f0 + 1 && meta.tierMeta('reeve/pro').cost.input === 9)
+    base = null
+    await meta.refresh({ force: true })
+    ok('tier-meta：GATE 没起（base=null）→ 保留上一份', meta.tierMeta('reeve/pro') !== null)
+    const failing = createTierMeta({ getGateBase: () => 'http://127.0.0.1:1', now: () => t, fetchImpl: async () => { throw new Error('ECONNREFUSED') } })
+    await failing.refresh({})
+    ok('tier-meta：首刷失败 → tierMeta 为 null（调用方走静态兜底）且不抛', failing.tierMeta('reeve/pro') === null && failing.signature === '')
+  }
+  {
+    // 配置说话：opencode.jsonc 手写的 providers.reeve.models.* 不被元数据覆盖。
+    const dir = mkdtempSync(join(tmpdir(), 'reeve-unit-'))
+    const path = join(dir, 'opencode.jsonc')
+    writeFileSync(path, '{\n // 注释\n "providers": { "reeve": { "models": { "standard": { "name": "my standard" }, "pro": {} } } }\n}\n', 'utf8')
+    const ids = configuredReeveModelIdsSync({ configDir: dir })
+    ok('configuredReeveModelIdsSync：配置手写的档位 id 集合', ids.has('standard') && ids.has('pro') && !ids.has('flash'))
+    const none = configuredReeveModelIdsSync({ configDir: join(tmpdir(), 'reeve-unit-nope-' + Date.now()) })
+    ok('configuredReeveModelIdsSync：读不到 → 空集', none.size === 0)
+  }
   {
     const a = buildTierModel(REEVE_TIERS[0])
     const b = buildTierModel(REEVE_TIERS[1])

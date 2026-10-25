@@ -93,6 +93,9 @@ Settings → Extensions，安装：
 | `reeve/multimodal` | `vision` | looker | 磁盘图片/PDF；也是图片改道链 |
 | `reeve/free` | `free-only` | —（要钉自己改 frontmatter） | 免费池专用；池空/全败 502，永不落付费 |
 
+档位元数据（成本、上下文/输出上限、发布时间）按**链首跳**动态填充——面板里改链，
+composer 弹层跟着变；模型目录查不到的字段整体省略，不编数。
+
 `foreman` 是唯一可见的主编排 agent，跟随会话选择的模型（顶层默认 `reeve/standard`）。
 
 `looker` 是 hidden、只读的子代理，只处理**磁盘路径**的图片/PDF；粘贴图片由 GATE 直接改道。

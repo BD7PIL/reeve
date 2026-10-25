@@ -38,8 +38,25 @@ export const REEVE_TIERS = Object.freeze([
   { id: 'free', modelID: 'reeve/free', name: 'REEVE free', images: true },
 ])
 
-/** 五档共享的 limit（付费候选最小值；见 REEVE_TIERS 注释）。 */
+/** 付费四档共享的 limit（链上付费候选的最小值；见 REEVE_TIERS 注释）。
+ *  reeve/free 例外：链里没有付费候选，context 用 FREE_CONTEXT_FLOOR（见 STATIC_TIER_META 注释）。 */
 export const TIER_LIMIT = Object.freeze({ context: 1_000_000, output: 131_072 })
+
+/** reeve/free 的 context 下限（与 GATE `free.context_floor` 默认值一致）：免费池模型在
+ *  models.dev 查不到 limit 时声明这个值，引擎照它提前压缩——不虚标 1M 让上游报错烧链。 */
+export const FREE_CONTEXT_FLOOR = 131_072
+
+/** 档位元数据的**静态兜底**（2026-10-25 从 models.dev 钉死）。只在 GATE 的
+ *  `/gate/model-meta` 拿不到（冷启动 / GATE 没起 / 查无条目）时用；动态值永远优先。
+ *  cost 语义是**链首跳**：standard/multimodal 首跳 zhipu glm-5.3-flash、pro 首跳 glm-5.3、
+ *  flash/free 首跳 `@free`（$0 = 首跳免费；回落到付费候选时实际花费更高）。 */
+export const STATIC_TIER_META = Object.freeze({
+  flash: { cost: { input: 0, output: 0, cache_read: 0, cache_write: 0 } },
+  standard: { cost: { input: 0.15, output: 0.5, cache_read: 0.03, cache_write: 0 }, released: '2026-08-26' },
+  pro: { cost: { input: 1.4, output: 4.4, cache_read: 0.26, cache_write: 0 }, released: '2026-08-14' },
+  multimodal: { cost: { input: 0.15, output: 0.5, cache_read: 0.03, cache_write: 0 }, released: '2026-08-26' },
+  free: { cost: { input: 0, output: 0, cache_read: 0, cache_write: 0 } },
+})
 
 /** 五档共享的推理强度变体（id = reasoningEffort，形状与 opencode.jsonc 的 v2 variants 一致）。
  *  引擎把选中的变体翻译成请求体里的 `reasoning_effort`，GATE 只换 model、其余透传；
@@ -63,7 +80,7 @@ export function buildTierModel(tier, providerID = 'reeve') {
     cost: [],
     status: 'active',
     enabled: true,
-    limit: { ...TIER_LIMIT },
+    limit: tier.id === 'free' ? { context: FREE_CONTEXT_FLOOR, output: TIER_LIMIT.output } : { ...TIER_LIMIT },
   }
 }
 

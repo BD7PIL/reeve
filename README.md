@@ -100,6 +100,11 @@ snapshot and GATE config; it never starts sessions or prompts.
 | `reeve/multimodal` | `vision` | looker | image/PDF via files on disk; also the image route |
 | `reeve/free` | `free-only` | — (pin agents yourself) | free pool only; 502 when the pool is out, never paid |
 
+Tier metadata (cost, context/output limits, release date) is filled dynamically
+from the **first target of each tier's chain** — edit a chain in the panel and
+the composer popover follows; fields the model catalog does not know are left
+out rather than guessed.
+
 `foreman` is the visible primary orchestrator; it follows the session's model
 selection (top-level default `reeve/standard`).
 

@@ -3,6 +3,28 @@
 Newest first. Versions follow the plugin package (`plugin/package.json`); the
 panel extension has its own tags (`reeve-<version>`).
 
+## 0.2.6 — 2026-10-25
+
+**Tier metadata now follows the chain — no manual upkeep.** The composer's
+model popover used to show dashes for cost and release date, and (worse) a
+fabricated `1M` context on `reeve/free`. GATE now exposes
+`GET /gate/model-meta`: per-tier cost (input/output/cache read+write),
+context/output limits, and release date, computed from the **first target of
+the chain each tier maps to** — so editing a chain in the panel updates the
+popover data too (GATE hot-reloads; the plugin refreshes on its existing
+state poll and calls `provider.reload()` when the data changes, on engines
+that expose it — older engines degrade to "next rebuild/restart"). The data
+source is the models.dev payload GATE already fetches (6h TTL, zero new
+outbound traffic); provider names are resolved through three levels
+(exact key → `canonical_model_id` → globally unique model id). Anything the
+catalog does not know is **omitted entirely** rather than guessed — the free
+pool's popular models have no entries today, so `reeve/free` cost is $0 (free
+by definition) with context falling back to the new `free.context_floor`
+(default 131072), which stops the engine from letting sessions grow past what
+the pool can actually serve. `buildTierModel` ships the same numbers as
+cold-start fallback (`STATIC_TIER_META`); values written by hand under
+`providers.reeve.models.*` in opencode.jsonc are never touched.
+
 ## 0.2.5 — 2026-10-25
 
 **New tier `reeve/free`: the free-pool-only chain.** `default-fallback.json`

@@ -23,6 +23,7 @@
   "free": {
     "enabled": true,
     "max": 3,
+    "context_floor": 131072,
     "providers": ["opencode", "openrouter"],
     "refresh_seconds": 300,
     "failure_threshold": 3,

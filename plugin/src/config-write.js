@@ -10,6 +10,7 @@
 //      校验不过就把备份还原回去（绝不留一个坏掉的配置）；
 //   4. **保留注释与格式**：只做文本插入，不重新序列化（用户的 jsonc 里有注释）。
 
+import { readFileSync } from 'node:fs'
 import { readFile, rename, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
@@ -135,4 +136,39 @@ export async function ensureProviderBlock({
   } catch (err) {
     return { status: 'skipped', path, detail: String(err).slice(0, 160) }
   }
+}
+/**
+ * 读引擎配置里 `providers.reeve.models` 手写过的模型 id 集合 —— 这些是**配置说话**的条目，
+ * 插件的档位元数据（成本/limit/发布时间）不去动它们。读不到/解析失败 → 空集（全部当插件自有）。
+ * **只读**。
+ */
+export async function configuredReeveModelIds({ configDir = null, readFileImpl = readFile, providerId = 'reeve' } = {}) {
+  const dir = configDir ?? join(homedir(), '.config', 'opencode')
+  for (const name of ['opencode.jsonc', 'opencode.json']) {
+    try {
+      const text = await readFileImpl(join(dir, name), 'utf8')
+      const models = parseJsonc(text)?.providers?.[providerId]?.models
+      if (!models || typeof models !== 'object') continue
+      return new Set(Object.keys(models))
+    } catch {
+      continue
+    }
+  }
+  return new Set()
+}
+
+/** `configuredReeveModelIds` 的同步版：provider transform 回调是同步的，只能在这里用。 */
+export function configuredReeveModelIdsSync({ configDir = null, readFileImpl = readFileSync, providerId = 'reeve' } = {}) {
+  const dir = configDir ?? join(homedir(), '.config', 'opencode')
+  for (const name of ['opencode.jsonc', 'opencode.json']) {
+    try {
+      const text = readFileImpl(join(dir, name), 'utf8')
+      const models = parseJsonc(text)?.providers?.[providerId]?.models
+      if (!models || typeof models !== 'object') continue
+      return new Set(Object.keys(models))
+    } catch {
+      continue
+    }
+  }
+  return new Set()
 }
