@@ -3,6 +3,32 @@
 Newest first. Versions follow the plugin package (`plugin/package.json`); the
 panel extension has its own tags (`reeve-<version>`).
 
+## 0.2.8 — 2026-10-26
+
+**Empty-response guard.** Some free models answer `HTTP 200` with no content —
+observed live on 2026-10-26: a `nemotron:free` 200-with-empty-body made the
+engine record an empty assistant message and go idle, killing the turn in
+place (and, because the half-finished tool pairing stayed in the message list,
+poisoning later turns with `Messages with role 'tool' must be a response to a
+preceding message with 'tool_calls'` errors). Two layers now:
+
+- **Non-stream responses** (`content-type` is not `text/event-stream`): the
+  body is checked for real-content evidence (non-empty
+  `content`/`reasoning`/`tool_calls`) before it is forwarded. Empty → recorded
+  as `error/empty` in the ledger and the chain moves to the next candidate —
+  the request survives.
+- **Streaming responses**: forwarding is untouched (still pipe, zero
+  buffering). At `finish`, the forwarded bytes are scanned; a response with no
+  real content counts as a free-pool failure → escalating cooldown (0.2.7)
+  keeps the model out of the next requests. The turn itself is already spent —
+  the guard is that every subsequent request skips the model. The success
+  bookkeeping for free-pool candidates also moved to `finish`, so a
+  post-hoc-empty response is no longer wiped out by a premature `noteAttempt(true)`
+  (that ordering bug made the guard ineffective: every failure count was
+  immediately reset).
+
+Plugin-only release — panel untouched.
+
 ## 0.2.7 — 2026-10-26
 
 **Free-pool cooldowns now escalate instead of resetting.** A free model that

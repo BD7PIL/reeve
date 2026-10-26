@@ -21,7 +21,7 @@
 | `plugin/src/gate/gate.js` | HTTP 服务：`/v1/chat/completions`、`/v1/models`、`/gate/session`、`/gate/session/:id/next`、`/gate/version`、**`/gate/free`**、**`/gate/model-meta`**；台账 JSONL（不带密钥、超限轮转） |
 | `plugin/default-fallback.json` | 打包兜底配置（付费候选；免费模型池由用户配置决定） |
 | `plugin/test/gate.mjs` | 29 项离线验收（单元 + 集成 + 图片路由 + 并发 + detach） |
-| `plugin/test/free.mjs` | 23 项免费模型池验收（发现/TTL/展开/预算/冷却/热更/并发/无键/空目录/动态 image 过滤） |
+| `plugin/test/free.mjs` | 25 项免费模型池验收（发现/TTL/展开/预算/冷却/热更/并发/无键/空目录/动态 image 过滤） |
 | `~/.config/opencode/reeve/fallback.jsonc` | 机器上的用户配置（三端共享；开发机是 junction，对端由 ocrc sync） |
 
 ## 2. 语义（实现即规格）
@@ -74,7 +74,7 @@ composer 里直接选（直连模型绕过 GATE，reeve/* 走链）。引擎配�
 
 ## 3. 验收
 
-- 离线：`plugin/test/gate.mjs` 29 项、`plugin/test/free.mjs` 23 项（含 free-only 专用链 3 项、递进冷却 2 项）、
+- 离线：`plugin/test/gate.mjs` 29 项、`plugin/test/free.mjs` 25 项（含 free-only 专用链 3 项、递进冷却 2 项、空响应守卫 2 项）、
   `plugin/test/model-meta.mjs` 3 项；插件全量（unit 139 / reconcile 30 /
   snapshot 9 / stats 11 / entry 5 / wiring 6 / runtime 6 / guard 2）。
 - 覆盖率门槛：global 95/79/95 + `src/index.js` 97/67/93 + `src/gate/` 97/84/96（只升不降）。

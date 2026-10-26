@@ -14,7 +14,7 @@ import { createServer } from 'node:http'
 import { appendFile, mkdir, readFile as readFileFs, rename, stat as statFs } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
-import { Readable } from 'node:stream'
+import { Readable, Transform } from 'node:stream'
 
 import { classifyFailure } from './classify.js'
 import { BUNDLED_FALLBACK_PATH, defaultFallbackConfigPath, loadGateConfig, normalizeGateConfig, watchGateConfig } from './config.js'
@@ -93,6 +93,18 @@ const sendJson = (res, status, obj) => {
   res.end(text)
 }
 
+// ---- 0.2.8 空响应守卫 ----
+// 非流式响应的"真内容"证据：tool_calls、非空字符串 content/reasoning、数组形 content。
+// `"content":""`（空串）、`[DONE]` 行、空 delta 都不算。流式走首块探测（见请求循环内注释）。
+const REAL_RESPONSE_RE = new RegExp(
+  [
+    /"tool_calls"\s*:/.source,
+    /"(?:content|reasoning_content|reasoning|text|output_text)"\s*:\s*"(?:[^"\\]|\\.)+/.source,
+    /"content"\s*:\s*\[/.source,
+  ].join('|'),
+)
+
+
 /**
  * 拉起 GATE。返回 handle：`{ port, detach, dispose, snapshot, reload, sessions, ledgerPath, configPath }`。
  * 生命周期：`detach()` = 插件实例卸载但 GATE 继续服务（引擎级，活到进程退出）；`dispose()` = 真关
@@ -111,6 +123,7 @@ export async function startGate({
   readFileImpl = readFileFs,
   statImpl = statFs,
   sleepImpl = (ms) => new Promise((r) => setTimeout(r, ms)),
+  emptyProbeGraceMs = 400,
   configWatchMs = GATE_DEFAULTS.configWatchMs,
   maxBodyBytes = GATE_DEFAULTS.maxBodyBytes,
   ledgerMaxBytes = GATE_DEFAULTS.ledgerMaxBytes,
@@ -277,15 +290,61 @@ export async function startGate({
       }
 
       if (upstream.ok) {
+        // ---- 0.2.8 空响应守卫 ----
+        // 某些免费模型会回 200 但零内容（2026-10-26 EL7：nemotron 空 200 → 引擎记一条空
+        // assistant 消息并闲置，轮次就地死亡）。分两档：
+        //   · 非流式（无 body）：text() 全文判空 → 立即换下一个候选（可完全止损）；
+        //   · 流式：转发照旧（pipe 逐块、绝不缓冲——守卫不改转发路径），但在 **转发完成**
+        //     时统计"真内容"证据：整个响应没有一条非空 content/reasoning/tool_calls →
+        //     台账记 error/empty + 免费池记一次失败（递进冷却接管，下一次请求绕开它）。
+        //     当轮无法重试（流已提交），这是不引入缓冲/不碰流对象的最强守卫。
+        const contentType = upstream.headers?.get?.('content-type') ?? 'application/json'
+        const isStream = /text\/event-stream/i.test(contentType)
+        if (!isStream) {
+          const text = await upstream.text().catch(() => '')
+          if (!REAL_RESPONSE_RE.test(text)) {
+            note(attemptRow({ ts: new Date(t0).toISOString(), chainName: plan.chainName, agent: plan.agent, attempt, status: 'error', code: upstream.status, latencyMs: now() - t0, retries, detail: 'empty response', req: reqId, n: i + 1 }))
+            attemptsSeen.push({ provider: attempt.provider.id, model: attempt.model, code: upstream.status, reason: 'empty' })
+            sessions.noteFailure(sessionID ?? '(anon)', plan.chainName, attemptKey(attempt))
+            freeLane.noteAttempt(attempt, false)
+            continue
+          }
+          note(attemptRow({ ts: new Date(t0).toISOString(), chainName: plan.chainName, agent: plan.agent, attempt, status: 'ok', code: upstream.status, latencyMs: now() - t0, retries, req: reqId, n: i + 1 }))
+          sessions.noteSuccess(sessionID ?? '(anon)', plan.chainName, attemptKey(attempt), plan.keys)
+          freeLane.noteAttempt(attempt, true)
+          res.writeHead(upstream.status, {
+            'content-type': contentType,
+            'x-reeve-fallback': `${i + 1}/${attempt.provider.id}/${attempt.model}`,
+          })
+          res.end(text)
+          return
+        }
         note(attemptRow({ ts: new Date(t0).toISOString(), chainName: plan.chainName, agent: plan.agent, attempt, status: 'ok', code: upstream.status, latencyMs: now() - t0, retries, req: reqId, n: i + 1 }))
         sessions.noteSuccess(sessionID ?? '(anon)', plan.chainName, attemptKey(attempt), plan.keys)
-        freeLane.noteAttempt(attempt, true)
+        // 免费池的成败记账延迟到 finish（见下）：这里先记 true 会把随后判空的失败
+        // 账清零（delete ref），空模型永远攒不到阈值——0.2.8 之前的行为等于没守卫。
         res.writeHead(upstream.status, {
-          'content-type': upstream.headers?.get?.('content-type') ?? 'application/json',
+          'content-type': contentType,
           'x-reeve-fallback': `${i + 1}/${attempt.provider.id}/${attempt.model}`,
         })
-        if (upstream.body) Readable.fromWeb(upstream.body).pipe(res)
-        else res.end(await upstream.text().catch(() => ''))
+        const probe = { head: '' }
+        const tap = new Transform({
+          transform(chunk, _enc, cb) {
+            if (probe.head.length < 1024 * 1024) probe.head += chunk.toString('utf8')
+            cb(null, chunk)
+          },
+        })
+        Readable.fromWeb(upstream.body).pipe(tap).pipe(res)
+        res.on('finish', () => {
+          const empty = !REAL_RESPONSE_RE.test(probe.head)
+          freeLane.noteAttempt(attempt, !empty)
+          if (empty) {
+            // 台账保持"一行一请求"的约定（ok 行是 HTTP 层面的事实），守卫的效力
+            // 落在冷却上：把这个空模型记一笔失败 → 递进冷却让下一次请求绕开它。
+            sessions.noteFailure(sessionID ?? '(anon)', plan.chainName, attemptKey(attempt))
+            logger?.debug?.(`[gate] 空响应（流式，事后判空）：${attempt.provider.id}/${attempt.model} → 冷却`)
+          }
+        })
         return
       }
 

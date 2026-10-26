@@ -50,6 +50,18 @@ async function makeUpstream() {
         res.end(JSON.stringify({ error: { message: 'rate limited' } }))
         return
       }
+      if (String(model).includes('empty')) {
+        if (body.includes('"stream":true')) {
+          // 空响应·流式形态：HTTP 200 但零内容（只有 [DONE] 尾行）
+          res.writeHead(200, { 'content-type': 'text/event-stream' })
+          res.end('data: [DONE]\n\n')
+        } else {
+          // 空响应·非流式形态：JSON 体但没有任何内容键
+          res.writeHead(200, { 'content-type': 'application/json' })
+          res.end('{"choices":[]}')
+        }
+        return
+      }
       const sse = SSE_OK(model)
       res.writeHead(sse.status, sse.headers)
       res.end(sse.body)
@@ -133,7 +145,7 @@ async function harness({ discovery = {}, free = {}, config = {}, providers: extr
     bundledPath: BUNDLED_FALLBACK_PATH,
     ledgerPath: join(dir, 'gate.jsonl'),
     authPath,
-    logger: silent,
+    logger: { debug: (...a) => console.error("[gate-dbg]", ...a) },
     now: () => t,
     fetchImpl,
     sleepImpl: () => Promise.resolve(),
@@ -712,6 +724,56 @@ const OPENROUTER_FREE = ['vendor/a:free', 'vendor/b', 'vendor/c:free']
   assert.equal(c3.offenses, 1, '成功后 offenses 从头计')
   assert.equal(c3.until - t, 600_000, '成功后回到基础时长')
   ok('递进冷却：cap 截断 + 成功全案清除（offenses 归零）')
+}
+
+// ---- 18. 空响应守卫·非流式：200 零内容 → 视同失败，换下一个候选（0.2.8） ----
+{
+  const h = await harness({
+    discovery: { opencode: ['always-empty-free'] },
+    free: { max: 1, providers: ['opencode'] },
+  })
+  try {
+    const res = await post(h.gate, { model: 'reeve/flash', stream: false, messages: [] }, { 'x-opencode-session-id': 'e1' })
+    assert.equal(res.status, 200)
+    assert.ok((res.fallback || '').startsWith('2/paid/paid-ok'), `空响应后换到付费候选（实际 ${res.fallback}）`)
+    assert.ok(res.text.includes('paid-ok'), '最终响应来自 paid')
+    const rws = await h.rows()
+    const emptyRow = rws.find((r) => r.detail === 'empty response')
+    assert.ok(emptyRow, '台账记录 empty response')
+    assert.equal(emptyRow.status, 'error')
+    assert.equal(emptyRow.code, 200)
+    assert.equal(emptyRow.provider, 'opencode')
+    ok('空响应守卫·非流式：200 零内容 → 换下一候选，台账记 error/empty')
+  } finally {
+    await h.close()
+  }
+}
+
+// ---- 19. 空响应守卫·流式：当轮照转（流已提交），转发完成后冷却该模型 → 下一次绕开（0.2.8） ----
+{
+  const h = await harness({
+    discovery: { opencode: ['always-empty-free'] },
+    free: { max: 1, providers: ['opencode'] },
+  })
+  try {
+    const first = await post(h.gate, { model: 'reeve/flash', stream: true, messages: [] }, { 'x-opencode-session-id': 's1' })
+    assert.equal(first.status, 200)
+    assert.ok((first.fallback || '').startsWith('1/opencode/always-empty-free'), '流式空响应当轮照转（首跳）')
+    // 事后判空 → 记失败；failure_threshold=3，打满三次才进冷却。逐次等 finish 落账，
+    // 保证第 4 次 expand 读到的冷却状态包含前三次的失败。
+    for (let i = 2; i <= 3; i++) {
+      const again = await post(h.gate, { model: 'reeve/flash', stream: true, messages: [] }, { 'x-opencode-session-id': `s${i}` })
+      assert.equal(again.status, 200)
+      await new Promise((r) => setTimeout(r, 80))
+    }
+    await new Promise((r) => setTimeout(r, 80))
+    const second = await post(h.gate, { model: 'reeve/flash', stream: true, messages: [] }, { 'x-opencode-session-id': 's-next' })
+    assert.equal(second.status, 200)
+    assert.ok(!(second.fallback || '').includes('always-empty'), `冷却后下一次绕开空模型（实际 ${second.fallback}）`)
+    ok('空响应守卫·流式：当轮照转，事后判空 → 冷却，下一次绕开')
+  } finally {
+    await h.close()
+  }
 }
 
 console.log(`\n免费模型池测试：${passed} 项全过`)
