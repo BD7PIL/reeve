@@ -632,4 +632,86 @@ const OPENROUTER_FREE = ['vendor/a:free', 'vendor/b', 'vendor/c:free']
   }
 }
 
+// ---- 16. 递进冷却：反复死的上游时长翻倍（0.2.7），到期不再"忘账" ----
+{
+  const h = await harness({
+    discovery: { opencode: ['always-fail-free'] },
+    free: { max: 1, providers: ['opencode'], failure_threshold: 3, failure_cooldown_seconds: 600 },
+    config: { policy: { max_fallback_attempts: 2, cooldown_seconds: 0 } },
+  })
+  try {
+    const burn = async (tag) => {
+      for (let i = 0; i < 3; i++) await post(h.gate, { model: 'reeve/flash', stream: true, messages: [] }, { 'x-opencode-session-id': `${tag}${i}` })
+    }
+    await burn('a')
+    const s1 = await getJson(h.gate, '/gate/free')
+    assert.equal(s1.cooling.length, 1)
+    assert.equal(s1.cooling[0].offenses, 1, '第一次进冷却 offenses=1')
+    assert.ok(!('offenses' in s1.cooling[0]) === false, '运行态带 offenses 字段')
+    const until1 = s1.cooling[0].until
+
+    // 到期 → 探测 3 连败 → 第二段翻倍：until2-until1 ≈ 601s(间隔) + 1200s(冷却)
+    h.advance(601_000)
+    await burn('b')
+    const s2 = await getJson(h.gate, '/gate/free')
+    assert.equal(s2.cooling[0].offenses, 2, '第二次进冷却 offenses=2')
+    const delta2 = s2.cooling[0].until - until1
+    assert.ok(delta2 >= 1_200_000 && delta2 <= 1_203_000, `第二段 = 间隔601s + 冷却1200s，实际 ${delta2}`)
+
+    h.advance(1_201_000)
+    await burn('c')
+    const s3 = await getJson(h.gate, '/gate/free')
+    assert.equal(s3.cooling[0].offenses, 3)
+    const delta3 = s3.cooling[0].until - s2.cooling[0].until
+    assert.ok(delta3 >= 2_400_000 && delta3 <= 2_404_000, `第三段 = 间隔1201s + 冷却2400s，实际 ${delta3}`)
+    ok('递进冷却：600s → 1200s → 2400s 逐次翻倍，到期保留 offenses 放行探测')
+  } finally {
+    await h.close()
+  }
+}
+
+// ---- 17. 递进冷却：封顶截断 + 成功一次全案清除（直驱 lane，不走 HTTP） ----
+{
+  const { createFreeLane } = await import('../src/gate/free.js')
+  let t = 3_000_000
+  const lane = createFreeLane({
+    getConfig: () => ({
+      free: {
+        enabled: true,
+        max: 3,
+        providers: [],
+        failure_threshold: 2,
+        failure_cooldown_seconds: 600,
+        cooldown_cap_seconds: 900,
+      },
+      providers: {},
+    }),
+    now: () => t,
+  })
+  const mk = (model) => ({ auto: true, provider: { id: 'opencode' }, model })
+  lane.noteAttempt(mk('x-free'), false)
+  lane.noteAttempt(mk('x-free'), false)
+  assert.equal(lane.runtime().cooling.length, 1)
+  assert.equal(lane.runtime().cooling[0].offenses, 1)
+  assert.equal(lane.runtime().cooling[0].until - t, 600_000, '首段 = 基础时长')
+
+  t += 601_000
+  assert.equal(lane.isCooling('opencode/x-free'), false, '到期放行探测（不再忘账删除）')
+  lane.noteAttempt(mk('x-free'), false)
+  lane.noteAttempt(mk('x-free'), false)
+  const c2 = lane.runtime().cooling[0]
+  assert.equal(c2.offenses, 2)
+  assert.equal(c2.until - t, 900_000, '第二段 1200s 被 cooldown_cap_seconds=900 截断')
+
+  t += 901_000
+  lane.noteAttempt(mk('x-free'), true)
+  assert.equal(lane.runtime().cooling.length, 0, '成功一次全案清除')
+  lane.noteAttempt(mk('x-free'), false)
+  lane.noteAttempt(mk('x-free'), false)
+  const c3 = lane.runtime().cooling[0]
+  assert.equal(c3.offenses, 1, '成功后 offenses 从头计')
+  assert.equal(c3.until - t, 600_000, '成功后回到基础时长')
+  ok('递进冷却：cap 截断 + 成功全案清除（offenses 归零）')
+}
+
 console.log(`\n免费模型池测试：${passed} 项全过`)

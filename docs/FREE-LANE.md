@@ -15,6 +15,7 @@
   "refresh_seconds": 300,          // 发现源 TTL
   "failure_threshold": 3,          // 同一免费模型连续失败几次进冷却
   "failure_cooldown_seconds": 600,
+  "cooldown_cap_seconds": 86400,   // 递进冷却封顶（第 N 段 = 基础时长 × 2^(N-1)，不超过它）
   "prefer": ["glm-5.3-flash-free", "mimo-v2.6-flash-free", "deepseek-v4.1-flash-free"],
   "deny": [],
   "require_image": true,           // 只选多模态免费模型（按 models.dev modalities 动态过滤）
@@ -74,8 +75,12 @@ limit 取池内已知条目的最小值，全无数据走 `free.context_floor`�
 
 - 顺序：`prefer` 里命中的（full ref 或裸模型名）按书写顺序排最前 → 其余按 `providers` 顺序与目录顺序。
 - `deny` 里的永不展开（full ref 或裸模型名都行）。
-- 冷却：**按模型全局**（不是按 session）——连续 `failure_threshold` 次失败后冷却
-  `failure_cooldown_seconds`；成功清零。会话级冷却（`policy.cooldown_seconds`）仍然生效。
+- 冷却：**按模型全局**（不是按 session）——连续 `failure_threshold` 次失败后进冷却；
+  时长**逐次递进**：第 N 次进冷却 = `failure_cooldown_seconds` × 2^(N-1)，封顶
+  `cooldown_cap_seconds`（默认 86400）。冷却到期保留 offense 计数、放行一次探测，再失败
+  按翻倍时长进冷却——持续 429 的上游不再每轮冷却到期都重新烧满失败预算（0.2.7）；
+  **成功一次全案清除**（恢复后回到基础时长）。`/gate/free` 运行态的 cooling 行带 `offenses`。
+  会话级冷却（`policy.cooldown_seconds`）仍然生效。
 - **全部免费候选都在冷却 / 没 key / 没有发现源 → 本次直接走付费**，不硬撞限流。
 - 动态链（含 `@free`）不使用按索引的会话粘性指针：每次请求按当前列表重新展开，靠按 ref 的冷却跳过坏模型。
 

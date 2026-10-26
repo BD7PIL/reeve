@@ -3,6 +3,24 @@
 Newest first. Versions follow the plugin package (`plugin/package.json`); the
 panel extension has its own tags (`reeve-<version>`).
 
+## 0.2.7 — 2026-10-26
+
+**Free-pool cooldowns now escalate instead of resetting.** A free model that
+keeps failing used to re-enter a fixed 600 s cooldown and — worse — when a
+cooldown expired the whole record was deleted, handing the model a fresh
+failure budget. A persistently rate-limited upstream (429 all day) therefore
+burned 3 doomed attempts every ~10 minutes, forever (observed: two dead models
+burned 12 attempts in 40 minutes). Now each model's consecutive-offense count
+is remembered when a cooldown expires (the entry stays, `fails` resets, one
+probe attempt is allowed); failing again re-enters cooldown at
+`failure_cooldown_seconds × 2^(offenses−1)`, capped by the new
+`free.cooldown_cap_seconds` (default 86400). One successful attempt clears the
+record entirely, so a recovered upstream returns to the base cooldown. The
+`/gate/free` runtime snapshot reports `offenses` per cooling ref so the panel
+can show "how many times has this model re-entered cooldown". Config gains
+`free.cooldown_cap_seconds` (60–604800); everything else is unchanged.
+Plugin-only release — the panel extension is untouched.
+
 ## 0.2.6 — 2026-10-25
 
 **Tier metadata now follows the chain — no manual upkeep.** The composer's

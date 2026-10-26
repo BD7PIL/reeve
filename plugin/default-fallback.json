@@ -28,6 +28,7 @@
     "refresh_seconds": 300,
     "failure_threshold": 3,
     "failure_cooldown_seconds": 600,
+    "cooldown_cap_seconds": 86400,
     "prefer": ["glm-5.3-flash-free", "mimo-v2.6-flash-free", "deepseek-v4.1-flash-free"],
     "deny": [],
     "require_image": true,

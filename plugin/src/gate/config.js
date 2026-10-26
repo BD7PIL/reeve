@@ -48,6 +48,9 @@ export const FREE_DEFAULTS = Object.freeze({
   refresh_seconds: 300,
   failure_threshold: 3,
   failure_cooldown_seconds: 600,
+  // 递进冷却的封顶：第 N 次进冷却的时长 = failure_cooldown_seconds × 2^(N-1)，不超过它。
+  // 持续死的免费上游不该每轮冷却到期都重新烧三次失败（0.2.7）。
+  cooldown_cap_seconds: 86_400,
   prefer: Object.freeze([]),
   deny: Object.freeze([]),
   // 免费池只保留 image-capable 模型：模态从 models.dev 动态读取（不再维护静态白名单）
@@ -129,6 +132,7 @@ export function normalizeGateConfig(raw) {
     refresh_seconds: asInt(fSrc.refresh_seconds, 30, 86_400, FREE_DEFAULTS.refresh_seconds),
     failure_threshold: asInt(fSrc.failure_threshold, 1, 20, FREE_DEFAULTS.failure_threshold),
     failure_cooldown_seconds: asInt(fSrc.failure_cooldown_seconds, 60, 86_400, FREE_DEFAULTS.failure_cooldown_seconds),
+    cooldown_cap_seconds: asInt(fSrc.cooldown_cap_seconds, 60, 604_800, FREE_DEFAULTS.cooldown_cap_seconds),
     prefer: asStrings(fSrc.prefer),
     deny: asStrings(fSrc.deny),
     require_image: fSrc.require_image === true,

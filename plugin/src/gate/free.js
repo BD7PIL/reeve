@@ -5,7 +5,10 @@
 //   · 链里只写占位符 `@free`；
 //   · 请求时按"发现到的、未冷却的、有键的"候选**展开**成真实 provider/model；
 //   · 发现结果带 TTL（`free.refresh_seconds`），失败保留上一份好列表并如实记错误；
-//   · 失败的免费模型按 **ref** 进全局冷却（连续 `failure_threshold` 次 → `failure_cooldown_seconds`），
+//   · 失败的免费模型按 **ref** 进全局冷却（连续 `failure_threshold` 次 → 进入冷却），
+//     冷却时长**逐次递进**：`failure_cooldown_seconds` × 2^(连续第几次进冷却 − 1)，封顶
+//     `cooldown_cap_seconds`（默认 86400）。持续 429 的上游不再每轮冷却到期都重新烧三次失败
+//     （2026-10-26：两个死模型 40 分钟烧掉 12 次死尝试）；成功一次全案清除。
 //     全部冷却/不可用 → 本次直接走链里的付费候选（不硬撞限流）。
 //
 // 时间与 IO 全部注入（`now` / `fetchImpl`），测试用假时钟 + 发现源 stub，不 sleep、不出网。
@@ -160,10 +163,14 @@ export function createFreeLane({ getConfig, getAuth = () => ({}), now = Date.now
   const isCooling = (ref) => {
     const c = cooldowns.get(ref)
     if (!c) return false
-    // until=0 表示"失败次数还没到阈值"：**保留计数**，不能当成已过期删掉（否则永远攒不到阈值）
+    // until=0 表示"失败次数还没到阈值"或"冷却已到期、放行一次探测"：**保留计数**，
+    // 不能当成已过期删掉（offenses 要靠它递进，fails 要靠它攒到阈值）
     if (c.until === 0) return false
     if (now() >= c.until) {
-      cooldowns.delete(ref)
+      // 到期不放行就删——那是 0.2.6 的"忘账"bug：持续死的上游每轮都拿到全新的失败预算。
+      // 现在保留 offenses，fails 清零，放行一次探测；再失败就按翻倍后的时长进冷却。
+      c.fails = 0
+      c.until = 0
       return false
     }
     return true
@@ -261,14 +268,22 @@ export function createFreeLane({ getConfig, getAuth = () => ({}), now = Date.now
     const providerId = attempt.provider?.id ?? attempt.provider
     const ref = `${providerId}/${attempt.model}`
     if (ok) {
+      // 成功一次全案清除：offenses 归零，上游恢复后立刻回到初始冷却时长。
       cooldowns.delete(ref)
       return
     }
     const free = freeCfg()
     const threshold = Math.max(1, Number(free.failure_threshold ?? 3))
-    const cur = cooldowns.get(ref) ?? { fails: 0, until: 0 }
+    const base = Math.max(0, Number(free.failure_cooldown_seconds ?? 600))
+    const cap = Math.max(base, Number(free.cooldown_cap_seconds ?? 86_400))
+    const cur = cooldowns.get(ref) ?? { fails: 0, until: 0, offenses: 0 }
     cur.fails += 1
-    if (cur.fails >= threshold) cur.until = now() + Math.max(0, Number(free.failure_cooldown_seconds ?? 600)) * 1000
+    if (cur.fails >= threshold) {
+      cur.offenses = (cur.offenses ?? 0) + 1
+      const scaled = base * 2 ** (cur.offenses - 1)
+      cur.until = now() + Math.min(cap, scaled) * 1000
+      cur.fails = 0
+    }
     cooldowns.set(ref, cur)
   }
 
@@ -290,7 +305,7 @@ export function createFreeLane({ getConfig, getAuth = () => ({}), now = Date.now
     }
     const cooling = [...cooldowns.entries()]
       .filter(([, c]) => now() < c.until)
-      .map(([ref, c]) => ({ ref, fails: c.fails, until: c.until }))
+      .map(([ref, c]) => ({ ref, fails: c.fails, until: c.until, offenses: c.offenses ?? 0 }))
     return {
       enabled: free.enabled !== false,
       max: Number(free.max ?? 0),
