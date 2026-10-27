@@ -77,6 +77,19 @@ for (const rel of paths) {
   if (/(^|\/)\.env|\.pem$|(^|\/)\.key$|id_rsa|id_ed25519/.test(rel)) problems.push(`可疑文件：${rel}`)
 }
 
+// ②b 安装契约与 npm 版本必须一致。
+// provision.json 是 ocrc 的安装契约（它据此报「组件：安装 reeve <ver>」并给缓存命名）。
+// 真实事故（0.2.9 首发）：契约忘了跟着 bump，ocrc 推的是 0.2.9、日志却说 0.2.8 ——
+// 运维据此反复重装。发布前把两份版本钉在一起。
+if (!paths.includes('provision.json')) {
+  problems.push('缺文件：provision.json（ocrc 的安装契约）')
+} else {
+  const contract = JSON.parse(readFileSync(join(pkgDir, 'provision.json'), 'utf8'))
+  if (contract.version !== info.version) {
+    problems.push(`provision.json 的 version（${contract.version}）与 package.json（${info.version}）不一致 —— 一起 bump`)
+  }
+}
+
 // ③ 随包文件的内容扫描（密钥 / 内网地址）
 const PATTERNS = [
   [/-----BEGIN [A-Z ]*PRIVATE KEY-----/, '私钥字面'],
