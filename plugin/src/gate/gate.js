@@ -227,6 +227,17 @@ export async function startGate({
     const sessionID = typeof req.headers['x-opencode-session-id'] === 'string' ? req.headers['x-opencode-session-id'] : null
     let route = routeFor({ model, sessionID }, { config, sessions })
     if (!route) return sendJson(res, 404, { error: { message: `未知模型或链：${model}` } })
+    // 0.2.10 裸模型名直投：引擎对自定义 baseURL 发裸名（无 `provider/` 前缀）。
+    // 命中免费池已发现的模型时按显式直投处理——绝不悄悄掉进默认链走付费
+    // （2026-10-27 实测泄漏：`glm-5.3-flash-free` 被兜进 default_chain 落到 zhipu）。
+    // 链名与 chain_for_model 的显式声明优先级不变，这里只接"本来要掉默认链"的那一支。
+    if (!model.includes('/') && !config.chains[model] && !config.chain_for_model[model]) {
+      const hit = await freeLane.matchBare(model)
+      if (hit) {
+        const rewritten = routeFor({ model: `${hit.provider}/${hit.model}`, sessionID }, { config, sessions })
+        if (rewritten) route = rewritten
+      }
+    }
     // 文本档位收到图片：只把**这一次请求**改走视觉链。会话模型/composer 不动。
     if (hasImage(parsedBody)) {
       const imageChain = IMAGE_CHAINS[route.chain]

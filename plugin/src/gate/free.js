@@ -262,6 +262,16 @@ export function createFreeLane({ getConfig, getAuth = () => ({}), now = Date.now
     return { targets: out, expanded: picked.map((c) => c.ref), dynamic: true }
   }
 
+  /** 裸模型名 → 免费池里匹配的 {provider, model}（0.2.10）。
+   * 引擎对自定义 baseURL 发的是裸名（无 `provider/` 前缀）；不接住它就会掉进默认链
+   * 悄悄走付费（2026-10-27 实测泄漏：`glm-5.3-flash-free` 被兜到 zhipu）。 */
+  const matchBare = async (name) => {
+    if (typeof name !== 'string' || name.length === 0 || name.includes('/')) return null
+    const list = await discovered()
+    const hit = list.find((c) => c.model === name)
+    return hit ? { provider: hit.provider, model: hit.model } : null
+  }
+
   /** 只对 `@free` 展开出来的候选记全局健康（显式候选沿用按 session 的冷却）。 */
   const noteAttempt = (attempt, ok) => {
     if (attempt?.auto !== true) return
@@ -348,5 +358,5 @@ export function createFreeLane({ getConfig, getAuth = () => ({}), now = Date.now
     }
   }
 
-  return { expand, noteAttempt, isCooling, discovered, snapshot, runtime, warm, capFor, ensureModality: loadModalities, modalityRaw: () => modalityCache.raw }
+  return { expand, matchBare, noteAttempt, isCooling, discovered, snapshot, runtime, warm, capFor, ensureModality: loadModalities, modalityRaw: () => modalityCache.raw }
 }

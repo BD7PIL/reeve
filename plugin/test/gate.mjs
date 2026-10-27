@@ -83,7 +83,7 @@ const loopbackGuard = (inner = fetch) => {
 }
 
 /** 起一套一次性栈：stub 上游 → 配置文件 → GATE（注入 fetch/时钟/sleep）。 */
-const harness = async ({ stubs = {}, providers = {}, chains = {}, agents = {}, policy = {}, auth = {}, defaultChain = undefined, chainForModel = undefined, gateOptions = {} } = {}) => {
+const harness = async ({ stubs = {}, providers = {}, chains = {}, agents = {}, policy = {}, auth = {}, defaultChain = undefined, chainForModel = undefined, free = undefined, gateOptions = {} } = {}) => {
   const dir = await mkdtemp(join(tmpdir(), 'gate-'))
   const up = {}
   for (const [name, handler] of Object.entries(stubs)) up[name] = await makeStub(handler)
@@ -99,7 +99,7 @@ const harness = async ({ stubs = {}, providers = {}, chains = {}, agents = {}, p
     // stub 上游默认免键（除非测试显式给了 auth/key 来验证多键或 env 引用）
     if (given.key === undefined && given.auth === undefined) given.key = 'none'
   }
-  const raw = { schema: 1, policy, providers: providerEntries, chains, agents, default_chain: defaultChain ?? Object.keys(chains)[0], chain_for_model: chainForModel ?? {} }
+  const raw = { schema: 1, policy, providers: providerEntries, chains, agents, default_chain: defaultChain ?? Object.keys(chains)[0], chain_for_model: chainForModel ?? {}, ...(free ? { free } : {}) }
   const configPath = join(dir, 'reeve-fallback.jsonc')
   await writeFile(configPath, JSON.stringify(raw, null, 2))
   const authPath = join(dir, 'auth.json')
@@ -856,6 +856,26 @@ const postJson = (gate, path, body) =>
   assert.equal(alive.status, 200, 'GATE 存活')
   await h.close()
   ok('客户端首字节前断开：静默收场 / 不记账 / GATE 存活')
+}
+{
+  // f) 0.2.10 裸模型名直投：引擎裸名命中免费池 → 显式直投，绝不掉默认链走付费
+  const h = await harness({
+    stubs: { oc: (_req, res) => SSE_OK(res), paid: (_req, res) => SSE_OK(res) },
+    chains: { c: { targets: ['paid/m1'] } },
+    free: { enabled: true, max: 3, require_image: false, prefer: [], deny: [], providers: ['oc'], static: { oc: ['glm-5.3-flash-free'] } },
+    defaultChain: 'c',
+  })
+  const out = await post(h.gate, { model: 'glm-5.3-flash-free', stream: true, messages: [] }, { headers: { 'x-opencode-session-id': 'ses_bare1' } })
+  assert.equal(out.status, 200)
+  assert.equal(out.headers['x-reeve-fallback'], '1/oc/glm-5.3-flash-free', '裸名命中免费池 → 显式直投（不掉默认链）')
+  assert.equal(h.up.paid.state.calls, 0, '默认链（付费）没被打扰')
+  const out2 = await post(h.gate, { model: 'no-such-model', stream: true, messages: [] }, { headers: { 'x-opencode-session-id': 'ses_bare2' } })
+  assert.equal(out2.status, 200)
+  assert.equal(out2.headers['x-reeve-fallback'], '1/paid/m1', '未知裸名 → 默认链（行为不变）')
+  const out3 = await post(h.gate, { model: 'c', stream: true, messages: [] }, { headers: { 'x-opencode-session-id': 'ses_bare3' } })
+  assert.equal(out3.headers['x-reeve-fallback'], '1/paid/m1', '链名直呼（优先级最高）行为不变')
+  await h.close()
+  ok('裸名直投：免费池裸名不掉默认链 / 未知裸名走默认链 / 链名优先级不变')
 }
 
 // ---- 12. 集成：冷却与粘性（按 session 记账） ----

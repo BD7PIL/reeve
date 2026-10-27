@@ -3,6 +3,31 @@
 Newest first. Versions follow the plugin package (`plugin/package.json`); the
 panel extension has its own tags (`reeve-<version>`).
 
+## 0.2.10 — 2026-10-27
+
+**Bare model names route to the pool instead of the paid default chain.** The
+engine addresses models by bare id (`glm-5.3-flash-free`, no `provider/`
+prefix) whenever its provider baseURL is overridden — and GATE's bare-name
+fallthrough sent those requests to `default_chain`, silently serving them from
+a **paid** candidate (observed live 2026-10-27: `glm-5.3-flash-free` landed on
+zhipu). Now a bare name that matches a discovered free-pool model is routed as
+an explicit direct (passthrough) target. Chain names and `chain_for_model`
+keep their precedence; unknown bare names still fall to the default chain.
+
+**Free-pool ordering matches reality.** `prefer` now leads with the two
+openrouter candidates that actually hold quota through GATE (`nvidia/
+nemotron-3.5-super-vl:free` 1M-context vision, `dots-studio/dots-3-note-
+preview:free`), with the zen pair (`glm-5.3-flash-free`, `mimo-v2.6-flash-
+free`) following; `opencode/deepseek-v4.1-flash-free` is denied by default —
+it returned 429 on every attempt observed, including on days when its zen
+siblings served 87% of traffic.
+
+Diagnostic note from the same investigation: synthetic probes against
+`opencode.ai/zen/v1` always answer 429 with `FreeUsageLimitError` regardless
+of credentials or headers — that endpoint is not the one GATE uses
+(`opencode.ai/inference/openai/v1`). Never judge pool health from probes;
+judge from real-traffic ledger rows.
+
 ## 0.2.9 — 2026-10-27
 
 **First-byte failover for streaming.** Live incident on 2026-10-26: zhipuai
