@@ -28,7 +28,9 @@ export const POLICY_DEFAULTS = Object.freeze({
   max_fallback_attempts: 3,
   cooldown_seconds: 60,
   restore_primary_after_cooldown: false,
-  first_prompt_watchdog_ms: 90_000,
+  // 0.2.9 流式停滞窗口：只对"静默"设限，总时长永不设限（推理模型合法地慢）。
+  stream_first_byte_ms: 45_000,
+  stream_idle_ms: 120_000,
   provider_retries: 1,
   models_ttl_seconds: 300,
   session_ttl_seconds: 1800,

@@ -14,7 +14,6 @@ import { createServer } from 'node:http'
 import { appendFile, mkdir, readFile as readFileFs, rename, stat as statFs } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
-import { Readable, Transform } from 'node:stream'
 
 import { classifyFailure } from './classify.js'
 import { BUNDLED_FALLBACK_PATH, defaultFallbackConfigPath, loadGateConfig, normalizeGateConfig, watchGateConfig } from './config.js'
@@ -290,14 +289,12 @@ export async function startGate({
       }
 
       if (upstream.ok) {
-        // ---- 0.2.8 空响应守卫 ----
+        // ---- 空响应守卫 ----
         // 某些免费模型会回 200 但零内容（2026-10-26 EL7：nemotron 空 200 → 引擎记一条空
         // assistant 消息并闲置，轮次就地死亡）。分两档：
         //   · 非流式（无 body）：text() 全文判空 → 立即换下一个候选（可完全止损）；
-        //   · 流式：转发照旧（pipe 逐块、绝不缓冲——守卫不改转发路径），但在 **转发完成**
-        //     时统计"真内容"证据：整个响应没有一条非空 content/reasoning/tool_calls →
-        //     台账记 error/empty + 免费池记一次失败（递进冷却接管，下一次请求绕开它）。
-        //     当轮无法重试（流已提交），这是不引入缓冲/不碰流对象的最强守卫。
+        //   · 流式：0.2.9 起由"首字节 failover 泵"接管（见下）——首字节前停滞/断流
+        //     直接换候选，首块后停滞截断并记账，finish 判空语义保持 0.2.8。
         const contentType = upstream.headers?.get?.('content-type') ?? 'application/json'
         const isStream = /text\/event-stream/i.test(contentType)
         if (!isStream) {
@@ -319,33 +316,134 @@ export async function startGate({
           res.end(text)
           return
         }
-        note(attemptRow({ ts: new Date(t0).toISOString(), chainName: plan.chainName, agent: plan.agent, attempt, status: 'ok', code: upstream.status, latencyMs: now() - t0, retries, req: reqId, n: i + 1 }))
-        sessions.noteSuccess(sessionID ?? '(anon)', plan.chainName, attemptKey(attempt), plan.keys)
-        // 免费池的成败记账延迟到 finish（见下）：这里先记 true 会把随后判空的失败
-        // 账清零（delete ref），空模型永远攒不到阈值——0.2.8 之前的行为等于没守卫。
-        res.writeHead(upstream.status, {
-          'content-type': contentType,
-          'x-reeve-fallback': `${i + 1}/${attempt.provider.id}/${attempt.model}`,
-        })
+        // ---- 0.2.9 首字节 failover（流式）----
+        // 真实事故（2026-10-26 zhipuai）：上游 200 之后 ~45s 零字节、流挂死 —— 引擎整轮
+        // 等死，并发 subagent 全灭。0.2.8 的流式守卫只能在 finish 后记账：头已提交，当轮无救。
+        // 结构（上两版教训都在这：① pipe 与手读并存 = 双消费者死锁；② 指望
+        // `controller.abort()` 惊动挂着的 read —— 实测（Node 24/undici）abort **不会**
+        // 唤醒已 resolve 响应的 body 流上的 pending read，计时器到点泵照样睡着）：
+        //   · 首字节到达前**不提交响应头** —— 换候选的自由还在；
+        //   · **真计时器 + 竞赛唤醒**：停滞计时器独立于数据事件流动（静默期照走），
+        //     到点 resolve 一个 stall 信号，`Promise.race` 里赢过挂着的 read —— 泵的
+        //     唯一暂停点是这场竞赛，永不依赖流自身醒过来。abort/cancel 只做善后清理；
+        //   · 窗口：首字节 `stream_first_byte_ms`（默认 45s），首块后放宽为
+        //     `stream_idle_ms`（默认 120s）。总时长永不设限 —— 推理模型合法地慢，
+        //     只对"静默"设限；
+        //   · **单消费者泵**：upstream.body 只挂一个 reader，任意时刻至多一个 pending
+        //     read；竞赛输掉的 read 预挂 catch（abort 后它会被拒绝，不能没人接）；
+        //   · 记账先到先得（settled 旗）：finish 的 0.2.8 判空与停滞/截断记账互斥。
+        const firstByteMs = Math.max(1, Number(config.policy.stream_first_byte_ms ?? 45_000))
+        const idleMs = Math.max(1, Number(config.policy.stream_idle_ms ?? 120_000))
+        const decoder = new TextDecoder()
         const probe = { head: '' }
-        const tap = new Transform({
-          transform(chunk, _enc, cb) {
-            if (probe.head.length < 1024 * 1024) probe.head += chunk.toString('utf8')
-            cb(null, chunk)
-          },
+        let committed = false // 响应头已提交：此后只能截断，不能换候选
+        let settled = false // 失败账已记（finish 判空与停滞/截断记账互斥，绝不双记）
+        let stalled = false // 本次中断是否来自停滞计时器
+        let wakeStall = null
+        const stallSignal = new Promise((resolve) => {
+          wakeStall = () => {
+            wakeStall = null
+            stalled = true
+            resolve()
+          }
         })
-        Readable.fromWeb(upstream.body).pipe(tap).pipe(res)
+        let stallTimer = null
+        const armStall = (ms) => {
+          if (stallTimer) clearTimeout(stallTimer)
+          stallTimer = setTimeout(() => {
+            stallTimer = null
+            wakeStall?.()
+          }, ms)
+          stallTimer.unref?.()
+        }
+        const disarmStall = () => {
+          if (stallTimer) {
+            clearTimeout(stallTimer)
+            stallTimer = null
+          }
+        }
+        const settleFailure = () => {
+          if (settled) return
+          settled = true
+          freeLane.noteAttempt(attempt, false)
+          sessions.noteFailure(sessionID ?? '(anon)', plan.chainName, attemptKey(attempt))
+          logger?.debug?.(`[gate] 流式${stalled ? '停滞' : '中断'}：${attempt.provider.id}/${attempt.model} → 冷却`)
+        }
         res.on('finish', () => {
+          // 0.2.8 语义不变：正常收尾才判空。ok 行是 HTTP 层面的事实，守卫的效力落在冷却上。
+          // 换候选后本监听仍挂在 res 上：靠 `!committed` 自哑（上一轮从未提交过响应头）。
+          if (settled || !committed) return
+          settled = true
           const empty = !REAL_RESPONSE_RE.test(probe.head)
           freeLane.noteAttempt(attempt, !empty)
           if (empty) {
-            // 台账保持"一行一请求"的约定（ok 行是 HTTP 层面的事实），守卫的效力
-            // 落在冷却上：把这个空模型记一笔失败 → 递进冷却让下一次请求绕开它。
             sessions.noteFailure(sessionID ?? '(anon)', plan.chainName, attemptKey(attempt))
             logger?.debug?.(`[gate] 空响应（流式，事后判空）：${attempt.provider.id}/${attempt.model} → 冷却`)
           }
         })
-        return
+        try {
+          armStall(firstByteMs)
+          const reader = upstream.body.getReader()
+          while (true) {
+            const read = reader.read()
+            read.catch(() => {}) // 竞赛输家也要有人接 rejection（abort 后它必被拒绝）
+            const won = await Promise.race([
+              read,
+              stallSignal.then(() => ({ stalled: true })),
+            ])
+            if (won?.stalled) {
+              try {
+                controller.abort() // 善后：连接不留给挂死的上游（abort 本身不惊动泵 —— 靠竞赛醒）
+              } catch { /* 已中止/实现差异：忽略 */ }
+              reader.cancel().catch(() => {})
+              throw new Error(`stalled after ${committed ? idleMs : firstByteMs}ms of silence`)
+            }
+            disarmStall()
+            if (won.done) break
+            if (!committed) {
+              committed = true
+              note(attemptRow({ ts: new Date(t0).toISOString(), chainName: plan.chainName, agent: plan.agent, attempt, status: 'ok', code: upstream.status, latencyMs: now() - t0, retries, req: reqId, n: i + 1 }))
+              sessions.noteSuccess(sessionID ?? '(anon)', plan.chainName, attemptKey(attempt), plan.keys)
+              res.writeHead(upstream.status, {
+                'content-type': contentType,
+                'x-reeve-fallback': `${i + 1}/${attempt.provider.id}/${attempt.model}`,
+              })
+            }
+            armStall(idleMs)
+            if (probe.head.length < 1024 * 1024) probe.head += decoder.decode(won.value, { stream: true })
+            // 不等 drain：SSE 是令牌级小流量、消费端是环回上的引擎；等 drain 会给泵加第二个
+            // 暂停点 —— 客户端停走时竞赛唤醒不了它（又是死锁形状）。
+            res.write(won.value)
+          }
+          disarmStall()
+          if (!committed) {
+            // 200 + event-stream 但零字节就干净收尾（0.2.8 的"空流"）：当轮可救，直接换。
+            note(attemptRow({ ts: new Date(t0).toISOString(), chainName: plan.chainName, agent: plan.agent, attempt, status: 'error', code: upstream.status, latencyMs: now() - t0, retries, detail: 'empty stream', req: reqId, n: i + 1 }))
+            attemptsSeen.push({ provider: attempt.provider.id, model: attempt.model, code: upstream.status, reason: 'empty' })
+            freeLane.noteAttempt(attempt, false)
+            sessions.noteFailure(sessionID ?? '(anon)', plan.chainName, attemptKey(attempt))
+            continue
+          }
+          res.end()
+          return
+        } catch (err) {
+          disarmStall()
+          // 到这里的中止源：停滞竞赛（stalled）、res 'close'（客户端走人，经 onClose abort）、
+          // 上游自身断流。三者都按"这个候选失败了"对账 —— 只有客户端走人不记账。
+          const clientGone = controller.signal.aborted && !stalled
+          if (!committed) {
+            if (clientGone) return // 客户端先走：没什么可服务的，静默收场，不算上游的账
+            note(attemptRow({ ts: new Date(t0).toISOString(), chainName: plan.chainName, agent: plan.agent, attempt, status: 'error', code: upstream.status, latencyMs: now() - t0, retries, detail: stalled ? `stalled: no first byte in ${firstByteMs}ms` : `stream error: ${String(err?.message ?? err).slice(0, 120)}`, req: reqId, n: i + 1 }))
+            attemptsSeen.push({ provider: attempt.provider.id, model: attempt.model, code: upstream.status, reason: stalled ? 'stalled' : 'stream_error' })
+            freeLane.noteAttempt(attempt, false)
+            sessions.noteFailure(sessionID ?? '(anon)', plan.chainName, attemptKey(attempt))
+            continue // 首字节前失败当轮可救：换下一个候选
+          }
+          // 头已提交：只能截断。客户端走人不是 provider 的错，不记账。
+          if (!clientGone) settleFailure()
+          if (!res.writableEnded) res.end()
+          return
+        }
       }
 
       const text = (await upstream.text().catch(() => '')).slice(0, errorTextBytes)
@@ -389,6 +487,8 @@ export async function startGate({
             cooldown_seconds: config.policy.cooldown_seconds,
             restore_primary_after_cooldown: config.policy.restore_primary_after_cooldown,
             provider_retries: config.policy.provider_retries,
+            stream_first_byte_ms: config.policy.stream_first_byte_ms,
+            stream_idle_ms: config.policy.stream_idle_ms,
           },
           agents: { ...config.agents },
           chain_for_model: { ...config.chain_for_model },
@@ -511,6 +611,8 @@ export async function startGate({
         cooldown_seconds: config.policy.cooldown_seconds,
         restore_primary_after_cooldown: config.policy.restore_primary_after_cooldown,
         provider_retries: config.policy.provider_retries,
+        stream_first_byte_ms: config.policy.stream_first_byte_ms,
+        stream_idle_ms: config.policy.stream_idle_ms,
       },
       agents: { ...config.agents },
       chain_for_model: { ...config.chain_for_model },

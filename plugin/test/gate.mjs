@@ -729,6 +729,135 @@ const postJson = (gate, path, body) =>
   ok('集成·上限与全失败：502 体列出每次尝试（无密钥）/ 台账行数=尝试数')
 }
 
+// ---- 11b. 0.2.9 首字节 failover：停滞可救 / 截断记账 / 正常流回归 ----
+{
+  // a) 首字节前挂死（zhipuai 事故形状）：200 + 流头后零字节 → 换下一个候选
+  const h = await harness({
+    stubs: {
+      hang: (_req, res) => {
+        res.writeHead(200, { 'content-type': 'text/event-stream' }) // 200 + 流头（真实上游会 flush），然后装死
+        res.flushHeaders()
+      },
+      good: (_req, res) => SSE_OK(res),
+    },
+    chains: { c: { targets: ['hang/m1', 'good/m2'] } },
+    policy: { stream_first_byte_ms: 60, stream_idle_ms: 120_000 },
+    defaultChain: 'c',
+  })
+  const out = await post(h.gate, { model: 'c', stream: true, messages: [] }, { headers: { 'x-opencode-session-id': 'ses_ttfb' } })
+  assert.equal(out.status, 200, '客户端拿到的是第二候选的 200')
+  assert.equal(out.headers['x-reeve-fallback'], '2/good/m2', '响应头标出真实目标（第二候选）')
+  assert.ok(out.text.includes('ok'), '第二候选内容完整透传')
+  assert.ok(h.up.hang.state.aborted >= 1, '停滞上游被中止（不留挂死连接）')
+  assert.equal(h.gate.snapshot().sessions.cooling, 1, '停滞候选进会话冷却')
+  await h.gate.flushLedger()
+  const rows = (await readFile(join(h.dir, 'gate.jsonl'), 'utf8')).trim().split('\n').map((l) => JSON.parse(l))
+  assert.equal(rows.length, 2, '台账两行：停滞 error + 第二候选 ok')
+  assert.equal(rows[0].status, 'error')
+  assert.ok(String(rows[0].detail).includes('stalled'), '停滞原因进台账')
+  assert.equal(rows[0].provider, 'hang')
+  assert.equal(rows[1].provider, 'good')
+  await h.close()
+  ok('首字节 failover：首字节前停滞换候选 / 停滞上游被中止 / 台账 error+ok 两行')
+}
+{
+  // b) 首块之后静默超时：截断 + 记账一次（绝不双记）
+  const h = await harness({
+    stubs: {
+      stall: (_req, res) => {
+        res.writeHead(200, { 'content-type': 'text/event-stream' })
+        res.write(`data: ${JSON.stringify({ choices: [{ delta: { content: 'partial' } }] })}\n\n`)
+        // 之后装死：既不 end 也不报错
+      },
+    },
+    chains: { c: { targets: ['stall/m1'] } },
+    policy: { stream_first_byte_ms: 120_000, stream_idle_ms: 60 },
+    defaultChain: 'c',
+  })
+  const out = await post(h.gate, { model: 'c', stream: true, messages: [] }, { headers: { 'x-opencode-session-id': 'ses_idle' } })
+  assert.ok(out.text.includes('partial'), '首块已透给客户端')
+  assert.ok(h.up.stall.state.aborted >= 1, '静默超时中止上游')
+  assert.equal(h.gate.snapshot().sessions.cooling, 1, '流中停滞记一次失败账')
+  await h.gate.flushLedger()
+  const rows = (await readFile(join(h.dir, 'gate.jsonl'), 'utf8')).trim().split('\n').map((l) => JSON.parse(l))
+  assert.equal(rows.length, 1, '台账仍是一行（ok = HTTP 层面事实；失败落在冷却）')
+  assert.equal(rows[0].status, 'ok')
+  await h.close()
+  ok('流中停滞：截断给客户端 / 上游被中止 / 失败账恰好一次（finish 判空让位）')
+}
+{
+  // c) 上游首字节前断流（写完流头就 destroy）：与停滞同样可救 —— 顺带钉死 0.2.8 pipe 不转发错误
+  const h = await harness({
+    stubs: {
+      reset: (_req, res) => {
+        res.writeHead(200, { 'content-type': 'text/event-stream' })
+        res.flushHeaders()
+        setTimeout(() => res.destroy(), 20)
+      },
+      good: (_req, res) => SSE_OK(res),
+    },
+    chains: { c: { targets: ['reset/m1', 'good/m2'] } },
+    policy: { stream_first_byte_ms: 120_000, stream_idle_ms: 120_000 },
+    defaultChain: 'c',
+  })
+  const out = await post(h.gate, { model: 'c', stream: true, messages: [] }, { headers: { 'x-opencode-session-id': 'ses_reset' } })
+  assert.equal(out.status, 200)
+  assert.equal(out.headers['x-reeve-fallback'], '2/good/m2', '断流换到第二候选（pipe 时代客户端会挂死）')
+  assert.ok(out.text.includes('ok'))
+  await h.gate.flushLedger()
+  const rows = (await readFile(join(h.dir, 'gate.jsonl'), 'utf8')).trim().split('\n').map((l) => JSON.parse(l))
+  assert.equal(rows.length, 2)
+  assert.ok(String(rows[0].detail).includes('stream error'), '断流原因进台账')
+  await h.close()
+  ok('首字节前断流：换候选 / 台账 stream error')
+}
+{
+  // d) 正常流回归：SSE 完整透传，零误伤
+  const h = await harness({
+    stubs: { good: (_req, res) => SSE_OK(res) },
+    chains: { c: { targets: ['good/m1'] } },
+    defaultChain: 'c',
+  })
+  const out = await post(h.gate, { model: 'c', stream: true, messages: [] }, { headers: { 'x-opencode-session-id': 'ses_ok' } })
+  assert.equal(out.status, 200)
+  assert.equal(out.headers['x-reeve-fallback'], '1/good/m1')
+  assert.ok(out.text.includes('ok') && out.text.includes('[DONE]'), '完整透传（含 [DONE]）')
+  assert.equal(h.gate.snapshot().sessions.cooling, 0, '正常流零冷却')
+  await h.gate.flushLedger()
+  const rows = (await readFile(join(h.dir, 'gate.jsonl'), 'utf8')).trim().split('\n').map((l) => JSON.parse(l))
+  assert.equal(rows.length, 1)
+  assert.equal(rows[0].status, 'ok')
+  await h.close()
+  ok('正常流回归：完整透传 / 零误伤冷却 / 台账一行 ok')
+}
+{
+  // e) 客户端首字节前走人：静默收场（不算上游的账），GATE 存活
+  const h = await harness({
+    stubs: {
+      hang: (_req, res) => {
+        res.writeHead(200, { 'content-type': 'text/event-stream' })
+        res.flushHeaders()
+      },
+    },
+    chains: { c: { targets: ['hang/m1'] } },
+    policy: { stream_first_byte_ms: 120_000, stream_idle_ms: 120_000 },
+    defaultChain: 'c',
+  })
+  const payload = JSON.stringify({ model: 'c', stream: true, messages: [] })
+  const req = httpRequest({ host: '127.0.0.1', port: h.gate.port, path: '/v1/chat/completions', method: 'POST', headers: { 'content-type': 'application/json', 'content-length': Buffer.byteLength(payload) } }, () => {})
+  req.on('error', () => {}) // 客户端自己 destroy：随后的 ECONNRESET 是预期噪音
+  req.end(payload)
+  await new Promise((r) => setTimeout(r, 80)) // 让泵挂到首字节等待上
+  req.destroy()
+  await new Promise((r) => setTimeout(r, 150)) // 让断开传播到上游
+  assert.ok(h.up.hang.state.aborted >= 1, '客户端断开传播到上游')
+  assert.equal(h.gate.snapshot().sessions.cooling, 0, '客户端走人不算上游的账')
+  const alive = await getJson(h.gate, '/gate/version')
+  assert.equal(alive.status, 200, 'GATE 存活')
+  await h.close()
+  ok('客户端首字节前断开：静默收场 / 不记账 / GATE 存活')
+}
+
 // ---- 12. 集成：冷却与粘性（按 session 记账） ----
 {
   let t = 5_000_000

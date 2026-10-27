@@ -3,6 +3,40 @@
 Newest first. Versions follow the plugin package (`plugin/package.json`); the
 panel extension has its own tags (`reeve-<version>`).
 
+## 0.2.9 — 2026-10-27
+
+**First-byte failover for streaming.** Live incident on 2026-10-26: zhipuai
+answered `HTTP 200`, opened the SSE stream, then went silent — zero bytes for
+~45s and counting. The 0.2.8 stream guard can only cool the model *after*
+`finish`: response headers are already committed, so the turn is unsavable and
+every concurrent subagent dies with it. The streaming branch is now a
+**single-consumer pump** (one `for await` is the only reader — the previous
+attempt at this deadlocked by mixing `pipe` with manual reads, and was
+reverted):
+
+- **Headers are not committed until the first byte arrives.** Before that
+  point the chain can still move: a stalled or reset upstream is recorded as
+  `error/stalled` (or `stream error`) in the ledger, cooled in the session and
+  free-lane accounts, and the next candidate serves the request.
+- **Real timers on silence, never on total duration.** `stream_first_byte_ms`
+  (default 45s) guards the wait for the first byte; after that the window
+  widens to `stream_idle_ms` (default 120s). A reasoning model that keeps
+  producing is never touched — only silence is. A timer firing mid-stream
+  aborts the upstream and truncates the response (headers are already out;
+  nothing else is possible), recording exactly one failure — the `finish`
+  empty-probe yields via the settled flag, so accounts are never
+  double-booked. Client disconnects before the first byte clean up silently
+  and are **not** charged to the provider.
+- Two latent 0.2.8 defects fixed en route: the `pipe` never forwarded upstream
+  errors (a stream reset before the first chunk left the client hanging — now
+  it fails over), and the probe decoded chunks with `chunk.toString('utf8')`,
+  which degrades to comma-separated decimal garbage on runtimes where
+  `Readable.fromWeb` yields bare `Uint8Array` (every real stream would have
+  been judged empty); decoding now goes through `TextDecoder`.
+- Policy keys: `stream_first_byte_ms` / `stream_idle_ms` (exposed in
+  `/gate/version` and the snapshot); the never-wired `first_prompt_watchdog_ms`
+  default was removed.
+
 ## 0.2.8 — 2026-10-26
 
 **Empty-response guard.** Some free models answer `HTTP 200` with no content —
