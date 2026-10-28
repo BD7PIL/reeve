@@ -1,6 +1,6 @@
 {
   "name": "@bd7pil/reeve",
-  "version": "0.2.11",
+  "version": "0.2.12",
   "description": "REEVE orchestration layer for OpenCode v2: agent/skill registration, task ledger, GATE proxy (routing, fallback, ledger) and request stats",
   "license": "MIT",
   "author": "bd7pil",

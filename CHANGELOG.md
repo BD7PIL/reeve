@@ -3,6 +3,14 @@
 Newest first. Versions follow the plugin package (`plugin/package.json`); the
 panel extension has its own tags (`reeve-<version>`).
 
+## 0.2.12 — 2026-10-28
+
+**Contract-only release.** Adds `pluginOptions` (`agents.hideBuiltins=false`)
+to `provision.json` so ocrc-driven peer installs register the plugin as an
+object entry carrying the option — 0.2.11 shipped the feature but left the
+contract field out, so peers kept the plain-string entry and native agents
+stayed hidden there. No code changes.
+
 ## 0.2.11 — 2026-10-28
 
 **Native agents can stay visible; foreman gets a shape-based fast lane.**
