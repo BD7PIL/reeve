@@ -102,7 +102,8 @@ It never writes `agents.*.model`; that key belongs to OpenChamber.
         "retentionDays": 30,
         "limits": { "default": 8, "providers": {}, "models": {} },
         "snapshotPath": "~/.reeve/ledger.json",
-        "gate": { "enabled": true, "port": 18080 }
+        "gate": { "enabled": true, "port": 18080 },
+        "agents": { "hideBuiltins": false }
       }
     }
   ]
@@ -112,6 +113,11 @@ It never writes `agents.*.model`; that key belongs to OpenChamber.
 - `limits.default`: 0 means unlimited; an explicit value is recommended.
 - `snapshotPath`: read-only projection for the panel; writing it is optional.
 - `gate.enabled: false` disables the proxy layer (you then own the endpoint).
+- `agents.hideBuiltins: false` keeps the engine's native `build` / `plan` /
+  `general` / `explore` agents visible in the composer picker (default `true`
+  hides them — foreman is the default primary agent). Direct small tasks can
+  then run on the native single-agent path while foreman keeps handling
+  orchestrated ones.
 
 ## Tests
 

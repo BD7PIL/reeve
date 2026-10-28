@@ -57,6 +57,9 @@ export default {
     const limits = options.limits ?? {}
     const wallClockMs = options.wallClockMs ?? 0
     const abortGraceMs = options.abortGraceMs
+    // 0.2.11：默认把原生 build/plan/general/explore 藏出选择器（foreman 是默认主 agent）；
+    // 想用原生直改路径的机器显式关掉：`options.agents.hideBuiltins = false`。
+    const hideBuiltins = options.agents?.hideBuiltins !== false
 
     const ledger = new Ledger({ storage: ctx.storage, logger })
     const restored = await ledger.hydrate()
@@ -457,11 +460,13 @@ export default {
       const bundledAgents = await loadAgents()
       const bundledSkills = await loadSkills()
       await ctx.agent.transform((editor) => {
-        for (const id of BUILTINS_TO_HIDE) {
-          if (editor.get(id)?.hidden === true) continue
-          editor.update(id, (agent) => {
-            agent.hidden = true
-          })
+        if (hideBuiltins) {
+          for (const id of BUILTINS_TO_HIDE) {
+            if (editor.get(id)?.hidden === true) continue
+            editor.update(id, (agent) => {
+              agent.hidden = true
+            })
+          }
         }
         for (const info of bundledAgents) {
           if (editor.get(info.id)) continue // 配置优先

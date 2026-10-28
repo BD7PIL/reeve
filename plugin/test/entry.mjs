@@ -23,7 +23,7 @@ const ok = (label) => {
 }
 
 /** 捕获式 fake ctx：每个挂载点都记下"装了什么"。 */
-function makeCtx({ storageSeed = new Map() } = {}) {
+function makeCtx({ storageSeed = new Map(), options: optionOverrides = {} } = {}) {
   const captured = {
     tools: [],           // ctx.tool.transform 里 editor.add 的工具
     toolHooks: [],       // ['execute.before', handler] 等
@@ -59,6 +59,7 @@ function makeCtx({ storageSeed = new Map() } = {}) {
       ownEndpoint: false,
       snapshotPath: false,
       stats: { intervalMs: 0 },
+      ...optionOverrides,
     },
     storage,
     location: { directory: null },
@@ -228,6 +229,34 @@ function makeCtx({ storageSeed = new Map() } = {}) {
     ok('execute.before/after：非 subagent 不进账；前台 subagent 落终态；task_status 读回')
   } finally {
     dispose()
+  }
+}
+
+// ---- N. 内置 agent 可见性：默认藏四个 / 选项关掉后不藏（0.2.11） ----
+{
+  const home = await mkdtemp(join(tmpdir(), 'reeve-entry-'))
+  try {
+    // 默认：BUILTINS_TO_HIDE 四个都被置 hidden=true
+    const a = makeCtx()
+    const disposeA = await plugin.setup(a.ctx)
+    const aOps = a.captured.agentEditorOps.filter((op) => op.startsWith('update:'))
+    for (const id of ['build', 'plan', 'general', 'explore']) {
+      assert.ok(aOps.includes(`update:${id}`), `默认必须藏 ${id}`)
+    }
+    await disposeA()
+    ok('内置可见性默认：build/plan/general/explore 全部置 hidden')
+
+    // 选项关闭：`agents.hideBuiltins = false` → 一个都不藏
+    const b = makeCtx({ options: { agents: { hideBuiltins: false } } })
+    const disposeB = await plugin.setup(b.ctx)
+    const bOps = b.captured.agentEditorOps.filter((op) => op.startsWith('update:'))
+    for (const id of ['build', 'plan', 'general', 'explore']) {
+      assert.ok(!bOps.includes(`update:${id}`), `hideBuiltins:false 时不得动 ${id}`)
+    }
+    await disposeB()
+    ok('内置可见性选项：agents.hideBuiltins=false → 四内置原样保留（composer 可见）')
+  } finally {
+    await rm(home, { recursive: true, force: true })
   }
 }
 

@@ -3,6 +3,29 @@
 Newest first. Versions follow the plugin package (`plugin/package.json`); the
 panel extension has its own tags (`reeve-<version>`).
 
+## 0.2.11 — 2026-10-28
+
+**Native agents can stay visible; foreman gets a shape-based fast lane.**
+
+- New plugin option `agents.hideBuiltins` (default `true`, current behavior):
+  when `false`, the engine's native `build` / `plan` / `general` / `explore`
+  agents keep their config visibility and appear in the composer picker.
+  Direct small tasks can then run on the native single-agent path (1× token
+  cost) while foreman keeps handling orchestrated ones — the manual mode
+  switch that every mainstream coding agent converged on, backed by the
+  multi-agent overhead data (Anthropic's research system reports ~15× token
+  usage vs a chat) and the SWE-bench gold-patch distribution (median 1–2
+  files touched).
+- `agents/foreman.md` dispatch judgment rewritten from task **type** to task
+  **shape**: three questions (parallelizable subtasks? needs a boundary-locking
+  doc? needs independent review?). All "no" → fast lane: one-sentence task
+  straight to `executor`, personal verification, **no** planner/critic/reviewer;
+  any "yes" → full pipeline. The old dispatch-gate ceremony (written
+  justification required to skip planning) is retired — it made the 1–2-file
+  majority of real work pay the orchestration tax by default. The ≤3-file
+  hint is a calibration default, to be revisited against real dispatch
+  ledger data, not a law.
+
 ## 0.2.10 — 2026-10-27
 
 **Bare model names route to the pool instead of the paid default chain.** The
