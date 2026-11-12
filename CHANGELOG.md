@@ -3,6 +3,39 @@
 Newest first. Versions follow the plugin package (`plugin/package.json`); the
 panel extension has its own tags (`reeve-<version>`).
 
+## 0.3.0 — 2026-11-12
+
+**The review skill now ships every upstream rule doc (7 → 64), not a hand-picked
+subset.** The previous snapshot was pinned at `alibaba/open-code-review` v1.13.1
+with 7 rubrics chosen by language. Re-checking today: upstream is at **v1.13.8**
+(64 docs, 324,004 bytes) and our 7 files are byte-identical to that tag, as is
+the `Category`/`Severity` enum file — so the snapshot was stable, but the
+selection was not: it missed the **domain** rules (`github_workflows.md`,
+`github_config.md`) that cover the 9 workflows and 4 `.github` configs in
+reeve + ocrc, and `yaml.md` was only 86 bytes ("check key spelling").
+
+- `skills/review/` now carries all 64 upstream rule docs as verbatim copies,
+  plus `UPSTREAM.sha256` (per-file hash pinned to a commit, not a tag).
+- New `skills/review/review-map.json`: extension → rule selection table
+  (REEVE-authored; upstream's internal mapping was never copied). The table in
+  `SKILL.md` is **generated** from it, not hand-maintained.
+- New `scripts/check-review-map.mjs`: `--write` regenerates the table,
+  `--check` fails when the table is stale, a rubric is unlisted, two rules claim
+  the same glob, or the representative path cases resolve to the wrong file.
+- `scripts/check-plugin-pack.mjs` now also asserts
+  `provision.json`'s `enginePlugin.spec === <name>@<version>`, that the packed
+  rubric set matches `UPSTREAM.sha256` byte-for-byte, that
+  `skills/review/` has no subdirectories, and accepts `--pkg-dir` so negative
+  tests run against a throwaway copy.
+- New `.gitattributes` pins `plugin/skills/review/*.md` (and the hash manifest)
+  to LF; without it a Windows checkout rewrites line endings and the sha256
+  gate fails on every Windows CI leg.
+- `provision.json`: version 0.3.0, `enginePlugin.spec` caught up from 0.2.8
+  (it had drifted since 0.2.9), `enginePlugin.entry` corrected to the real
+  unpack layout (`.../components/reeve/package`).
+- Notices updated: `NOTICE.md` and the in-package `THIRD-PARTY.md` both list
+  all 64 files; upstream verified to have no `NOTICE` file of its own.
+
 ## 0.2.12 — 2026-10-28
 
 **Contract-only release.** Adds `pluginOptions` (`agents.hideBuiltins=false`)

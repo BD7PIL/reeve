@@ -1,12 +1,12 @@
 ---
 name: review
-description: 代码审查的规则与输出契约。在审查代码 diff 时使用：五维 rubric（正确性 / 安全 / 性能 / 可维护性 / 测试覆盖）、按语言选规则文档、结构化输出契约（severity 与 category 必填，外加 path、行号、existing_code 锚点片段、suggestion_code）、多轮评审时撤掉计划的做法、以及最后一轮的误报过滤。不用于审查实施计划（那是 critic 的活）。
-description_en: Code review rules and output contract: five-axis rubric (correctness, security, performance, maintainability, test coverage), per-language rule docs, structured output (severity, category, path, line, existing_code anchor, suggestion_code), dropping the plan during review rounds, and a final false-positive pass. Not for reviewing implementation plans (that is critic's job).
+description: 代码审查的规则与输出契约。在审查代码 diff 时使用：五维 rubric（正确性 / 安全 / 性能 / 可维护性 / 测试覆盖）、按扩展名从 64 份语言与格式规则里选对应的一份、结构化输出契约（severity 与 category 必填，外加 path、行号、existing_code 锚点片段、suggestion_code）、多轮评审时撤掉计划的做法、以及最后一轮的误报过滤。不用于审查实施计划（那是 critic 的活）。
+description_en: Code review rules and output contract. Use when reviewing a code diff: five-axis rubric (correctness, security, performance, maintainability, test coverage), selecting one of 64 per-language/format rule docs by file extension, structured output where severity and category are mandatory alongside path, line range, existing_code anchor and suggestion_code, dropping the plan in later rounds, and a final false-positive pass. Not for reviewing implementation plans (that is critic's job).
 license: Apache-2.0
 metadata:
   source: alibaba/open-code-review
-  source-tag: v1.13.1
-  rubrics: default.md ts_js_tsx_jsx.md python.md go.md yaml.md json.md package_json.md
+  source-tag: v1.13.8
+  source-commit: 4236c871fe8130aa840a2a1c0922f469e87e0416
 ---
 
 # 审查层 —— 规则与输出契约
@@ -14,8 +14,9 @@ metadata:
 > **给 `reviewer` agent 用。** 审查对象是**代码 diff**（不是计划——那是 `critic` 的活）。
 >
 > **来源**：规则文档抄自 [`alibaba/open-code-review`](https://github.com/alibaba/open-code-review)
-> （**Apache-2.0**，`Copyright 2026 Alibaba`，tag `v1.13.1`），见 `licenses/open-code-review.LICENSE`。
-> **我们只吸收规则与契约，不装 OCR 工具**（理由见 [../../docs/PLAN.md](../../docs/PLAN.md) §6）。
+> （**Apache-2.0**，`Copyright 2026 Alibaba`，tag `v1.13.8`，commit `4236c87`）。
+> 64 份原样副本，逐份 sha256 见 `UPSTREAM.sha256`，许可原文见 `licenses/open-code-review.LICENSE`。
+> **我们只吸收规则与契约，不装 OCR 工具**。
 >
 > **为什么本文件叫 `SKILL.md`**：opencode v2 的 skill 发现规则是
 > `scan("{*.md,**/SKILL.md}")`，且要求目录里有 **`SKILL.md`** 或 **`<目录名>.md`**。
@@ -33,17 +34,99 @@ metadata:
 | **可维护性** | 代码清楚吗？命名表达了意图吗？遵循项目既有的风格与架构模式吗？ |
 | **测试覆盖** | 关键逻辑路径有测试吗？边界条件覆盖了吗？ |
 
-## 2. 按语言取用
+## 2. 按扩展名取规则
 
-| 文件 | 用于 |
+**任何语言都先读 `default.md` 的五维总纲**，再按下表取被审文件对应的那一份。
+表外格式（`.sh`、`Dockerfile`、`Makefile`、`.html` 等上游未覆盖的）**只用 `default.md`**，不要硬套别的语言的规则。
+
+<!-- BEGIN review-map -->
+### 语言
+
+| 规则文件 | 适用 |
 |---|---|
-| `default.md` | **总纲，任何语言都先读它** |
-| `ts_js_tsx_jsx.md` | TypeScript / JavaScript / TSX / JSX（REEVE 自己的代码） |
-| `python.md` | Python |
-| `go.md` | Go |
-| `yaml.md` / `json.md` / `package_json.md` | 配置文件 |
+| `arkts.md` | `*.ets` |
+| `astro.md` | `*.astro` |
+| `c.md` | `*.c` `*.h` |
+| `clojure.md` | `*.clj` `*.cljs` `*.cljc` `*.edn` |
+| `cpp.md` | `*.cpp` `*.cc` `*.cxx` `*.hpp` `*.hh` `*.hxx` |
+| `csharp.md` | `*.cs` `*.csx` |
+| `elm.md` | `*.elm` |
+| `fsharp.md` | `*.fs` `*.fsx` `*.fsi` |
+| `go.md` | `*.go` |
+| `graphql.md` | `*.graphql` `*.gql` |
+| `haskell.md` | `*.hs` `*.lhs` |
+| `java.md` | `*.java` |
+| `jsonnet.md` | `*.jsonnet` `*.libsonnet` |
+| `julia.md` | `*.jl` |
+| `kotlin.md` | `*.kt` `*.kts` |
+| `matlab.md` | **按需读取**（.m is ambiguous with Objective-C; select it only for MATLAB-style projects.） |
+| `nim.md` | `*.nim` |
+| `nushell.md` | `*.nu` |
+| `objc.md` | `*.m` `*.mm` |
+| `ocaml.md` | `*.ml` `*.mli` |
+| `php.md` | `*.php` |
+| `powershell.md` | `*.ps1` `*.psm1` `*.psd1` |
+| `python.md` | `*.py` `*.pyi` |
+| `r.md` | `*.r` `*.rmd` |
+| `rego.md` | `*.rego` |
+| `rust.md` | `*.rs` |
+| `scala.md` | `*.scala` `*.sc` |
+| `shader.md` | `*.glsl` `*.hlsl` `*.frag` `*.vert` `*.comp` `*.shader` |
+| `solidity.md` | `*.sol` |
+| `starlark.md` | `*.bzl` `*.star` `BUILD` `BUILD.bazel` `WORKSPACE` `WORKSPACE.bazel` |
+| `swift.md` | `*.swift` |
+| `ts_js_tsx_jsx.md` | `*.ts` `*.tsx` `*.js` `*.jsx` `*.mjs` `*.cjs` `*.mts` `*.cts` |
+| `verilog.md` | `*.v` `*.sv` `*.svh` `*.vh` |
+| `vhdl.md` | `*.vhd` `*.vhdl` |
+| `vyper.md` | `*.vy` |
+| `zig.md` | `*.zig` |
 
-**不在表里**：认不出语言就只用 `default.md` 的五维，**不要硬套别的语言的规则**。
+### 配置与构建
+
+| 规则文件 | 适用 |
+|---|---|
+| `build_gradle.md` | `build.gradle` `build.gradle.kts` `settings.gradle` `settings.gradle.kts` `gradle.properties` |
+| `cargo_toml.md` | `Cargo.toml` |
+| `composer_json.md` | `composer.json` |
+| `github_config.md` | `.github/**/*.yml` `.github/**/*.yaml` |
+| `github_workflows.md` | `.github/workflows/**` |
+| `json.md` | `*.json` `*.jsonc` |
+| `mapper_dao_xml.md` | `*Mapper.xml` `*Dao.xml` |
+| `package_json.md` | `package.json` |
+| `po.md` | `*.po` |
+| `pom_xml.md` | `pom.xml` |
+| `pot.md` | `*.pot` |
+| `properties.md` | `*.properties` |
+| `yaml.md` | `*.yml` `*.yaml` |
+
+### 模板
+
+| 规则文件 | 适用 |
+|---|---|
+| `ejs_liquid_njk.md` | `*.ejs` `*.liquid` `*.njk` |
+| `erb.md` | `*.erb` |
+| `freemarker.md` | `*.ftl` `*.ftlh` |
+| `haml_slim.md` | `*.haml` `*.slim` |
+| `handlebars_mustache.md` | `*.hbs` `*.handlebars` `*.mustache` |
+| `jinja.md` | `*.jinja` `*.jinja2` `*.j2` |
+| `pug.md` | `*.pug` `*.jade` |
+
+### 基础设施与 IDL
+
+| 规则文件 | 适用 |
+|---|---|
+| `bicep.md` | `*.bicep` |
+| `capnp.md` | `*.capnp` |
+| `nix.md` | `*.nix` |
+| `prisma.md` | `*.prisma` |
+| `protobuf.md` | `*.proto` |
+| `terraform.md` | `*.tf` `*.tfvars` `*.tofu` |
+| `thrift.md` | `*.thrift` |
+
+### 兜底
+
+- `default.md` — 任何表外文件（上游未覆盖的格式，如 `.sh`、`Dockerfile`、`Makefile`、`.html`）。
+<!-- END review-map -->
 
 ## 3. 输出契约（每条评论**必填**）
 
@@ -87,24 +170,33 @@ metadata:
 在自有代码上直接当门禁很可能天天误报。**跑两周统计误报率**，再决定把哪些 severity 升级成门禁。
 
 **升级路径**：若评审实测**噪声大或定位不准**，**再**把 OCR 当第二道门禁装上
-（那时才值得解决它 `git >= 2.41` 的硬门禁——被控端 EL7 自带 1.8.3）。
+（它的价值在滑动窗口行号锚定与 token 预算管理，这些要装工具本体才有）。
 
 ---
 
 ## 7. 我们会失去什么（如实）
 
-不装 OCR 工具意味着失去：**行号锚定的滑动窗口算法**、按元数据的**语义分组**、
-**token 预算管理**、以及 54 份规则文档的**自动匹配**（改用本目录让 agent 自己取用）。
+本目录是**规则快照**，不是 OCR 工具。即使 64 份已全量，仍然失去：
 
-这些在"每天数千 PR"的量级才成为必需；在"orchestrator 审一次改动"的量级可以接受。
+- **行号锚定的滑动窗口算法**（OCR 的 diff 定位器）
+- **按元数据的语义分组**
+- **token 预算管理**
+
+规则覆盖这一项已经补齐：64 份随包分发，扩展名可判定的由 §2 的表选择，
+框架/上下文相关的（如 `matlab.md` 与 Objective-C 共用的 `.m`）按需 Read。
+失去的是**引擎级自动挂载**——由 §2 的静态表等价替代（表不读文件内容，
+所以 `.m`、`.h` 这类歧义扩展名要靠上下文判断）。
 
 ---
 
 ## 8. 来源与许可
 
-- 上游：`alibaba/open-code-review`（Apache-2.0，`Copyright 2026 Alibaba`），tag **v1.13.1**
-- 本目录下其余 `.md` 是**上游 `internal/config/rules/rule_docs/` 的原样副本**
-- 许可原文：[`licenses/open-code-review.LICENSE`](../../licenses/open-code-review.LICENSE)
+- 上游：`alibaba/open-code-review`（Apache-2.0，`Copyright 2026 Alibaba`）
+- tag **v1.13.8**，commit `4236c871fe8130aa840a2a1c0922f469e87e0416`
+- 本目录下除 `SKILL.md` / `review-map.json` / `UPSTREAM.sha256` 之外的所有 `.md`
+  是上游 `internal/config/rules/rule_docs/` 的**原样副本**；逐份 sha256 见 `UPSTREAM.sha256`。
+- `review-map.json` 的 glob 是 **REEVE 自定的选择规则**，不是上游的内部映射。
+- 许可原文：`licenses/open-code-review.LICENSE`
 - 结构化输出契约的枚举取自上游 `internal/model/review.go`
   （`Category`：bug / security / performance / maintainability / test / style / documentation / other；
   `Severity`：critical / high / medium / low）

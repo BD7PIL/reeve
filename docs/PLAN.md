@@ -478,7 +478,7 @@ agent 写 `model: reeve/flash` → 端点收到 `model: "reeve/flash"` → CEL `
 ### 6.1 吸收什么（Apache-2.0，可合法抄）
 
 - **规则文档**：`internal/config/rules/rule_docs/` 的 markdown rubric
-  （`default.md` / `typescript.md` / `python.md` / `go.md` …），默认五维
+  （`default.md` / `ts_js_tsx_jsx.md` / `python.md` / `go.md` …，2026-11-12 已扩到上游 v1.13.8 的**全部 64 份**），默认五维
   **正确性 / 安全 / 性能 / 可维护性 / 测试覆盖** → 进 `skills/review/`，让 agent 自己取用
 - **结构化输出契约**：每条评论**必填**
   `severity ∈ {critical, high, medium, low}` 与
@@ -491,7 +491,7 @@ agent 写 `model: reeve/flash` → 端点收到 `model: "reeve/flash"` → CEL `
 ### 6.2 会失去什么（如实）
 
 行号锚定的滑动窗口算法、按元数据的语义分组、token 预算管理、
-以及 60+ 规则文档的**自动匹配**（改用 skill 让 agent 自己取用）。
+以及规则文档的**引擎级自动匹配**（改用 skill 里的静态映射表让 agent 自己取用）。规则本身已全量引入，失去的只是自动挂载。
 **这些在"每天数千 PR"的量级才成为必需**，在"orchestrator 审一次改动"的量级可以接受。
 
 ### 6.3 门禁策略
@@ -506,7 +506,7 @@ agent 写 `model: reeve/flash` → 端点收到 `model: "reeve/flash"` → CEL `
 
 ### 6.5 落点
 
-`agents/reviewer.md`、`skills/review/{SKILL.md,default.md,ts_js_tsx_jsx.md,python.md,go.md,yaml.md,json.md,package_json.md}`、
+`agents/reviewer.md`、`skills/review/{SKILL.md,review-map.json,UPSTREAM.sha256}` + 上游 `rule_docs/` 的全部 64 份 `.md`、
 `licenses/open-code-review.LICENSE`、更新 `NOTICE.md`（列出被引入的具体文件清单）
 
 > **⚠️ 文件名必须是 `SKILL.md`（实测）**：opencode v2 的 skill 发现规则是
@@ -607,7 +607,7 @@ reeve/
       opencode-v2-plugin-api.md         v2 插件 API 实测施工图 ★写代码前必读
   plugin/                         @bd7pil/reeve —— **整个系统就在这一个包里**
     agents/*.md                   8 个 agent（正文即 system prompt；7 个标 hidden，前台只出现 foreman）
-    skills/review/                SKILL.md（契约与用法）+ 7 份 OCR rubric
+    skills/review/                SKILL.md（契约）+ review-map.json（选择表）+ UPSTREAM.sha256（哈希清单）+ 64 份 OCR rubric
     src/                          ledger / concurrency / supervisor / reconcile / roster / snapshot /
                                   proxy（代理自持）/ models（档位模型）/ register（agent 与 skill 注册）
     default-chain.json            自带的链（与 proxy/config.json 同源；单测盯着不漂移）

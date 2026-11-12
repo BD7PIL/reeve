@@ -5,6 +5,7 @@
 > **它是 REEVE 全部设计决策的依据来源**；[HANDOFF.md](../HANDOFF.md) 是它的可执行化版本。
 >
 > ⚠️ **本文档是 2026-10-19 的归档证据，其中若干条已被后续实测取代。**
+> （OCR 规则数：文中"60+"是当时的估算；2026-11-12 实际落地上游 v1.13.8 的 **64 份**。）
 > **读它之前先读 [opencode-v2-plugin-api.md](opencode-v2-plugin-api.md) §11 的逐条对照表**，
 > 以及 [HANDOFF.md](../HANDOFF.md) 里标了"勘误"的段落。已知被取代的至少包括：
 > §4.2 的挂载点写法（v1 钩子名）、§4.4① 的事件清单（`message.part.updated` / `question.*`）、

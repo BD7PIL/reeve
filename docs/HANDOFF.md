@@ -684,7 +684,7 @@ if (evidence.verdict === 'absent' && stable)
 
 ### 7.2 该吸收的具体内容（Apache-2.0，可合法抄）
 
-- **规则文档**（`internal/config/rules/rule_docs/`，60+ 语言/格式的 markdown rubric，
+- **规则文档**（`internal/config/rules/rule_docs/`，60+ 语言/格式的 markdown rubric（**2026-11-12 实际落地上游 v1.13.8 的全部 64 份**，见 PROGRESS §3.0.1），
   默认五维：正确性 / 安全 / 性能 / 可维护性 / 测试覆盖）——**这是它真正的 IP**，
   形式就是 markdown，直接进 agent 的 skills
 - **结构化输出契约**：每条评论**必填**

@@ -1,0 +1,7 @@
+* text=auto
+
+# Review rubrics are byte-for-byte copies of the upstream tag; their sha256 is
+# asserted by scripts/check-plugin-pack.mjs. Never let Git rewrite their endings.
+plugin/skills/review/*.md text eol=lf
+plugin/skills/review/*.sha256 text eol=lf
+plugin/skills/review/review-map.json text eol=lf

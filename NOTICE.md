@@ -1,6 +1,6 @@
 # Third-party notices
 
-REEVE 计划引入两处外来内容。**两者都必须在被引入时带上其原始许可文本**，
+REEVE 已引入两处外来内容，两处都带上了其原始许可文本，
 且只允许引入下面这两类——**`oh-my-openagent` 的任何代码或 prompt 字面永久不可引入**（SUL-1.0）。
 
 ## 1. `oh-my-opencode-slim` — MIT
@@ -39,30 +39,94 @@ REEVE 的实现参照了：终态判定门与静默宽限、墙钟监督器的�
 
 - 上游：https://github.com/alibaba/open-code-review
 - 许可：Apache-2.0（`Copyright 2026 Alibaba`）
-- **计划引入**：审查层的**规则文档**（`internal/config/rules/rule_docs/` 下的 markdown rubric，
+- **已引入**：审查层的**规则文档**（`internal/config/rules/rule_docs/` 下的 markdown rubric，
   如 `go.md` / `python.md` / `default.md`）+ 结构化输出契约（severity/category 枚举）
-- **行动**：引入时复制上游 `LICENSE` 到 `licenses/open-code-review.LICENSE`，
+- **行动（已完成）**：复制上游 `LICENSE` 到 `licenses/open-code-review.LICENSE`，
   并在本文件列出被引入的具体文件清单
 
 ### ✅ 已引入（2026-10-19）
 
-`licenses/open-code-review.LICENSE` 已复制（Apache-2.0，11356 bytes，取自 tag **v1.13.1**）。
+`licenses/open-code-review.LICENSE` 已复制（Apache-2.0，11356 bytes，取自 tag **v1.13.1**；
+**2026-11-12 复核并扩到 v1.13.8 全部 64 份**，commit `4236c871fe8130aa840a2a1c0922f469e87e0416`，
+逐份 sha256 见 `skills/review/UPSTREAM.sha256`）。
 
 **被引入的具体文件清单**（原样副本，放在 `skills/review/`）：
 
 | 上游路径（`internal/config/rules/rule_docs/`） | 本仓库 |
 |---|---|
-| `default.md` | `skills/review/default.md`（五维总纲） |
-| `ts_js_tsx_jsx.md` | `skills/review/ts_js_tsx_jsx.md` |
-| `python.md` | `skills/review/python.md` |
+| `arkts.md` | `skills/review/arkts.md` |
+| `astro.md` | `skills/review/astro.md` |
+| `bicep.md` | `skills/review/bicep.md` |
+| `build_gradle.md` | `skills/review/build_gradle.md` |
+| `c.md` | `skills/review/c.md` |
+| `capnp.md` | `skills/review/capnp.md` |
+| `cargo_toml.md` | `skills/review/cargo_toml.md` |
+| `clojure.md` | `skills/review/clojure.md` |
+| `composer_json.md` | `skills/review/composer_json.md` |
+| `cpp.md` | `skills/review/cpp.md` |
+| `csharp.md` | `skills/review/csharp.md` |
+| `default.md` | `skills/review/default.md` |
+| `ejs_liquid_njk.md` | `skills/review/ejs_liquid_njk.md` |
+| `elm.md` | `skills/review/elm.md` |
+| `erb.md` | `skills/review/erb.md` |
+| `freemarker.md` | `skills/review/freemarker.md` |
+| `fsharp.md` | `skills/review/fsharp.md` |
+| `github_config.md` | `skills/review/github_config.md` |
+| `github_workflows.md` | `skills/review/github_workflows.md` |
 | `go.md` | `skills/review/go.md` |
-| `yaml.md` | `skills/review/yaml.md` |
+| `graphql.md` | `skills/review/graphql.md` |
+| `haml_slim.md` | `skills/review/haml_slim.md` |
+| `handlebars_mustache.md` | `skills/review/handlebars_mustache.md` |
+| `haskell.md` | `skills/review/haskell.md` |
+| `java.md` | `skills/review/java.md` |
+| `jinja.md` | `skills/review/jinja.md` |
 | `json.md` | `skills/review/json.md` |
+| `jsonnet.md` | `skills/review/jsonnet.md` |
+| `julia.md` | `skills/review/julia.md` |
+| `kotlin.md` | `skills/review/kotlin.md` |
+| `mapper_dao_xml.md` | `skills/review/mapper_dao_xml.md` |
+| `matlab.md` | `skills/review/matlab.md` |
+| `nim.md` | `skills/review/nim.md` |
+| `nix.md` | `skills/review/nix.md` |
+| `nushell.md` | `skills/review/nushell.md` |
+| `objc.md` | `skills/review/objc.md` |
+| `ocaml.md` | `skills/review/ocaml.md` |
 | `package_json.md` | `skills/review/package_json.md` |
+| `php.md` | `skills/review/php.md` |
+| `po.md` | `skills/review/po.md` |
+| `pom_xml.md` | `skills/review/pom_xml.md` |
+| `pot.md` | `skills/review/pot.md` |
+| `powershell.md` | `skills/review/powershell.md` |
+| `prisma.md` | `skills/review/prisma.md` |
+| `properties.md` | `skills/review/properties.md` |
+| `protobuf.md` | `skills/review/protobuf.md` |
+| `pug.md` | `skills/review/pug.md` |
+| `python.md` | `skills/review/python.md` |
+| `r.md` | `skills/review/r.md` |
+| `rego.md` | `skills/review/rego.md` |
+| `rust.md` | `skills/review/rust.md` |
+| `scala.md` | `skills/review/scala.md` |
+| `shader.md` | `skills/review/shader.md` |
+| `solidity.md` | `skills/review/solidity.md` |
+| `starlark.md` | `skills/review/starlark.md` |
+| `swift.md` | `skills/review/swift.md` |
+| `terraform.md` | `skills/review/terraform.md` |
+| `thrift.md` | `skills/review/thrift.md` |
+| `ts_js_tsx_jsx.md` | `skills/review/ts_js_tsx_jsx.md` |
+| `verilog.md` | `skills/review/verilog.md` |
+| `vhdl.md` | `skills/review/vhdl.md` |
+| `vyper.md` | `skills/review/vyper.md` |
+| `yaml.md` | `skills/review/yaml.md` |
+| `zig.md` | `skills/review/zig.md` |
 
-**自行撰写的**：`skills/review/SKILL.md`（五维的使用说明、rubric 选择表、输出契约、
+**自行撰写的**：`skills/review/SKILL.md`（五维的使用说明、映射表、输出契约、
 多轮与误报过滤的做法、门禁策略）——**枚举取自**上游 `internal/model/review.go`
 （`Category` / `Severity`），其余为自写。
+`skills/review/review-map.json`（扩展名 → 规则的映射源）与 `skills/review/UPSTREAM.sha256`
+（64 份的逐份哈希清单）也是自写，不属于上游内容。
+
+**上游 NOTICE**：已核实 `alibaba/open-code-review` v1.13.8 根目录没有 `NOTICE` / `NOTICE.md`
+（只有 `LICENSE`），Apache-2.0 §4(d) 无额外 NOTICE 需要转抄。
 
 **未引入**：OCR 的 Go 代码、CLI 二进制、npm 包装器。**不装工具，只吸收规则。**
 

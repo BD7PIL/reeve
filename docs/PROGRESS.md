@@ -305,7 +305,7 @@ plugin/
 
 | 检查项 | 结果 | 日期 |
 |---|---|---|
-| 上游与版本确认 | ✅ `alibaba/open-code-review`，Apache-2.0，47,613★，最新 tag **v1.13.1**（2026-10-17） | 2026-10-19 |
+| 上游与版本确认 | ✅ `alibaba/open-code-review`，Apache-2.0，47,613★，最新 tag **v1.13.1**（2026-10-17）（**已过时**：2026-11-12 复核为 v1.13.8 / 64 份，见 3.0.1） | 2026-10-19 |
 | 规则文档结构确认 | ✅ `internal/config/rules/rule_docs/` 共 **54** 份；`default.md` 正是那五维 | 2026-10-19 |
 | 抄入相关 rubric（7 份） | ✅ `default` / `ts_js_tsx_jsx` / `python` / `go` / `yaml` / `json` / `package_json` | 2026-10-19 |
 | 输出契约的枚举核实 | ✅ 取自上游 `internal/model/review.go`：`Category` 8 值、`Severity` 4 值——**与文档一致** | 2026-10-19 |
@@ -317,6 +317,26 @@ plugin/
 `agents/reviewer.md` 已指向它。
 
 **注意**：上游的 TS/JS rubric 实际文件名是 **`ts_js_tsx_jsx.md`**（不是文档里写的 `typescript.md`）。
+
+### 3.0.1 子任务：OCR 规则扩到全量 64 份（2026-11-12）
+
+**动机**：7 份的实际缺口不是"语言不够"，而是漏了**领域规则**——`github_workflows.md`（3.1KB）
+与 `github_config.md`（1KB）没引入，而 reeve+ocrc 有 9 个 workflow + 4 个 `.github` config；
+且 `yaml.md` 只有 86 字节（仅"检查键拼写"）。用户裁决：尽可能补全。
+
+| 检查项 | 结果 | 日期 |
+|---|---|---|
+| 上游版本复核 | ✅ v1.13.1 → **v1.13.8**（commit `4236c87`）；已有的 7 份与该 tag **逐字节一致**（git blob sha 全等） | 2026-11-12 |
+| 枚举复核 | ✅ `internal/model/review.go` 的 blob sha 与 v1.13.1 相同（Category/Severity 无变化） | 2026-11-12 |
+| 规则总数 | ✅ 54 → **64**（新增 clojure / csharp / ejs_liquid_njk / erb / haml_slim / nushell / powershell / scala / shader / starlark） | 2026-11-12 |
+| 敏感性预扫 | ✅ 64 份对 `check-public-tree` 七条 + `check-plugin-pack` 四条模式 **0 命中** | 2026-11-12 |
+| 全量引入 | ✅ `skills/review/` 平铺 64 份 + `UPSTREAM.sha256`（逐份 sha256，钉 commit 而非 tag） | 2026-11-12 |
+| 选择表 | ✅ 新增 `review-map.json`（64 条 glob）+ `scripts/check-review-map.mjs`（--write/--check/表驱动用例） | 2026-11-12 |
+| 门禁 | ✅ `check-plugin-pack.mjs` 增加 `enginePlugin.spec` 断言、rubric 集合与 sha256 校验、无子目录断言、`--pkg-dir` | 2026-11-12 |
+| 行尾 | ✅ 新增 `.gitattributes`：`plugin/skills/review/*.md text eol=lf`（否则 Windows CI 检出 CRLF 会让 sha256 假红） | 2026-11-12 |
+
+**产出**：`plugin@0.3.0`；`skills/review/` = 64 份 rubric + `SKILL.md` + `review-map.json` + `UPSTREAM.sha256`。
+
 
 ### 3.1 子任务：端到端行为验收（**真实模型**）✅ 通过（2026-10-19）
 
@@ -664,7 +684,7 @@ POST /api/config/agents/zc-zeroconf-probe?directory=%2Fhome%2Fdemo%2F.reeve-stag
 | `~/.config/opencode/opencode.jsonc` | **符号链接**到 `/mnt/hgfs/OpenCodeConfig/...`（三端共享配置） | `517f8ef4…` / 08-07 17:20 未变 ✅ |
 | `~/.config/openchamber/opencode.managed.json` | 被管引擎的配置，里面是 openchamber 的 `plugins` 数组 | `28ba2a8d…` / 10-18 23:33 未变 ✅ |
 | `.reeve-staging/.config/opencode/opencode.json` | REEVE 的插件 + 8 agent + limits | `47dae0dd…` / 18:49 未变 ✅ |
-| 8 个 `agent/*.md` + 7 份 rubric + SKILL.md | REEVE 的编排内容 | 全部未变 ✅ |
+| 8 个 `agent/*.md` + 7 份 rubric + SKILL.md（当时的快照；2026-11-12 起为 64 份） | REEVE 的编排内容 | 全部未变 ✅ |
 | `~/.config/opencode/` 其余 17 个文件 | 生产 v1 的配置目录整体 | 文件集与 hash **逐字一致** ✅ |
 
 **结论**：
