@@ -5,3 +5,5 @@
 plugin/skills/review/*.md text eol=lf
 plugin/skills/review/*.sha256 text eol=lf
 plugin/skills/review/review-map.json text eol=lf
+
+plugin/skills/declarative-workflows/** text eol=lf

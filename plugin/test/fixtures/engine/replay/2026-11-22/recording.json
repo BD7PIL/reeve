@@ -1,0 +1,135 @@
+{
+  "version": 1,
+  "recordedAt": "2026-11-22T07:53:00.086Z",
+  "host": "opencode serve --hostname 127.0.0.1 --port 13438（显式随机端口=openchamber 部署形态同款）@ http://127.0.0.1:13438；探针 win32",
+  "note": "S7a HTTP 面录制（context 来源：GET /session/{id}/message（v1 面，context 兜底路由为空时的替代形状））：POST /session 建子会话 + /api/session/{id}/prompt 真发 + context 实测形状",
+  "scenarios": [
+    {
+      "name": "s7a-http-child",
+      "match": {
+        "prompt": "Reply with exactly: S7A-OK",
+        "title": "REEVE-S7A child 20261122075110",
+        "model": {
+          "providerID": "xiaomi",
+          "id": "mimo-v2.6-pro-ultraspeed"
+        }
+      },
+      "sessionId": "ses_dfdc32b87ffeGC6fFw3gs52tn4",
+      "result": [
+        {
+          "status": "done",
+          "text": "S7A-OK"
+        }
+      ],
+      "context": [
+        {
+          "info": {
+            "id": "msg_2023cd565001euK7wY4woSlTgw",
+            "sessionID": "ses_dfdc32b87ffeGC6fFw3gs52tn4",
+            "role": "user",
+            "time": {
+              "created": 1795333870949
+            },
+            "summary": {
+              "diffs": []
+            },
+            "agent": "build",
+            "model": {
+              "providerID": "xiaomi",
+              "modelID": "mimo-v2.6-pro-ultraspeed"
+            }
+          },
+          "parts": [
+            {
+              "id": "prt_2023cd56b001tMXfuEsqGLkm4S",
+              "sessionID": "ses_dfdc32b87ffeGC6fFw3gs52tn4",
+              "messageID": "msg_2023cd565001euK7wY4woSlTgw",
+              "type": "text",
+              "text": "Reply with exactly: S7A-OK"
+            }
+          ]
+        },
+        {
+          "info": {
+            "id": "msg_2023cd579001oAaKr1NK48SCpS",
+            "sessionID": "ses_dfdc32b87ffeGC6fFw3gs52tn4",
+            "role": "assistant",
+            "time": {
+              "created": 1795333870969,
+              "completed": 1795333877880
+            },
+            "parentID": "msg_2023cd565001euK7wY4woSlTgw",
+            "modelID": "mimo-v2.6-pro-ultraspeed",
+            "providerID": "xiaomi",
+            "mode": "build",
+            "agent": "build",
+            "path": {
+              "cwd": "<TMP>/reeve-s7a-S1YA4r",
+              "root": "/"
+            },
+            "cost": 0.055017024,
+            "tokens": {
+              "total": 28873,
+              "input": 12466,
+              "output": 6,
+              "reasoning": 17,
+              "cache": {
+                "read": 16384,
+                "write": 0
+              }
+            },
+            "finish": "stop"
+          },
+          "parts": [
+            {
+              "id": "prt_2023cefd7001q6okcr7x3YTf1O",
+              "sessionID": "ses_dfdc32b87ffeGC6fFw3gs52tn4",
+              "messageID": "msg_2023cd579001oAaKr1NK48SCpS",
+              "type": "step-start"
+            },
+            {
+              "id": "prt_2023cefdc001xm03zw6OiJj7br",
+              "sessionID": "ses_dfdc32b87ffeGC6fFw3gs52tn4",
+              "messageID": "msg_2023cd579001oAaKr1NK48SCpS",
+              "type": "reasoning",
+              "text": "The user wants me to reply with exactly \"S7A-OK\".",
+              "time": {
+                "start": 1795333877724,
+                "end": 1795333877750
+              }
+            },
+            {
+              "id": "prt_2023ceff9001XSTEgSe0MtjNcR",
+              "sessionID": "ses_dfdc32b87ffeGC6fFw3gs52tn4",
+              "messageID": "msg_2023cd579001oAaKr1NK48SCpS",
+              "type": "text",
+              "text": "S7A-OK",
+              "time": {
+                "start": 1795333877753,
+                "end": 1795333877866
+              }
+            },
+            {
+              "id": "prt_2023cf071001FZJC333OcqUSFp",
+              "sessionID": "ses_dfdc32b87ffeGC6fFw3gs52tn4",
+              "messageID": "msg_2023cd579001oAaKr1NK48SCpS",
+              "type": "step-finish",
+              "reason": "stop",
+              "cost": 0.055017024,
+              "tokens": {
+                "total": 28873,
+                "input": 12466,
+                "output": 6,
+                "reasoning": 17,
+                "cache": {
+                  "read": 16384,
+                  "write": 0
+                }
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

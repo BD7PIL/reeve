@@ -2,7 +2,11 @@
 // Gate for the public tree: no private addresses, no developer home paths, no
 // credential-shaped strings. Runs both in CI (on the source tree, minus
 // docs/.zcode) and inside publish-repo.sh (on the exported tree, where nothing
-// is excluded because the excluded paths are already gone).
+// is excluded because the excluded paths are already gone). The default
+// excludes beyond .git/node_modules are local build/tool artifacts already
+// covered by .gitignore (coverage/, .deep-memory/, .opencode/,
+// .preview-shots/) — a fresh CI checkout and the publish export tree never
+// contain them, so walking the filesystem must skip them too.
 //
 //   node scripts/check-public-tree.mjs --root . --exclude docs --exclude .zcode
 //
@@ -13,7 +17,16 @@ import { join, relative, sep } from "node:path";
 
 const args = process.argv.slice(2);
 let root = ".";
-const excludes = new Set([".git", "node_modules"]);
+// Local build/tool artifacts (gitignored — see header comment) plus the
+// always-present .git and node_modules.
+const excludes = new Set([
+  ".git",
+  "node_modules",
+  "coverage",
+  ".deep-memory",
+  ".opencode",
+  ".preview-shots",
+]);
 for (let i = 0; i < args.length; i += 1) {
   if (args[i] === "--root") root = args[++i];
   else if (args[i] === "--exclude") excludes.add(args[++i].replace(/[\\/]+$/, ""));

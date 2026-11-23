@@ -1,0 +1,73 @@
+{
+  "runId": "pilot-e1-s8",
+  "steps": [
+    {
+      "stepId": "intake",
+      "prompt": "【合成试点任务】读取合成任务清单 INT-2026-1122，抽取交付物名称与验收口径，产出 {\"intakeId\":\"<清单号>\"} 形态的 JSON。本步全部使用合成数据，不访问任何真实系统。",
+      "deps": [],
+      "schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["intakeId"],
+        "properties": { "intakeId": { "type": "string" } }
+      }
+    },
+    {
+      "stepId": "plan-a",
+      "prompt": "【合成试点任务】基于 intake 结论起草 A 线执行计划（合成数据），产出 {\"planId\":\"PLAN-A\"} 形态的 JSON。",
+      "deps": ["intake"],
+      "schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["planId"],
+        "properties": { "planId": { "type": "string" } }
+      }
+    },
+    {
+      "stepId": "plan-b",
+      "prompt": "【合成试点任务】基于 intake 结论起草 B 线执行计划（合成数据），产出 {\"planId\":\"PLAN-B\"} 形态的 JSON。",
+      "deps": ["intake"],
+      "schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["planId"],
+        "properties": { "planId": { "type": "string" } }
+      }
+    },
+    {
+      "stepId": "merge",
+      "prompt": "【合成试点任务】合并 A/B 两线计划为统一执行稿（合成数据），产出 {\"merged\":true} 形态的 JSON。",
+      "deps": ["plan-a", "plan-b"],
+      "agent": "synthetic-planner",
+      "schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["merged"],
+        "properties": { "merged": { "type": "boolean" } }
+      }
+    },
+    {
+      "stepId": "verify",
+      "prompt": "【合成试点任务】对照验收口径核查统一执行稿（合成数据），产出 {\"verdict\":\"pass\"} 形态的 JSON。",
+      "deps": ["merge"],
+      "schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["verdict"],
+        "properties": { "verdict": { "type": "string" } }
+      }
+    },
+    {
+      "stepId": "publish",
+      "prompt": "【合成试点任务】归档执行稿与验收结论到合成台账（合成数据），产出 {\"decision\":\"<决定>\",\"artifact\":\"<档案号>\"} 形态的 JSON。",
+      "deps": ["verify"],
+      "agent": "synthetic-archivist",
+      "schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["decision", "artifact"],
+        "properties": { "decision": { "type": "string" }, "artifact": { "type": "string" } }
+      }
+    }
+  ]
+}

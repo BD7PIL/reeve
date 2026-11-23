@@ -1,0 +1,4 @@
+{
+  "abortAt": ["merge", "publish"],
+  "note": "S8 试点（T3.7）的两处中途崩溃注入点（§6 fault.abortAt，声明是纯数据不能携带 fault，故落本 sidecar）。两个 stepId 必须在 pilot-job.json 的 steps 内；运行器 pilot-run.mjs 读本文件并作为 scheduler run() 的 fault.abortAt 传入。"
+}

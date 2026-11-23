@@ -119,6 +119,31 @@ It never writes `agents.*.model`; that key belongs to OpenChamber.
   then run on the native single-agent path while foreman keeps handling
   orchestrated ones.
 
+## Plan gate
+
+Opt-in per project through the plugin options (`"planGate": { "enabled": true }`); without
+it the gate is dormant and never records or blocks anything. When enabled, dispatches to the
+`critic` subagent are observed, the review verdict is captured from the critic's real output
+(dual channel per SPEC §4: trailing fenced JSON block + the prose last line, Chinese
+「通过/不通过」included), and exec-class tools (`shell`/`execute` by default) are gated on a
+recorded pass verdict that still matches the artifact bytes on disk. Sessions enter the
+gate's scope through `review_gate register` (or the first review dispatch); a session with
+no store stays dormant. Human override: `overrideSession` (CLI/ops only — no agent-reachable
+path can submit verdicts).
+
+### Manual end-to-end acceptance (pending a real-machine run)
+
+The headless E2E (register → dispatch critic → check → exec) needs a live engine and model,
+so it is executed by hand; the automated suite (`test/plan-gate.mjs`) drives the same four
+transitions against the real assembly surface with a stub context. A manual run should
+capture, and file under `test/fixtures/e2e/`:
+
+1. The session transcript: `review_gate register` a plan file, dispatch `critic`, and show
+   the gate denying an exec call before the review and allowing it after a pass verdict.
+2. The engine log excerpt showing the plugin registered exactly once (the `[reeve] 已启动` /
+   `注册：agent …` debug lines, one occurrence).
+3. The `npm --prefix plugin test` output for the same commit.
+
 ## Tests
 
 From the repository root:
@@ -130,7 +155,8 @@ npm run test:coverage
 
 The suite covers routing, attempts/cooldown, error classification, free-lane
 discovery/expansion, config hot reload, image routing, concurrency, ledger,
-reconciliation, snapshot, stats, endpoint bootstrap, and the extension bridge.
+reconciliation, snapshot, stats, endpoint bootstrap, the plan review gate
+(`test/plan-gate.mjs` against the shared decision matrix), and the extension bridge.
 CI runs it on Ubuntu 22/24 and Windows 24.
 
 ## License

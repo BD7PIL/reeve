@@ -173,7 +173,7 @@ Bifrost and 9router are retired; free routing is implemented natively.
 
 ```bash
 npm install
-npm --prefix plugin test             # plugin suite (194 assertions across 10 files)
+npm --prefix plugin test             # plugin suite (48 test files; Windows falls back to `node plugin/test/entry.mjs`)
 npm run test:coverage                # coverage hard floor
 npm run lint
 npm --prefix extensions/reeve run build

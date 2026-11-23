@@ -1,0 +1,536 @@
+{
+  "schemaVersion": 1,
+  "kind": "plan-gate-decision-matrix",
+  "authority": {
+    "statement": "This file is the sole authority for gate decisions. The semantics SPEC pins this file's sha256 in its header and must not copy any row from it. Every gate implementation must reproduce every row below in meaning.",
+    "hashPin": "The one-shot regression script's first step recomputes this file's sha256 and compares it with the hash pinned in the SPEC header; any mismatch fails the run.",
+    "rowKeyRule": "Row ids are '<transition>#<ordinal>'. The transition field takes only the four enum values dispatch-review, verdict-observed, gate-check, human-override.",
+    "coverage": "Covers every decision-matrix row required by plan entry T1.1, plus the neighboring edges needed to close the loop without ambiguity (D1/D2/D3 semantics, torn store, parallel dispatch isolation, root-session applicability)."
+  },
+  "globals": {
+    "activation": "The gate runs only inside an explicitly opted-in project scope. Outside that scope every transition is out of scope: nothing is recorded and nothing is blocked.",
+    "hashFunction": "sha256 over the exact current bytes of the artifact file on disk, re-read at the moment of use. Transcribed text shown to the reviewer is never hashed.",
+    "pendingKey": "<rootSessionId>:<toolCallId>. The store is one file per root session, so the physical pending object is keyed by toolCallId alone; the logical key always includes the root session id. Call ids are unique (verified against runtime logs: no duplicate call id ever started), so pending keys never collide.",
+    "rootSessionRule": "Only root-session inputs are gated. The adapter resolves whether an input belongs to the root session before any gate logic runs; non-root inputs bypass the gate entirely (gate-check#0).",
+    "pendingTtlMinutes": 30,
+    "defaultCap": 3,
+    "roundsSemantics": "rounds is cumulative for the session. Every processed verdict observation moves it: a recorded pass, a recorded reject (including a channels-disagree reject) and a parse failure each add 1. Only a human override resets it to 0. When rounds reaches cap and the loop has not converged, the gate hands the decision to a human.",
+    "parseFailureCounter": "parseFailures is session-level and consecutive: incremented by every parse failure, reset to 0 by any successfully recorded verdict or by a human override. A second consecutive parse failure escalates to a human.",
+    "storeWrite": "Every store mutation rewrites the whole file atomically: write to a temp file, then rename over the target, then update updatedAt. An automated transition never rebuilds a torn store; a human override is the only writer that may rebuild it.",
+    "reasonText": "All reason strings in this matrix are ASCII. Changing the language of reason text requires a verified encoding round trip first; decision semantics never depend on the wording.",
+    "symbols": {
+      "S": "a root session id",
+      "C1, C2": "distinct call ids",
+      "K1, K2": "pending keys 'S:C1' and 'S:C2'",
+      "H1": "sha256 of the artifact bytes as they were at dispatch time",
+      "H2": "sha256 of the artifact bytes currently on disk, where H2 != H1",
+      "NOW": "the current wall-clock moment at the transition",
+      "TTL": "pendingTtlMinutes (30 by default)"
+    }
+  },
+  "decisionVocabulary": {
+    "allow": "the guarded transition proceeds",
+    "deny": "the guarded transition is blocked; the reason text tells the caller what to do next",
+    "escalate": "the guarded transition is blocked and the reason text hands the decision to a human (deny plus handoff wording)",
+    "record": "bookkeeping only; the underlying action (a dispatch or an observation) proceeds; nothing is blocked",
+    "no-verdict": "the observed result is not recorded as a verdict, but the counters named in storeEffect still move",
+    "ignore": "no decision is made and no verdict is bound; only the cleanup named in storeEffect may happen"
+  },
+  "gateCheckPrecedence": "Inside the gate-check section, rows are evaluated in array order and the first match wins. Convergence outranks the round cap: a recorded pass verdict whose hash equals the current on-disk artifact hash allows the transition even when rounds >= cap (gate-check#9).",
+  "rows": [
+    {
+      "id": "dispatch-review#1",
+      "transition": "dispatch-review",
+      "summary": "A review dispatch in an opted-in root session records a pending entry bound to the artifact bytes on disk at that moment.",
+      "precondition": {
+        "store": "parseable; pending has no entry for K1",
+        "artifact": "readable on disk; current bytes hash to H1",
+        "clock": "NOW"
+      },
+      "input": {
+        "resolvedSession": "root session S",
+        "callId": "C1",
+        "artifactPath": "the path pinned by the dispatch contract"
+      },
+      "expected": {
+        "decision": "record",
+        "reason": "pending recorded against current artifact bytes",
+        "storeEffect": "planPath = artifactPath; pending[K1] = {hash: H1, ts: NOW}; updatedAt = NOW"
+      }
+    },
+    {
+      "id": "dispatch-review#2",
+      "transition": "dispatch-review",
+      "summary": "A second in-flight review dispatch is isolated under its own pending key; parallel dispatches never overwrite each other.",
+      "precondition": {
+        "store": "parseable; pending[K1] = {hash: H1, ts: NOW-1min}",
+        "artifact": "readable; current bytes hash to H1",
+        "clock": "NOW"
+      },
+      "input": {
+        "resolvedSession": "root session S",
+        "callId": "C2",
+        "artifactPath": "same artifact path"
+      },
+      "expected": {
+        "decision": "record",
+        "reason": "parallel dispatches are isolated by pending key",
+        "storeEffect": "pending[K2] = {hash: H1, ts: NOW}; pending[K1] untouched; updatedAt = NOW"
+      }
+    },
+    {
+      "id": "dispatch-review#3",
+      "transition": "dispatch-review",
+      "summary": "The artifact path does not resolve at dispatch time; nothing is recorded.",
+      "precondition": {
+        "store": "parseable",
+        "artifact": "path missing or unreadable on disk",
+        "clock": "NOW"
+      },
+      "input": {
+        "resolvedSession": "root session S",
+        "callId": "C1",
+        "artifactPath": "the pinned path, unresolvable"
+      },
+      "expected": {
+        "decision": "ignore",
+        "reason": "artifact unreadable at dispatch; nothing recorded; the next gate check denies as no-verdict-on-file",
+        "storeEffect": "none; noisy log required"
+      }
+    },
+    {
+      "id": "dispatch-review#4",
+      "transition": "dispatch-review",
+      "summary": "The store is torn at dispatch time; no pending is recorded and no automated transition rebuilds the store.",
+      "precondition": {
+        "store": "exists but unparseable or shape-invalid",
+        "artifact": "readable; current bytes hash to H1",
+        "clock": "NOW"
+      },
+      "input": {
+        "resolvedSession": "root session S",
+        "callId": "C1",
+        "artifactPath": "the pinned path"
+      },
+      "expected": {
+        "decision": "ignore",
+        "reason": "store unreadable; pending not recorded; only a human override may rebuild the store",
+        "storeEffect": "none; the torn file is left untouched; noisy log required"
+      }
+    },
+    {
+      "id": "verdict-observed#1",
+      "transition": "verdict-observed",
+      "summary": "Both channels agree on pass; the verdict is recorded bound to the reviewed bytes.",
+      "precondition": {
+        "store": "parseable; pending[K1] = {hash: H1, ts: NOW-5min}; parseFailures = 0; rounds = 0; cap = 3",
+        "artifact": "still hashes H1",
+        "clock": "NOW"
+      },
+      "input": {
+        "pendingKey": "K1",
+        "channelJson": "fenced block at the tail parses as JSON with decision = pass",
+        "channelProse": "last prose line resolves to pass"
+      },
+      "expected": {
+        "decision": "record",
+        "reason": "verdict recorded: pass",
+        "storeEffect": "verdicts += {hash: H1, round: 1, decision: pass, ts: NOW}; rounds = 1; parseFailures = 0; delete pending[K1]; updatedAt = NOW"
+      }
+    },
+    {
+      "id": "verdict-observed#2",
+      "transition": "verdict-observed",
+      "summary": "Both channels agree on reject; the verdict is recorded bound to the reviewed bytes.",
+      "precondition": {
+        "store": "parseable; pending[K1] = {hash: H1, ts: NOW-5min}; parseFailures = 0; rounds = 0; cap = 3",
+        "artifact": "still hashes H1",
+        "clock": "NOW"
+      },
+      "input": {
+        "pendingKey": "K1",
+        "channelJson": "fenced block at the tail parses as JSON with decision = reject",
+        "channelProse": "last prose line resolves to reject"
+      },
+      "expected": {
+        "decision": "record",
+        "reason": "verdict recorded: reject",
+        "storeEffect": "verdicts += {hash: H1, round: 1, decision: reject, ts: NOW}; rounds = 1; parseFailures = 0; delete pending[K1]; updatedAt = NOW"
+      }
+    },
+    {
+      "id": "verdict-observed#3",
+      "transition": "verdict-observed",
+      "summary": "Channels disagree: JSON says pass, prose says reject; the verdict is recorded as reject.",
+      "precondition": {
+        "store": "parseable; pending[K1] = {hash: H1, ts: NOW-5min}; parseFailures = 0; rounds = 0; cap = 3",
+        "artifact": "still hashes H1",
+        "clock": "NOW"
+      },
+      "input": {
+        "pendingKey": "K1",
+        "channelJson": "parses as JSON with decision = pass",
+        "channelProse": "last prose line resolves to reject"
+      },
+      "expected": {
+        "decision": "record",
+        "reason": "verdict channels disagree; recorded as reject",
+        "storeEffect": "verdicts += {hash: H1, round: 1, decision: reject, ts: NOW}; rounds = 1; parseFailures = 0; delete pending[K1]; updatedAt = NOW"
+      }
+    },
+    {
+      "id": "verdict-observed#4",
+      "transition": "verdict-observed",
+      "summary": "Channels disagree: JSON says reject, prose says pass; the verdict is recorded as reject.",
+      "precondition": {
+        "store": "parseable; pending[K1] = {hash: H1, ts: NOW-5min}; parseFailures = 0; rounds = 0; cap = 3",
+        "artifact": "still hashes H1",
+        "clock": "NOW"
+      },
+      "input": {
+        "pendingKey": "K1",
+        "channelJson": "parses as JSON with decision = reject",
+        "channelProse": "last prose line resolves to pass"
+      },
+      "expected": {
+        "decision": "record",
+        "reason": "verdict channels disagree; recorded as reject",
+        "storeEffect": "verdicts += {hash: H1, round: 1, decision: reject, ts: NOW}; rounds = 1; parseFailures = 0; delete pending[K1]; updatedAt = NOW"
+      }
+    },
+    {
+      "id": "verdict-observed#5",
+      "transition": "verdict-observed",
+      "summary": "First parse failure: no verdict is recorded, the round counts, the pending is kept, and exactly one re-dispatch is allowed.",
+      "precondition": {
+        "store": "parseable; pending[K1] = {hash: H1, ts: NOW-5min}; parseFailures = 0; rounds = 0; cap = 3",
+        "artifact": "still hashes H1",
+        "clock": "NOW"
+      },
+      "input": {
+        "pendingKey": "K1",
+        "channelJson": "missing, not valid JSON, or decision not in {pass, reject}",
+        "channelProse": "missing, or does not resolve to pass/reject; a usable single channel alone is also a parse failure"
+      },
+      "expected": {
+        "decision": "no-verdict",
+        "reason": "verdict unreadable; exactly one re-dispatch of the review is allowed",
+        "storeEffect": "no verdict appended; rounds = 1; parseFailures = 1; pending[K1] kept unchanged; updatedAt = NOW"
+      }
+    },
+    {
+      "id": "verdict-observed#6",
+      "transition": "verdict-observed",
+      "summary": "Second consecutive parse failure (the retry): no verdict, counters move, and the loop escalates to a human.",
+      "precondition": {
+        "store": "parseable; pending[K2] = {hash: H1, ts: NOW-2min}; parseFailures = 1; rounds = 1; cap = 3; pending[K1] from the failed first attempt may still exist",
+        "artifact": "still hashes H1",
+        "clock": "NOW"
+      },
+      "input": {
+        "pendingKey": "K2",
+        "channelJson": "missing, not valid JSON, or decision not in {pass, reject}",
+        "channelProse": "missing, or does not resolve to pass/reject"
+      },
+      "expected": {
+        "decision": "no-verdict",
+        "reason": "verdict unreadable on retry; escalate to a human",
+        "storeEffect": "no verdict appended; rounds = 2; parseFailures = 2; pending[K2] kept unchanged; updatedAt = NOW"
+      }
+    },
+    {
+      "id": "verdict-observed#7",
+      "transition": "verdict-observed",
+      "summary": "An observation arrives with no pending entry under its key; it is ignored and binds nothing.",
+      "precondition": {
+        "store": "parseable; pending has no entry for K1; parseFailures = 0; rounds = 0",
+        "artifact": "readable; current bytes hash to H1",
+        "clock": "NOW"
+      },
+      "input": {
+        "pendingKey": "K1",
+        "channelJson": "parses as JSON with decision = pass",
+        "channelProse": "last prose line resolves to pass"
+      },
+      "expected": {
+        "decision": "ignore",
+        "reason": "no pending entry for this call; the verdict is ignored",
+        "storeEffect": "none"
+      }
+    },
+    {
+      "id": "verdict-observed#8",
+      "transition": "verdict-observed",
+      "summary": "The pending entry is older than the TTL; the verdict is ignored and the stale entry is dropped.",
+      "precondition": {
+        "store": "parseable; pending[K1] = {hash: H1, ts: NOW-31min}; parseFailures = 0; rounds = 0; cap = 3",
+        "artifact": "readable; current bytes hash to H1",
+        "clock": "NOW"
+      },
+      "input": {
+        "pendingKey": "K1",
+        "channelJson": "parses as JSON with decision = pass",
+        "channelProse": "last prose line resolves to pass"
+      },
+      "expected": {
+        "decision": "ignore",
+        "reason": "pending entry is older than the TTL; the verdict is ignored",
+        "storeEffect": "delete pending[K1]; no verdict appended; rounds unchanged; updatedAt = NOW"
+      }
+    },
+    {
+      "id": "verdict-observed#9",
+      "transition": "verdict-observed",
+      "summary": "The store is torn at observation time; the verdict is ignored and the store is not rebuilt.",
+      "precondition": {
+        "store": "exists but unparseable or shape-invalid",
+        "artifact": "readable",
+        "clock": "NOW"
+      },
+      "input": {
+        "pendingKey": "K1",
+        "channelJson": "parses as JSON with decision = pass",
+        "channelProse": "last prose line resolves to pass"
+      },
+      "expected": {
+        "decision": "ignore",
+        "reason": "store unreadable; verdict ignored; only a human override may rebuild the store",
+        "storeEffect": "none; the torn file is left untouched; noisy log required"
+      }
+    },
+    {
+      "id": "gate-check#0",
+      "transition": "gate-check",
+      "summary": "The transition attempt resolves to a non-root context; the gate does not apply.",
+      "precondition": {
+        "resolvedSession": "NOT the root session (a review worker's own context)"
+      },
+      "input": {
+        "transitionAttempt": "the guarded transition fired from the non-root context"
+      },
+      "expected": {
+        "decision": "allow",
+        "reason": "non-root context is out of gate scope; no store consult",
+        "storeEffect": "none"
+      }
+    },
+    {
+      "id": "gate-check#1",
+      "transition": "gate-check",
+      "summary": "The store is torn; it counts as no record and the transition is denied.",
+      "precondition": {
+        "resolvedSession": "root session S",
+        "store": "exists but unparseable or shape-invalid"
+      },
+      "input": {
+        "transitionAttempt": "the guarded transition fires",
+        "artifact": "state irrelevant; not consulted"
+      },
+      "expected": {
+        "decision": "deny",
+        "reason": "gate store unreadable; treated as no verdict on file; run the review first",
+        "storeEffect": "none; noisy log required"
+      }
+    },
+    {
+      "id": "gate-check#2",
+      "transition": "gate-check",
+      "summary": "Two consecutive parse failures are on record; the loop escalates to a human.",
+      "precondition": {
+        "resolvedSession": "root session S",
+        "store": "parseable; parseFailures = 2; rounds = 2; verdicts = []; pending holds the kept entries of the two failed attempts",
+        "artifact": "readable; still hashes H1"
+      },
+      "input": {
+        "transitionAttempt": "the guarded transition fires"
+      },
+      "expected": {
+        "decision": "escalate",
+        "reason": "verdict was unreadable twice; human decision required",
+        "storeEffect": "none"
+      }
+    },
+    {
+      "id": "gate-check#3",
+      "transition": "gate-check",
+      "summary": "Exactly one parse failure is on record; the caller is told to re-dispatch the review exactly once.",
+      "precondition": {
+        "resolvedSession": "root session S",
+        "store": "parseable; parseFailures = 1; rounds = 1; verdicts = []; pending[K1] kept from the failed attempt",
+        "artifact": "readable; still hashes H1"
+      },
+      "input": {
+        "transitionAttempt": "the guarded transition fires"
+      },
+      "expected": {
+        "decision": "deny",
+        "reason": "verdict unreadable; re-dispatch the review exactly once",
+        "storeEffect": "none"
+      }
+    },
+    {
+      "id": "gate-check#4",
+      "transition": "gate-check",
+      "summary": "No verdict is on file in an opted-in session; the transition is denied.",
+      "precondition": {
+        "resolvedSession": "root session S",
+        "store": "parseable; verdicts = []; pending = {}; parseFailures = 0; rounds = 0; cap = 3",
+        "artifact": "readable"
+      },
+      "input": {
+        "transitionAttempt": "the guarded transition fires"
+      },
+      "expected": {
+        "decision": "deny",
+        "reason": "no verdict on file; run the review first",
+        "storeEffect": "none"
+      }
+    },
+    {
+      "id": "gate-check#5",
+      "transition": "gate-check",
+      "summary": "A verdict is on file but its hash differs from the current on-disk artifact bytes, before cap; deny with a re-review message.",
+      "precondition": {
+        "resolvedSession": "root session S",
+        "store": "parseable; verdicts = [{hash: H1, round: 1, decision: pass, ts}]; rounds = 1; cap = 3; parseFailures = 0; pending = {}",
+        "artifact": "current bytes on disk hash to H2 (H2 != H1)"
+      },
+      "input": {
+        "transitionAttempt": "the guarded transition fires"
+      },
+      "expected": {
+        "decision": "deny",
+        "reason": "artifact changed since the verdict was recorded; re-run the review",
+        "storeEffect": "none"
+      }
+    },
+    {
+      "id": "gate-check#6",
+      "transition": "gate-check",
+      "summary": "Verdict hash differs from current bytes and the round cap is reached; escalate instead of guiding another round.",
+      "precondition": {
+        "resolvedSession": "root session S",
+        "store": "parseable; verdicts = [{hash: H1, round: 3, decision: pass, ts}]; rounds = 3; cap = 3; parseFailures = 0; pending = {}",
+        "artifact": "current bytes on disk hash to H2 (H2 != H1)"
+      },
+      "input": {
+        "transitionAttempt": "the guarded transition fires"
+      },
+      "expected": {
+        "decision": "escalate",
+        "reason": "artifact changed and the review round cap is reached; human decision required",
+        "storeEffect": "none"
+      }
+    },
+    {
+      "id": "gate-check#7",
+      "transition": "gate-check",
+      "summary": "The latest verdict binds the current bytes and is reject, before cap; deny with a revise-and-rerun message.",
+      "precondition": {
+        "resolvedSession": "root session S",
+        "store": "parseable; verdicts = [{hash: H1, round: 1, decision: reject, ts}]; rounds = 1; cap = 3; parseFailures = 0; pending = {}",
+        "artifact": "still hashes H1"
+      },
+      "input": {
+        "transitionAttempt": "the guarded transition fires"
+      },
+      "expected": {
+        "decision": "deny",
+        "reason": "latest verdict is reject; revise the artifact and re-run the review",
+        "storeEffect": "none"
+      }
+    },
+    {
+      "id": "gate-check#8",
+      "transition": "gate-check",
+      "summary": "The latest verdict is reject on current bytes and the round cap is reached; escalate.",
+      "precondition": {
+        "resolvedSession": "root session S",
+        "store": "parseable; verdicts = [{hash: H1, round: 3, decision: reject, ts}]; rounds = 3; cap = 3; parseFailures = 0; pending = {}",
+        "artifact": "still hashes H1"
+      },
+      "input": {
+        "transitionAttempt": "the guarded transition fires"
+      },
+      "expected": {
+        "decision": "escalate",
+        "reason": "latest verdict is reject and the review round cap is reached; human decision required",
+        "storeEffect": "none"
+      }
+    },
+    {
+      "id": "gate-check#9",
+      "transition": "gate-check",
+      "summary": "Convergence at cap: a recorded pass verdict binds the current bytes while rounds >= cap; the gate opens (convergence outranks the cap).",
+      "precondition": {
+        "resolvedSession": "root session S",
+        "store": "parseable; verdicts = [{hash: H1, round: 3, decision: pass, ts}]; rounds = 3; cap = 3; parseFailures = 0; pending = {}",
+        "artifact": "still hashes H1"
+      },
+      "input": {
+        "transitionAttempt": "the guarded transition fires"
+      },
+      "expected": {
+        "decision": "allow",
+        "reason": "verdict pass matches the current artifact; gate open; convergence outranks the round cap",
+        "storeEffect": "none"
+      }
+    },
+    {
+      "id": "gate-check#10",
+      "transition": "gate-check",
+      "summary": "Convergence below cap: a recorded pass verdict binds the current bytes; the gate opens.",
+      "precondition": {
+        "resolvedSession": "root session S",
+        "store": "parseable; verdicts = [{hash: H1, round: 1, decision: pass, ts}]; rounds = 1; cap = 3; parseFailures = 0; pending = {}",
+        "artifact": "still hashes H1"
+      },
+      "input": {
+        "transitionAttempt": "the guarded transition fires"
+      },
+      "expected": {
+        "decision": "allow",
+        "reason": "verdict pass matches the current artifact; gate open",
+        "storeEffect": "none"
+      }
+    },
+    {
+      "id": "human-override#1",
+      "transition": "human-override",
+      "summary": "A human override with decision pass is recorded from any prior state, resets the round budget, and opens the gate on the next check.",
+      "precondition": {
+        "resolvedSession": "root session S",
+        "store": "any state, including torn, missing, or cap-exhausted",
+        "artifact": "readable; current bytes hash to H2",
+        "clock": "NOW"
+      },
+      "input": {
+        "overrideDecision": "pass"
+      },
+      "expected": {
+        "decision": "record",
+        "reason": "human override recorded; rounds reset",
+        "storeEffect": "store rebuilt if it was torn or missing; verdicts += {hash: H2, round: 0, decision: pass, ts: NOW, reason: human-override}; rounds = 0; parseFailures = 0; pending = {}; updatedAt = NOW"
+      }
+    },
+    {
+      "id": "human-override#2",
+      "transition": "human-override",
+      "summary": "A human override with decision reject is recorded from any prior state and resets the round budget; the next gate check follows the reject rows.",
+      "precondition": {
+        "resolvedSession": "root session S",
+        "store": "any state, including torn, missing, or cap-exhausted",
+        "artifact": "readable; current bytes hash to H2",
+        "clock": "NOW"
+      },
+      "input": {
+        "overrideDecision": "reject"
+      },
+      "expected": {
+        "decision": "record",
+        "reason": "human override recorded; rounds reset",
+        "storeEffect": "store rebuilt if it was torn or missing; verdicts += {hash: H2, round: 0, decision: reject, ts: NOW, reason: human-override}; rounds = 0; parseFailures = 0; pending = {}; updatedAt = NOW; the next gate check follows the reject rows (gate-check#7 or gate-check#8)"
+      }
+    }
+  ]
+}

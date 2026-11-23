@@ -3,6 +3,57 @@
 Newest first. Versions follow the plugin package (`plugin/package.json`); the
 panel extension has its own tags (`reeve-<version>`).
 
+## 0.4.0 — 2026-11-23
+
+**The orchestration engine ships: declarative runs, sandboxed workflow
+scripts, and the plan-gate review loop, all in one plugin.** reeve stops being
+"provider gate + review skill" and becomes a dynamic-workflow host: long
+multi-step jobs run as real engine runs with a journal, a salvage path when
+they fail, and a code-enforced review gate before any plan/script executes.
+
+- **Declarative runs** (`plugin/src/engine/`): jobs are pure-data declarations
+  (`runId` + `steps[{stepId, prompt, deps, schema?, ...}]`, validated by
+  `declaration.schema.json`); the scheduler dispatches ready steps concurrently
+  (deps are the only control flow), every transition lands in an on-disk
+  journal, and failed/interrupted runs still produce a salvage report (all ask
+  results, the failure point, a mermaid graph with a red tail) rendered from
+  the journal alone.
+- **Production session driver** (`driver-session.js`): steps run as real host
+  sessions (`create` → `wait` → `context`, timeouts, interrupts) — no mocks.
+- **Workflow scripts** (`script-runner.js`): a bare ESM function body wrapped
+  as `async function main(F){…}` and executed in a whitelisted vm sandbox
+  (deterministic by construction — no `Date`/`Math.random`/`fetch`/timers;
+  violations fail closed). The facade exposes six members: `ask` (schema
+  validation with a 3-attempt repair loop), `run` (literal commands, statically
+  scanned into review), `phase`, `hole`/`escalate` (suspend-for-answer), `log`.
+- **Resume with prefix import**: reruns replay finished asks from the journal
+  when the call-site position, prompt hash and prefix hash all match (v2
+  call-site matching — edit the tail, keep the prefix; edit the head, rerun
+  from there). Side effects are never cached: "zero ask reruns" does not mean
+  "zero side-effect re-execution".
+- **Script patching** (`script-patch.js`): mechanical post-failure amendment —
+  `applyPatch` writes the patched file alongside the untouched base, journals a
+  `patch` event (base→patched fingerprints, anchor, call-seq position), and the
+  rerun classifies failures inside the patched segment as `patch-failed`.
+- **Plan gate** (`plan-gate.js`, `review_gate` tool): plans, engine-run
+  declarations and workflow scripts register with the gate; verdicts from
+  review sessions bind to the exact file bytes (round 1 can open the gate,
+  changing a byte closes it again — fail-closed); root-session-only
+  registration; human override stays a separate face. Decision behavior is
+  pinned by a 26-row decision matrix fixture.
+- **Creation skill ships in-pack**: `skills/declarative-workflows/` is the
+  full authoring contract for both frontends (script path + declarative path),
+  translated/adapted from ZCode's bundled `dynamic-workflows` skill
+  (Apache-2.0; attribution in the skill's `THIRD-PARTY.md`), kept byte-identical
+  with the OpenCodeConfig sync copy.
+- **Panel** (`extensions/reeve`): run ledger with four-state step cards (一眼
+  可辨 done/running/failed/blocked), a DAG view (declarations render
+  steps+deps as mermaid; scripts render phase timelines), and approval cards
+  showing script summary, scanned command literals and phase lists. The
+  deterministic audit harness grows to 51 checks across locales and dark mode.
+- `provision.json`: version 0.4.0, `enginePlugin.spec` realigned (it had
+  drifted back to 0.3.0).
+
 ## 0.3.0 — 2026-11-12
 
 **The review skill now ships every upstream rule doc (7 → 64), not a hand-picked

@@ -1,0 +1,71 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "reeve/plugin/src/engine/declaration.schema.json",
+  "title": "REEVE E1 engine declaration",
+  "description": "E1 引擎运行声明（纯数据，无脚本字段）。施工规格：.zcode/plans/e1-construction-spec.md §3。约束的单一事实来源：declaration.js 从本文件读约束（允许字段/必填/prompt 上限/数值下界）；schema 表达不了的图性质（stepId 唯一、deps 无环/无自指/无未知引用）由 declaration.js 代码实现。model 编码与 opencode v2 face 一致：{providerID, id, variant?}，driver 各实现零转换直传。maxAttempts 默认 3 = 含初派的总尝试上限；timeoutMs 默认 900000；两个默认值由 ask.js/scheduler.js 经 DECLARATION_DEFAULTS 取用。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["runId", "steps"],
+  "properties": {
+    "runId": {
+      "type": "string",
+      "description": "本次 engine run 标识；journal 事件与子会话 title 前缀（REEVE-E1 <runId>）都挂它。"
+    },
+    "steps": {
+      "type": "array",
+      "description": "步骤列表；每步一个子会话任务。空数组合法（空 run 平凡完成）。",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["stepId", "prompt", "deps"],
+        "properties": {
+          "stepId": {
+            "type": "string",
+            "description": "步标识；全声明内唯一（唯一性与 deps 图性质在 declaration.js 代码里查）。"
+          },
+          "prompt": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 8000,
+            "description": "发给子会话的 prompt：非空且 ≤ 8000 字符。"
+          },
+          "deps": {
+            "type": "array",
+            "description": "前置 stepId 列表；无环、无自指、不引用不存在的 stepId。",
+            "items": { "type": "string" }
+          },
+          "schema": {
+            "type": "object",
+            "description": "结果 JSON Schema（可选）；ask.js 用它校验子会话产出。"
+          },
+          "agent": {
+            "type": "string",
+            "description": "子会话 agent（可选）；挂 session.create 的 agent 参数。"
+          },
+          "model": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["providerID", "id"],
+            "properties": {
+              "providerID": { "type": "string" },
+              "id": { "type": "string" },
+              "variant": { "type": "string", "description": "可选；v2 face 的 model.variant。" }
+            }
+          },
+          "maxAttempts": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 3,
+            "description": "重派口径（可选）：含初派的总尝试上限，整数 ≥ 1，默认 3。"
+          },
+          "timeoutMs": {
+            "type": "integer",
+            "minimum": 1000,
+            "default": 900000,
+            "description": "步超时毫秒（可选）：整数 ≥ 1000，默认 900000；超时 → 步 failed 进 journal，不静默老化。"
+          }
+        }
+      }
+    }
+  }
+}

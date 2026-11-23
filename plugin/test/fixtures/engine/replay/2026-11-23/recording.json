@@ -1,0 +1,258 @@
+{
+  "version": 1,
+  "recordedAt": "2026-11-22T18:01:55.812Z",
+  "host": "OpenChamber 桌面栈拉起的 opencode 引擎（serve --stdio，win32；face 面实测见 M1.1(a)/M1.3a findings）",
+  "note": "M1.3b/c 真机录制：pilot-3step.json 三无依赖步 × createSessionDriver × scheduler run；scenario.result 只记终局应答（逐次轮询全交互在 harness-run.jsonl 的 driver-calls 行），scenario.context = 终局后 driver.context 的原始 transcript",
+  "scenarios": [
+    {
+      "name": "m13-step-alpha",
+      "match": {
+        "prompt": "【合成录制任务·alpha】这是 reeve 引擎 M1.3b/c 录制 run 的合成步骤（三个无依赖步之一），全部使用合成数据，不访问任何真实系统。请只回复一行 JSON，形如 {\"step\":\"alpha\",\"engine\":\"e1\"}。不要输出代码围栏或任何其他文字。",
+        "title": "REEVE-E1 m13-3step-recording alpha"
+      },
+      "sessionId": "ses_dfb941823ffejJOdyBIBR6QPZM",
+      "result": [
+        {
+          "status": "done",
+          "text": "{\"step\":\"alpha\",\"engine\":\"e1\"}"
+        }
+      ],
+      "context": [
+        {
+          "id": "msg_2046be7ea0015ebgVsCKeQVsM1",
+          "time": {
+            "created": 1795370510345
+          },
+          "text": "【合成录制任务·alpha】这是 reeve 引擎 M1.3b/c 录制 run 的合成步骤（三个无依赖步之一），全部使用合成数据，不访问任何真实系统。请只回复一行 JSON，形如 {\"step\":\"alpha\",\"engine\":\"e1\"}。不要输出代码围栏或任何其他文字。",
+          "type": "user"
+        },
+        {
+          "id": "msg_2046be81e0013ATIyFjXN2SHeI",
+          "time": {
+            "created": 1795370510437,
+            "firstToken": 1795370513207,
+            "streamed": 1795370514541,
+            "completed": 1795370514603
+          },
+          "type": "assistant",
+          "agent": "general",
+          "model": {
+            "id": "standard",
+            "providerID": "reeve",
+            "variant": "default"
+          },
+          "content": [
+            {
+              "type": "reasoning",
+              "text": "The user is asking me to respond with a single line of JSON: {\"step\":\"alpha\",\"engine\":\"e1\"}. This appears to be a synthetic recording task. The memory hint says there's a relevant entry about \"【合成录制任务·alpha】这是 reeve 引擎 M1.3b/c 录制 run\". Let me just follow the instruction - they want only one line of JSON, no code fences or other text.",
+              "native": {
+                "reasoningField": "reasoning_content"
+              },
+              "time": {
+                "created": 1795370513208,
+                "completed": 1795370514538
+              }
+            },
+            {
+              "type": "text",
+              "text": "{\"step\":\"alpha\",\"engine\":\"e1\"}"
+            }
+          ],
+          "snapshot": {
+            "start": "53f460331774952e3e8ee4ccf6993b335f04de85",
+            "end": "53f460331774952e3e8ee4ccf6993b335f04de85",
+            "files": []
+          },
+          "finish": "stop",
+          "rawFinish": "stop",
+          "cost": 0,
+          "tokens": {
+            "input": 14334,
+            "output": 12,
+            "reasoning": 90,
+            "cache": {
+              "read": 0,
+              "write": 0
+            }
+          }
+        },
+        {
+          "id": "msg_2046bf8b0001YZ9AwjRxcJDLBh",
+          "time": {
+            "created": 1795370514608
+          },
+          "type": "idle",
+          "outcome": "succeeded"
+        }
+      ]
+    },
+    {
+      "name": "m13-step-beta",
+      "match": {
+        "prompt": "【合成录制任务·beta】这是 reeve 引擎 M1.3b/c 录制 run 的合成步骤（三个无依赖步之一），全部使用合成数据，不访问任何真实系统。请只回复一行 JSON，形如 {\"step\":\"beta\",\"mode\":\"record\"}。不要输出代码围栏或任何其他文字。",
+        "title": "REEVE-E1 m13-3step-recording beta"
+      },
+      "sessionId": "ses_dfb941821ffeEbNFAZmQy21S7H",
+      "result": [
+        {
+          "status": "done",
+          "text": "{\"step\":\"beta\",\"mode\":\"record\"}"
+        }
+      ],
+      "context": [
+        {
+          "id": "msg_2046be7f2001UpjhGG2qOAwhAt",
+          "time": {
+            "created": 1795370510378
+          },
+          "text": "【合成录制任务·beta】这是 reeve 引擎 M1.3b/c 录制 run 的合成步骤（三个无依赖步之一），全部使用合成数据，不访问任何真实系统。请只回复一行 JSON，形如 {\"step\":\"beta\",\"mode\":\"record\"}。不要输出代码围栏或任何其他文字。",
+          "type": "user"
+        },
+        {
+          "id": "msg_2046be82e001jzJvkXHoI0OTL2",
+          "time": {
+            "created": 1795370510541,
+            "firstToken": 1795370515026,
+            "streamed": 1795370515503,
+            "completed": 1795370515800
+          },
+          "type": "assistant",
+          "agent": "general",
+          "model": {
+            "id": "standard",
+            "providerID": "reeve",
+            "variant": "default"
+          },
+          "content": [
+            {
+              "type": "reasoning",
+              "text": "The user is asking me to do something specific: a synthetic recording task. They want me to reply with only one line of JSON: {\"step\":\"beta\",\"mode\":\"record\"} with no code fences or any other text.\n\nThis appears to be some kind of synthetic/test prompt. The instructions say to only reply with one line of JSON. Let me comply with this simple request - it's a synthetic data task, doesn't involve accessing real systems, and just asks for a specific JSON format response.\n\nThe request is clear and harmless - just outputting a JSON line as instructed.",
+              "native": {
+                "reasoningField": "reasoning_content"
+              },
+              "time": {
+                "created": 1795370515027,
+                "completed": 1795370515501
+              }
+            },
+            {
+              "type": "text",
+              "text": "{\"step\":\"beta\",\"mode\":\"record\"}"
+            }
+          ],
+          "snapshot": {
+            "start": "53f460331774952e3e8ee4ccf6993b335f04de85",
+            "end": "8987f291c350b516a7bcb890497bc4ac8aac78d4",
+            "files": [
+              "plugin/test/fixtures/engine/replay/2026-11-23/harness-run.jsonl"
+            ]
+          },
+          "finish": "stop",
+          "rawFinish": "stop",
+          "cost": 0,
+          "tokens": {
+            "input": 14333,
+            "output": 11,
+            "reasoning": 116,
+            "cache": {
+              "read": 0,
+              "write": 0
+            }
+          }
+        },
+        {
+          "id": "msg_2046bfd5b001YbEruY1lp1Zapd",
+          "time": {
+            "created": 1795370515803
+          },
+          "type": "idle",
+          "outcome": "succeeded"
+        }
+      ]
+    },
+    {
+      "name": "m13-step-gamma",
+      "match": {
+        "prompt": "【合成录制任务·gamma】这是 reeve 引擎 M1.3b/c 录制 run 的合成步骤（三个无依赖步之一），全部使用合成数据，不访问任何真实系统。请只回复一行 JSON，形如 {\"step\":\"gamma\",\"steps\":3}。不要输出代码围栏或任何其他文字。",
+        "title": "REEVE-E1 m13-3step-recording gamma"
+      },
+      "sessionId": "ses_dfb941820ffeKAK2hG4HcGj7Jb",
+      "result": [
+        {
+          "status": "done",
+          "text": "{\"step\":\"gamma\",\"steps\":3}"
+        }
+      ],
+      "context": [
+        {
+          "id": "msg_2046be834001YUtJBV43JRuOGr",
+          "time": {
+            "created": 1795370510398
+          },
+          "text": "【合成录制任务·gamma】这是 reeve 引擎 M1.3b/c 录制 run 的合成步骤（三个无依赖步之一），全部使用合成数据，不访问任何真实系统。请只回复一行 JSON，形如 {\"step\":\"gamma\",\"steps\":3}。不要输出代码围栏或任何其他文字。",
+          "type": "user"
+        },
+        {
+          "id": "msg_2046be843001Hr9WPP67wYV55a",
+          "time": {
+            "created": 1795370510650,
+            "firstToken": 1795370513196,
+            "streamed": 1795370514686,
+            "completed": 1795370514989
+          },
+          "type": "assistant",
+          "agent": "general",
+          "model": {
+            "id": "standard",
+            "providerID": "reeve",
+            "variant": "default"
+          },
+          "content": [
+            {
+              "type": "reasoning",
+              "text": "The user is asking me to respond with a single line of JSON: {\"step\":\"gamma\",\"steps\":3}. This appears to be some kind of synthetic recording task marker. The instruction is clear - just reply with one line of JSON, no code fences, no other text.\n\nThis seems like a benign instruction - it's part of some pipeline/test setup. There's nothing harmful here. I should just comply and output exactly that JSON line.",
+              "native": {
+                "reasoningField": "reasoning_content"
+              },
+              "time": {
+                "created": 1795370513198,
+                "completed": 1795370514684
+              }
+            },
+            {
+              "type": "text",
+              "text": "{\"step\":\"gamma\",\"steps\":3}"
+            }
+          ],
+          "snapshot": {
+            "start": "53f460331774952e3e8ee4ccf6993b335f04de85",
+            "end": "c27b3367696cf53455c2b9b661b3c2b9f451b82f",
+            "files": [
+              "plugin/test/fixtures/engine/replay/2026-11-23/harness-run.jsonl"
+            ]
+          },
+          "finish": "stop",
+          "rawFinish": "stop",
+          "cost": 0,
+          "tokens": {
+            "input": 2685,
+            "output": 11,
+            "reasoning": 89,
+            "cache": {
+              "read": 11648,
+              "write": 0
+            }
+          }
+        },
+        {
+          "id": "msg_2046bfa31001QgdeIBgqZ6p8yA",
+          "time": {
+            "created": 1795370514993
+          },
+          "type": "idle",
+          "outcome": "succeeded"
+        }
+      ]
+    }
+  ]
+}

@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { Ledger } from '../src/ledger.js'
-import { SnapshotWriter, buildSnapshot, projectAgentTable } from '../src/snapshot.js'
+import { SnapshotWriter, buildSnapshot, projectAgentTable, projectEngineRuns } from '../src/snapshot.js'
 
 let passed = 0
 const ok = (label) => {
@@ -171,7 +171,80 @@ const dir = await mkdtemp(join(tmpdir(), 'reeve-snap-'))
   assert.equal(bare.gate, null)
   assert.equal(bare.models, null)
   assert.equal(bare.stats, null)
-  ok('快照三节：gate（运行态+链候选）/ models / stats，缺席即 null')
+  assert.equal(bare.engine, null)
+  ok('快照三节：gate（运行态+链候选）/ models / stats，缺席即 null（engine 同款）')
+}
+
+// ---- 9b. engine 节：引擎运行投影（M2.5② 面板步卡的数据源） ----
+{
+  const runs = [
+    {
+      runId: 'run-ci-demo',
+      kind: 'declaration',
+      status: 'running',
+      updatedAt: 50,
+      steps: [
+        { stepId: 'fetch', state: 'done', attempts: 1 },
+        { stepId: 'analyze', state: 'running', attempts: 1, deps: ['fetch', 42, ''] },
+        { stepId: 'report', state: 'failed', attempts: 3 },
+      ],
+    },
+    {
+      runId: 'run-ci-script',
+      kind: 'script',
+      status: 'completed',
+      startedAt: 10,
+      updatedAt: 60,
+      steps: [],
+      phases: ['collect', 'analyze'],
+      summary: '聚合夜审',
+      commands: ['node a.mjs', 42, '', 'node b.mjs'],
+      forks: ['失败分支 → 跳过 publish', 7, null],
+    },
+    // 垃圾条目：非对象 / 缺 runId / 坏字段——投影侧逐项容错，不让一个坏条目拖垮整节
+    null,
+    { kind: 'declaration' },
+    {
+      runId: 'run-loose',
+      kind: 'weird-kind', // 不认识 → 归 declaration
+      status: 42, // 非字符串 → null
+      updatedAt: 'x', // 非数字 → null
+      startedAt: 'no', // 非数字 → null（耗时没有数据就不画，不拿 updatedAt 冒充）
+      steps: [{ stepId: 'ok', state: 'done', attempts: 9 }, 'junk', null, { state: 'done' }], // 缺 stepId 的丢
+      phases: ['a', 42, '', 'b'], // 非字符串/空的丢
+      summary: 7, // 非字符串 → null
+      commands: ['run a', 42, '', 'run b'], // 非字符串/空的丢
+      forks: ['note', null, ''], // 非字符串/空的丢
+    },
+  ]
+  const engine = projectEngineRuns(runs)
+  assert.equal(engine.runs.length, 3)
+  const [decl, script, loose] = engine.runs
+  assert.equal(decl.kind, 'declaration')
+  assert.deepEqual(decl.steps.map((s) => [s.stepId, s.state, s.attempts]), [['fetch', 'done', 1], ['analyze', 'running', 1], ['report', 'failed', 3]])
+  assert.deepEqual(decl.steps[1].deps, ['fetch']) // D 线 DAG 视图的依赖表
+  assert.equal(script.kind, 'script')
+  assert.deepEqual(script.phases, ['collect', 'analyze'])
+  assert.equal(script.startedAt, 10)
+  assert.equal(script.summary, '聚合夜审')
+  assert.deepEqual(script.commands, ['node a.mjs', 'node b.mjs'])
+  assert.deepEqual(script.forks, ['失败分支 → 跳过 publish'])
+  assert.equal(loose.kind, 'declaration')
+  assert.equal(loose.status, null)
+  assert.equal(loose.updatedAt, null)
+  assert.equal(loose.startedAt, null)
+  assert.deepEqual(loose.steps, [{ stepId: 'ok', state: 'done', attempts: 9, deps: [] }])
+  assert.deepEqual(loose.phases, ['a', 'b'])
+  assert.equal(loose.summary, null)
+  assert.deepEqual(loose.commands, ['run a', 'run b'])
+  assert.deepEqual(loose.forks, ['note'])
+  // 无 deps 的旧 producer（升级中途的快照）→ deps 缺省为 []，面板退回步卡行
+  assert.deepEqual(projectEngineRuns([{ runId: 'r', steps: [{ stepId: 's', state: 'done', attempts: 1 }] }]).runs[0].steps[0].deps, [])
+  // 快照里的位置：buildSnapshot(..., {engine}) 原样带上；没有运行 → null（不假装有）
+  assert.equal(buildSnapshot([], { engine }).engine.runs.length, 3)
+  assert.equal(projectEngineRuns([]), null)
+  assert.equal(projectEngineRuns('no'), null)
+  ok('engine 节：声明/脚本两类运行投影 + 逐项容错 + 缺席即 null + D 线扩展字段（startedAt/deps/summary/commands/forks）')
 }
 
 console.log(`\n快照测试：${passed} 项全过`)

@@ -1,4 +1,4 @@
-# REEVE 面板 —— UI 断言审计（45 项 + 双语矩阵）
+# REEVE 面板 —— UI 断言审计（51 项 + 双语矩阵）
 
 > 由 `node extensions/reeve/scripts/audit.mjs --fixture` 生成截图与 `report.json`；本表是**逐项断言 + 人工结论**。
 > 改面板后必须重跑；图变了而结论没更新 = 没审。
@@ -26,6 +26,26 @@
 > 0.1.15 面板（配插件 0.2.5）：新增第 5 档 `reeve/free`（免费池专用链 `free-only`）——
 > 档位映射 5 行、链卡 5 张。45 项 zh 主套 + 12 项 en 矩阵全部重跑（`--fixture`，2026-10-25），
 > report 0 fail；45-free-only-chain 人工看图：整卡只有免费模型池行，无付费模型。
+
+> M2.5 面板（配插件 0.4.0-unreleased，2026-11-23）：Tasks tab 新增「引擎运行」步卡节
+> （M2.5②）——快照 `engine.runs`（`projectEngineRuns` 投影）里的 E1 运行：run 徽标 + kind +
+> 进度（n/m done）+ run 级状态徽标，声明 run 画逐步行卡（journal 状态徽标 ×尝试数），
+> 脚本 run 画 phase 名序行；快照没有 engine 节就整节不画。清单 45 → 47 项
+> （46/47 新增），47 项 zh 主套 `--fixture` 全绿并逐张看图。
+>
+> D 线打磨（优化方案 v3「D」节，2026-11-23）：`engine.runs` 步卡四态打磨（D1：run 卡状态左条 +
+> run 级状态徽标实底化 + 失败步整行微染 + 耗时/重试可见）· 声明 DAG 视图（D2：steps+deps 按依赖
+> 深度分列 + SVG 边 + 可展开 mermaid 源；脚本路径 phase 时间线随 run 结果着色）· workflow-script
+> 审批卡（D3：脚本摘要 + 静态扫描命令集 + phase 列表 + 分叉说明 + 扫描边界说明）。数据源扩展：
+> `projectEngineRuns` 增 `startedAt`/`steps[].deps`/`summary`/`commands`/`forks`（全部可选，缺了退回
+> 上一档渲染）。scenario 注入 `runs-fourstate|runs-dag|runs-approval|runs-absent`（host-shim）。
+> 清单 47 → 51 项（48-51 新增，含 getComputedStyle 四态断言：徽标底色/左条两两可辨 + 对比度；
+> 审计的取色器补了 `color(srgb …)` 与十六进制——宿主 token 走 color-mix 时 computed 是 CSS
+> Color 4 形态，之前整段对比度检查被静默跳过）。51 项 zh 主套 + 16 项 en 矩阵 `--fixture` 全绿
+> （report 0 fail），48-51 逐张看图；对比度 3–4.5 为警告级（shim 派生色是 color-mix 近似，
+> 真宿主 OKLab 算过）。基线（改前渲染）与空态截图在 OpenCodeConfig 仓
+> `fixtures/evidence/ui-baseline/`；D 线终态截图在
+> `.zcode/plans/evidence/ui/`。
 
 | # | 项 | 结论（2026-10-23，0.1.13 双语 + 宿主式版式） |
 | --- | --- | --- |
@@ -74,6 +94,12 @@
 | 43 | `free-advanced-306` | ✅ 306px：偏好/禁用/白名单与数字字段单列可读 |
 | 44 | `gate-down-306` | ✅ 306px + 路由没起：红色徽标与横幅都不挤坏 |
 | 45 | `free-only-chain` | ✅ 免费池专用链 free-only（`[@free]`，0.1.15 新项）：整卡只有免费模型池行（自动 · 最多 3 个），无付费模型 |
+| 46 | `ledger-runs` | ✅ 引擎运行步卡（M2.5 新项 + D 线打磨后复跑）：摘要数字格 + 声明 run（步行 ×尝试数 + 状态徽标）、脚本 run（phase 时间线 chips：done 绿 / 尾段随 run 结果）、挂起 run（挂起徽标） |
+| 47 | `ledger-runs-dark` | ✅ 同上 · 深色：状态徽标走宿主 status token，可读不溢出 |
+| 48 | `runs-fourstate` | ✅ D1 四态一眼可辨（D 线新项）：run 卡状态左条绿/橙/红/琥珀 + 状态徽标实底化；失败步整行红染 + 左竖条；耗时（8.0m/3.0m/17.0m/45.0m）与重试（尝试 ×2/×3）可见。程序化断言（getComputedStyle，宿主 token）：四态徽标底色与左条两两可辨 + 对比度 ≥3 |
+| 49 | `runs-dag` | ✅ D2 DAG 视图：声明 steps+deps 菱形（fetch → clean → analyze+cross-check → report）按依赖深度分列，SVG 边连接，节点按视觉桶着色（done 绿 / running 橙 / declared 中性）+ mermaid 源可展开；脚本 run phase 时间线 collect → analyze → verify → publish（尾红随 failed） |
+| 50 | `runs-approval` | ✅ D3 workflow-script 审批卡：待审批徽标 + 脚本摘要 + 静态扫描命令集（3 条 mono chips）+ phase 列表（中性——还没跑不假着色）+ 分叉说明 2 条 + 扫描边界说明 |
+| 51 | `runs-fourstate-dark` | ✅ D1 · 深色：同一套程序化断言在宿主深色 token 下复跑通过；实底徽标（深字浅底）与左条四色可辨 |
 
 ## 复审方法
 
@@ -102,8 +128,8 @@
 ## 怎么重跑
 
 ```bash
-node extensions/reeve/scripts/audit.mjs --fixture --locale=zh-CN          # 主套（45 项）
-node extensions/reeve/scripts/audit.mjs --fixture --locale=en --suffix=-en --only 01,09,19,22,24,25,28,40,41,42,43,45
+node extensions/reeve/scripts/audit.mjs --fixture --locale=zh-CN          # 主套（51 项）
+node extensions/reeve/scripts/audit.mjs --fixture --locale=en --suffix=-en --only 01,09,19,22,24,25,28,40,41,42,43,45,48,49,50,51
 node extensions/reeve/scripts/audit.mjs --only 19                        # 单项
 node extensions/reeve/scripts/audit.mjs --strict-contrast                 # 3–4.5 也算失败
 node scripts/host-audit.mjs --app=openchamber-ui://app/index.html --cdp=http://127.0.0.1:9222

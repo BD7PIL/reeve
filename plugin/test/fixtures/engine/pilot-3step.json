@@ -1,0 +1,86 @@
+{
+  "runId": "m13-3step-recording",
+  "steps": [
+    {
+      "stepId": "alpha",
+      "prompt": "【合成录制任务·alpha】这是 reeve 引擎 M1.3b/c 录制 run 的合成步骤（三个无依赖步之一），全部使用合成数据，不访问任何真实系统。请只回复一行 JSON，形如 {\"step\":\"alpha\",\"engine\":\"e1\"}。不要输出代码围栏或任何其他文字。",
+      "deps": [],
+      "model": {
+        "providerID": "reeve",
+        "id": "standard"
+      },
+      "timeoutMs": 240000,
+      "schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "step",
+          "engine"
+        ],
+        "properties": {
+          "step": {
+            "type": "string"
+          },
+          "engine": {
+            "type": "string"
+          }
+        }
+      },
+      "agent": "general"
+    },
+    {
+      "stepId": "beta",
+      "prompt": "【合成录制任务·beta】这是 reeve 引擎 M1.3b/c 录制 run 的合成步骤（三个无依赖步之一），全部使用合成数据，不访问任何真实系统。请只回复一行 JSON，形如 {\"step\":\"beta\",\"mode\":\"record\"}。不要输出代码围栏或任何其他文字。",
+      "deps": [],
+      "model": {
+        "providerID": "reeve",
+        "id": "standard"
+      },
+      "timeoutMs": 240000,
+      "schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "step",
+          "mode"
+        ],
+        "properties": {
+          "step": {
+            "type": "string"
+          },
+          "mode": {
+            "type": "string"
+          }
+        }
+      },
+      "agent": "general"
+    },
+    {
+      "stepId": "gamma",
+      "prompt": "【合成录制任务·gamma】这是 reeve 引擎 M1.3b/c 录制 run 的合成步骤（三个无依赖步之一），全部使用合成数据，不访问任何真实系统。请只回复一行 JSON，形如 {\"step\":\"gamma\",\"steps\":3}。不要输出代码围栏或任何其他文字。",
+      "deps": [],
+      "model": {
+        "providerID": "reeve",
+        "id": "standard"
+      },
+      "timeoutMs": 240000,
+      "schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "step",
+          "steps"
+        ],
+        "properties": {
+          "step": {
+            "type": "string"
+          },
+          "steps": {
+            "type": "integer"
+          }
+        }
+      },
+      "agent": "general"
+    }
+  ]
+}

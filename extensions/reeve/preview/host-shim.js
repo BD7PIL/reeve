@@ -78,7 +78,8 @@ const err = (message, code) => Object.assign(new Error(message), { code })
 
 // ---- 场景注入（审计/CI 用；逐页隔离，不碰真实文件）----
 // ?scenario=gate-down|gate-problems|config-missing|config-parse-error|ledger-missing|ledger-denied|
-//           save-fail|apply-stall|stale|slow-read|empty-stats|empty-tasks|free-empty|free-cooling|free-error|gate-running
+//           save-fail|apply-stall|stale|slow-read|empty-stats|empty-tasks|free-empty|free-cooling|free-error|gate-running|
+//           runs-absent|runs-fourstate|runs-dag|runs-approval
 // ?fixture=ci      正常态用仓库里的夹具（CI 没有真快照/真配置）
 // ?applyDelay=800  写入后多久把新配置"热更"进快照（模拟 GATE ≤5s；apply-stall 时永不）
 const scenario = params.get('scenario') ?? ''
@@ -135,6 +136,97 @@ function patchApplied(snapshot) {
   return { ...snapshot, gate }
 }
 
+// ---- engine.runs 四态/DAG/审批卡夹具（D 线 UI 验收用；时间戳相对取景时刻，只改这一页）----
+// run 级四态（completed/running/failed/blocked）各一条，声明 kind，带耗时（startedAt）与重试（attempts>1）。
+function runsFourstate(now) {
+  return [
+    {
+      runId: 'run-day-report', kind: 'declaration', status: 'completed',
+      startedAt: now - 12 * 60_000, updatedAt: now - 4 * 60_000,
+      steps: [
+        { stepId: 'fetch-source', state: 'done', attempts: 1 },
+        { stepId: 'clean-normalize', state: 'done', attempts: 2 },
+        { stepId: 'analyze-patterns', state: 'done', attempts: 1 },
+        { stepId: 'report-writeup', state: 'done', attempts: 1 },
+      ],
+    },
+    {
+      runId: 'run-live-sweep', kind: 'declaration', status: 'running',
+      startedAt: now - 3 * 60_000, updatedAt: now - 20_000,
+      steps: [
+        { stepId: 'fetch-source', state: 'done', attempts: 1 },
+        { stepId: 'analyze-patterns', state: 'running', attempts: 1 },
+        { stepId: 'cross-check', state: 'dispatching', attempts: 1 },
+        { stepId: 'report-writeup', state: 'declared', attempts: 0 },
+      ],
+    },
+    {
+      runId: 'run-night-audit', kind: 'declaration', status: 'failed',
+      startedAt: now - 48 * 60_000, updatedAt: now - 31 * 60_000,
+      steps: [
+        { stepId: 'fetch-source', state: 'done', attempts: 1 },
+        { stepId: 'analyze-patterns', state: 'failed', attempts: 3 },
+      ],
+    },
+    {
+      runId: 'run-gate-apply', kind: 'declaration', status: 'blocked',
+      startedAt: now - 70 * 60_000, updatedAt: now - 25 * 60_000,
+      steps: [
+        { stepId: 'prepare', state: 'done', attempts: 1 },
+        { stepId: 'await-human', state: 'blocked', attempts: 1 },
+      ],
+    },
+  ]
+}
+
+// 声明 DAG（steps+deps 菱形：fetch → {clean, analyze…} → report）+ 脚本 phase 时间线（failed 尾红）。
+function runsDag(now) {
+  return [
+    {
+      runId: 'run-dag-weekly', kind: 'declaration', status: 'running',
+      startedAt: now - 6 * 60_000, updatedAt: now - 40_000,
+      steps: [
+        { stepId: 'fetch-source', state: 'done', attempts: 1, deps: [] },
+        { stepId: 'clean-normalize', state: 'done', attempts: 1, deps: ['fetch-source'] },
+        { stepId: 'analyze-patterns', state: 'running', attempts: 1, deps: ['clean-normalize'] },
+        { stepId: 'cross-check', state: 'running', attempts: 2, deps: ['clean-normalize'] },
+        { stepId: 'report-writeup', state: 'declared', attempts: 0, deps: ['analyze-patterns', 'cross-check'] },
+      ],
+    },
+    {
+      runId: 'run-script-pipeline', kind: 'script', status: 'failed',
+      startedAt: now - 9 * 60_000, updatedAt: now - 60_000,
+      steps: [],
+      phases: ['collect', 'analyze', 'verify', 'publish'],
+    },
+  ]
+}
+
+// workflow-script 审批卡（blocked + 摘要/静态扫描命令集/phase/分叉说明）。
+function runsApproval(now) {
+  return [
+    {
+      runId: 'run-approval-nightly', kind: 'script', status: 'blocked',
+      startedAt: now - 8 * 60_000, updatedAt: now - 90_000,
+      steps: [],
+      phases: ['collect', 'aggregate', 'report'],
+      summary: L(
+        '夜间审计工作流：拉取调用台账 → 聚合失败模式 → 写报告（写报告前等待审批）',
+        'Nightly audit workflow: pull call ledger → aggregate failure modes → write report (pauses for approval before writing)',
+      ),
+      commands: [
+        'node scripts/collect-ledger.mjs',
+        'node scripts/aggregate-failures.mjs',
+        'node scripts/write-report.mjs',
+      ],
+      forks: [
+        L('collect 读不到台账 → 直接跳到 report，只写空表说明', 'ledger unreadable in collect → skips straight to report, writes an empty-table note'),
+        L('aggregate 发现 ≥3 条失败 → 追加一轮复核（复用同一聚合命令）', 'aggregate finds ≥3 failures → one extra review round (reuses the same aggregate command)'),
+      ],
+    },
+  ]
+}
+
 /** 错误/空/陈旧态（只改这一页读到的数据，不碰盘）。 */
 function applyScenario(snapshot) {
   const out = { ...snapshot }
@@ -171,6 +263,12 @@ function applyScenario(snapshot) {
     }
   }
   if (scenario === 'free-error') out.free = { error: L('读不到免费模型池运行态（模拟）', 'Cannot read free pool runtime (simulated)') }
+  // engine.runs 场景（整节替换，四态一眼可辨的前提是这一页只有要看的那些 run）
+  const now = Date.now()
+  if (scenario === 'runs-absent') out.engine = null
+  if (scenario === 'runs-fourstate') out.engine = { runs: runsFourstate(now) }
+  if (scenario === 'runs-dag') out.engine = { runs: runsDag(now) }
+  if (scenario === 'runs-approval') out.engine = { runs: runsApproval(now) }
   return out
 }
 

@@ -1,0 +1,82 @@
+{
+  "runId": "visual-gate-demo",
+  "steps": [
+    {
+      "stepId": "render",
+      "prompt": "第 1 拍·渲染：把 <project>/svg_output/ 下全部页面渲染为 PNG。只渲染，不评审、不改任何 SVG。产物：每页 PNG 落 <project>/.preview/<page>.png；渲染清单（逐页 ok/失败原因/canvas 尺寸）写 <project>/.preview/render-manifest.json。个别页渲染失败不阻塞本步：失败页记入清单，后续评审步只吃成功页。产出 JSON：manifestPath（清单路径）、rendered（成功页数）、renderFailed（失败页数）。不许碰 design_spec.md / spec_lock.md / templates/。",
+      "deps": [],
+      "schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "manifestPath": { "type": "string", "description": "渲染清单的仓库相对路径，如 .preview/render-manifest.json" },
+          "rendered": { "type": "integer", "minimum": 0, "description": "成功渲染的页数" },
+          "renderFailed": { "type": "integer", "minimum": 0, "description": "渲染失败页数；render_failed 页由评审步跳过、闸门步汇总" }
+        },
+        "required": ["manifestPath", "rendered", "renderFailed"]
+      },
+      "timeoutMs": 600000
+    },
+    {
+      "stepId": "judge-1",
+      "prompt": "第 2 拍·视觉评审（首轮）：按 <project>/rubric.md 的硬规则（越界 / 溢出 / 重叠 / 可读性 / 碰撞 / 版面 chrome / 图坏 / 缺元素）逐页检查 <project>/.preview/ 下的渲染图（render_failed 页跳过并计入 hardHits 之外的 render_failed 清单）。只评审，不改任何文件；逐条发现写 <project>/.review/findings-r1.json（page / rule / evidence / suggested_fix_summary）。产出 JSON：verdict（\"pass\"=零硬伤；\"fix\"=有需修发现）、findingsPath、hardHits。verdict 是普通产出值不是失败——pass 与 fix 都必须给全字段。你是新鲜眼睛：不猜写手意图，只按 rubric 与渲染图证据说话。",
+      "deps": ["render"],
+      "schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "verdict": { "type": "string", "description": "\"pass\"=零硬伤；\"fix\"=有需修发现。评审结论是合法产出值：两种值 schema 都放行，绝不编码成校验错误" },
+          "findingsPath": { "type": "string", "description": "逐条发现文件的仓库相对路径，如 .review/findings-r1.json；verdict=pass 时也要落该文件（空发现数组）" },
+          "hardHits": { "type": "integer", "minimum": 0, "description": "硬规则命中条数" }
+        },
+        "required": ["verdict", "findingsPath", "hardHits"]
+      }
+    },
+    {
+      "stepId": "repair-1",
+      "prompt": "第 3 拍·修复：读 <project>/.review/findings-r1.json。verdict=pass 或发现为空 → 本步 no-op：不改任何文件，产出 {\"action\":\"noop\",\"editsApplied\":0,\"findingsPath\":...}。有发现 → 只按 rubric 允许的原子修复逐条改（一处一改，改前备份原文件），不许碰 brand token、版式结构、文案内容与其他页（don't-touch 与 rubric 同级硬约束）；每改一条在 findings 文件补 fix_applied 与 backup 路径。改不动或需 brand 级决策的发现不要硬改：记成 needs_human 条目留在 findings 文件，交终局闸门步升级。产出 JSON：action（\"fixed\"|\"noop\"）、editsApplied、findingsPath。",
+      "deps": ["judge-1"],
+      "schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "action": { "type": "string", "description": "\"fixed\"=应用了至少一条修复；\"noop\"=上轮已 pass，本轮什么都不改" },
+          "editsApplied": { "type": "integer", "minimum": 0, "description": "实际应用的原子修复条数；noop 时为 0" },
+          "findingsPath": { "type": "string", "description": "本拍读写的发现文件路径（与上一步同路径）" }
+        },
+        "required": ["action", "editsApplied", "findingsPath"]
+      }
+    },
+    {
+      "stepId": "judge-2",
+      "prompt": "第 4 拍·重判：复核第 3 拍动过的元素，再全页重扫硬规则（软伤只记录不阻塞）。上轮已 pass 时本步是确认性复扫，同样给全字段——不沿用上轮结论，一切以本轮渲染图为准。逐条发现写 <project>/.review/findings-r2.json（形状同 r1）。产出 JSON：verdict（\"pass\"|\"fix\"）、findingsPath、hardHits。你与首轮评审是两次独立会话：不看首轮的过程，只看渲染图、rubric 与 r2 之前的发现文件。",
+      "deps": ["repair-1"],
+      "schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "verdict": { "type": "string", "description": "\"pass\"=零硬伤；\"fix\"=仍有需修发现。同 judge-1：合法产出值，两种值 schema 都放行" },
+          "findingsPath": { "type": "string", "description": "本轮发现文件路径，如 .review/findings-r2.json" },
+          "hardHits": { "type": "integer", "minimum": 0, "description": "硬规则命中条数" }
+        },
+        "required": ["verdict", "findingsPath", "hardHits"]
+      }
+    },
+    {
+      "stepId": "gate",
+      "prompt": "第 5 拍·放行闸门（fail-closed）：读 <project>/.review/findings-r2.json。hardHits=0 且 verdict=pass → 产出 {\"verdict\":\"deliver\",\"rounds\":2,\"hardHits\":0}，交付放行。仍有硬伤 → 不要硬凑 deliver，也不要自动再来一轮（本声明的修复轮已用尽）：产出问句形状 {\"verdict\":\"blocked\",\"rounds\":2,\"hardHits\":N,\"question\":\"...\"}，question 把裁决写成可裁决的问句：要人决定什么、有哪些选项（放行带伤交付并记录取舍 / 追加修复轮——需以运行中交接交入新声明 / 放弃本次交付）、各选项后果。本 run 将挂起等人答复，不冒泡带伤结果。",
+      "deps": ["judge-2"],
+      "schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "verdict": { "type": "string", "description": "\"deliver\"=放行交付；\"blocked\"=修复轮已用尽仍不过门，转人裁决" },
+          "rounds": { "type": "integer", "minimum": 1, "description": "本次跑过的评审轮数（含首轮与重判）" },
+          "hardHits": { "type": "integer", "minimum": 0, "description": "终局硬伤条数；deliver 时必须为 0" },
+          "question": { "type": "string", "description": "verdict=blocked 时必给：非空字符串可裁决问句——引擎按问句形状挂起本 run 等人工答复（escalation）" }
+        },
+        "required": ["verdict", "rounds", "hardHits"]
+      }
+    }
+  ]
+}

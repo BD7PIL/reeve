@@ -41,6 +41,7 @@ import { loadAgents, loadSkills } from './register.js'
 import { detectLocale, setLocale, t } from './locale.js'
 import { ensureProviderBlock, configuredReeveModelIdsSync, reeveProviderBlock } from './config-write.js'
 import { applyTierMeta, createTierMeta } from './tier-meta.js'
+import { createPlanGate } from './plan-gate.js'
 
 const SUBAGENT_TOOL = 'subagent'
 /** GATE（唯一代理层）的默认端口（与写进配置的端点一致）。 */
@@ -412,6 +413,8 @@ export default {
               timedOut: r.timedOut,
               startedAt: new Date(r.startedAt).toISOString(),
               endedAt: r.endedAt ? new Date(r.endedAt).toISOString() : null,
+              // plan-gate 评审观测（review_gate/critic 会话才有；round = 会话累计轮值）
+              review: r.review ?? null,
             }))
           return {
             output: JSON.stringify({ count: rows.length, tasks: rows }, null, 2),
@@ -561,6 +564,30 @@ export default {
       }
       logger.debug(`[reeve] 落账 ${taskID} → ${ledger.get(taskID)?.state}`)
     })
+
+    // ---- plan-gate：方案评审门禁（项目级 opt-in；默认 dormant）----
+    // 语义与激活域见 src/plan-gate.js 头注释。四个挂点：
+    //   execute.before ① dispatch-review（评审派发被观测） ② gate-check（拦 exec 类工具，TOCTOU 重哈希）
+    //   execute.after  ③ verdict-observed（采集 critic 结果；review_rounds 记进台账）
+    //   工具           ④ review_gate（只有 register/check；无 submit——agent 不得自报判决）
+    // 人工解锁（human-override）不经任何 agent 可达路径暴露。
+    const planGate = createPlanGate({
+      options: options.planGate ?? null,
+      ledger,
+      logger,
+      directory: ctx.location?.directory ?? null,
+    })
+    if (planGate.enabled) {
+      await ctx.tool.hook('execute.before', planGate.before)
+      await ctx.tool.hook('execute.after', planGate.after)
+      await ctx.tool.transform((editor) => {
+        editor.add(planGate.tool)
+      })
+      logger.debug(
+        `[reeve][plan-gate] 已启用：拦 [${planGate.matchers.join('/')}]，评审 [${planGate.reviewers.join('/')}]，` +
+          `store ${planGate.storeDir}`,
+      )
+    }
 
     // ---- ③ 认终态 ----
     const abort = new AbortController()

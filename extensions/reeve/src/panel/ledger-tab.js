@@ -7,6 +7,7 @@
 import { button, empty, list, stat } from './kit.js'
 import { t } from './i18n.js'
 import { agentLabel } from './labels.js'
+import { createRunsSection } from './runs.js'
 import { STATE_TONE, el, fmtDur, stateLabel } from './util.js'
 
 const mutedText = (text) => el('div', { class: 'oc-micro oc-muted', text })
@@ -14,6 +15,7 @@ const mutedText = (text) => el('div', { class: 'oc-micro oc-muted', text })
 export function createLedgerTab({ host }) {
   /** 列表过滤：All / running / error。默认 All。 */
   const state = { filter: 'all' }
+  const runsSection = createRunsSection()
   function render(section, snapshot, read) {
     section.replaceChildren()
 
@@ -32,6 +34,9 @@ export function createLedgerTab({ host }) {
     }
 
     const doc = snapshot
+    // 引擎运行步卡（M2.5②）：快照带 engine.runs 才画；没有这一节就整节不出现
+    const runsNode = runsSection.render(snapshot)
+    if (runsNode) section.append(runsNode)
     const tasks = doc.tasks ?? []
     const running = tasks.filter((x) => x.state === 'running')
     const deadline = tasks.filter((x) => x.timedOut).length
