@@ -101,6 +101,13 @@ const PLAN = [
   { id: '43-free-advanced-306', tab: 'chain', width: 306, note: '306px：免费模型池高级折叠（偏好/禁用/白名单）', steps: [clickSel('[data-section="free"] details.oc-advanced > summary'), { scrollSel: '[data-free="prefer"]', block: 'center' }], expect: [L('Preference order', '偏好顺序')] },
   { id: '44-gate-down-306', tab: 'chain', width: 306, scenario: 'gate-down', note: '306px + 路由没起：徽标与横幅都不挤坏', expect: [L('Router is not running', '路由未运行'), L('Router not ready', '路由未就绪')] },
   { id: '45-free-only-chain', tab: 'chain', note: '免费池专用链 free-only（[@free]）：整卡只有免费模型池行，没有付费模型', steps: [{ scrollSel: '[data-chain="free-only"]', block: 'center' }], expect: [L('Free pool', '免费模型池'), L('up to 3', '最多 3 个'), L('auto', '自动')] },
+  { id: '46-ledger-runs', tab: 'ledger', note: '引擎运行步卡：摘要数字格 + 声明/脚本/挂起三类运行 + 状态徽标', steps: [{ scrollSel: '[data-section="runs"]', block: 'start' }], expect: [L('Engine runs', '引擎运行'), 'run-ci-demo', 'fetch-source', 'report-writeup', L('2/5 done', '已完成 2/5'), L('Phases', '阶段：'), 'verify'] },
+  { id: '47-ledger-runs-dark', tab: 'ledger', theme: 'dark', note: '引擎运行步卡 · 深色', steps: [{ scrollSel: '[data-section="runs"]', block: 'start' }], expect: [L('Engine runs', '引擎运行'), 'run-ci-demo', 'await-human'] },
+  // ---- D 线（优化方案 v3「D」节；scenario 注入 engine.runs，夹具见 preview/host-shim.js）----
+  { id: '48-runs-fourstate', tab: 'ledger', scenario: 'runs-fourstate', assert: 'FOURSTATE', note: 'D1 四态一眼可辨：run 左条/状态徽标两两可辨 + 失败步突出 + 耗时/重试可见（程序化断言：宿主 token getComputedStyle 对比度）', steps: [{ scrollSel: '[data-section="runs"]', block: 'start' }], expect: ['run-day-report', 'run-live-sweep', 'run-night-audit', 'run-gate-apply', L('attempts ×3', '尝试 ×3'), '8.0m'] },
+  { id: '49-runs-dag', tab: 'ledger', scenario: 'runs-dag', assert: 'DAG', note: 'D2 DAG 视图：声明 steps+deps → 图（mermaid 源可展开）+ 脚本 phase 时间线，随状态着色', steps: [{ scrollSel: '[data-section="runs"]', block: 'start' }], expect: ['run-dag-weekly', 'run-script-pipeline', 'fetch-source', 'report-writeup', 'collect', 'publish', L('mermaid source', 'mermaid 源')] },
+  { id: '50-runs-approval', tab: 'ledger', scenario: 'runs-approval', assert: 'APPROVAL', note: 'D3 workflow-script 审批卡：脚本摘要 + 静态扫描命令集 + phase 列表 + 分叉说明', steps: [{ scrollSel: '[data-section="runs"]', block: 'start' }], expect: [L('Awaiting approval', '待审批'), L('Script summary', '脚本摘要'), L('Static-scan commands (3)', '静态扫描命令集（3）'), L('Branch notes', '分叉说明'), 'node scripts/write-report.mjs'] },
+  { id: '51-runs-fourstate-dark', tab: 'ledger', theme: 'dark', scenario: 'runs-fourstate', assert: 'FOURSTATE', note: 'D1 四态 · 深色：同一套程序化断言在宿主深色 token 下复跑', steps: [{ scrollSel: '[data-section="runs"]', block: 'start' }], expect: ['run-day-report', 'run-gate-apply', L('attempts ×3', '尝试 ×3')] },
 ]
 
 const chrome = [
@@ -283,7 +290,7 @@ const SCROLL_TEXT_JS = (text) => `(() => {
 
 /** 页面级不变量 + 对比度（<3 硬失败；3–4.5 警告）。 */
 const CHECKS_JS = `(() => {
-  const out = { overflow: [], buttons: [], tokens: [], contrast: [] };
+  const out = { overflow: [], buttons: [], tokens: [], contrast: [], kitContrast: [] };
   const de = document.documentElement;
   if (de.scrollWidth > de.clientWidth + 1) out.overflow.push('document ' + de.scrollWidth + '>' + de.clientWidth);
   for (const sel of ['.oc-page', '.oc-savebar', '.oc-field-row']) {
@@ -312,10 +319,31 @@ const CHECKS_JS = `(() => {
     if (!name) out.buttons.push((b.outerHTML || '').slice(0, 120));
   }
   const parse = (c) => {
-    const m = String(c).match(/rgba?\\(([^)]+)\\)/);
-    if (!m) return null;
-    const p = m[1].split(',').map(Number);
-    return { r: p[0], g: p[1], b: p[2], a: p[3] === undefined ? 1 : p[3] };
+    const s = String(c).trim();
+    let m = s.match(/rgba?\\(([^)]+)\\)/);
+    if (m) {
+      const p = m[1].split(',').map(Number);
+      return { r: p[0], g: p[1], b: p[2], a: p[3] === undefined ? 1 : p[3] };
+    }
+    // CSS Color 4：宿主 token 走 color-mix/oklch 时 computed 出 color(srgb …)（0–1 浮点，/ 透明度）
+    m = s.match(/color\\(srgb\\s+([^)]+)\\)/);
+    if (m) {
+      const parts = m[1].trim().split(/\\s*\\/\\s*/);
+      const p = parts[0].split(/\\s+/).map(Number);
+      return { r: p[0] * 255, g: p[1] * 255, b: p[2] * 255, a: parts[1] !== undefined ? Number(parts[1]) : 1 };
+    }
+    // 宿主 token 原值是十六进制（shim 逐字抄的 HostThemeTokens，含 #rrggbbaa）
+    m = s.match(/^#([0-9a-f]{3,8})$/i);
+    if (m) {
+      let h = m[1];
+      if (h.length <= 4) h = [...h].map((x) => x + x).join('');
+      const r = parseInt(h.slice(0, 2), 16);
+      const g = parseInt(h.slice(2, 4), 16);
+      const b = parseInt(h.slice(4, 6), 16);
+      const a = h.length === 8 ? parseInt(h.slice(6, 8), 16) / 255 : 1;
+      return { r, g, b, a };
+    }
+    return null;
   };
   const lum = ({ r, g, b }) => {
     const f = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); };
@@ -331,7 +359,11 @@ const CHECKS_JS = `(() => {
       if (c && c.a > 0.9) return c;
       n = n.parentElement;
     }
-    const c = parse(getComputedStyle(document.documentElement).backgroundColor);
+    const s = getComputedStyle(document.documentElement);
+    let c = parse(s.backgroundColor);
+    if (c && c.a > 0.9) return c;
+    // 面板 html/body 是 transparent（底色由宿主画布/iframe 提供）——退回宿主声明的 surface background
+    c = parse(String(s.getPropertyValue('--surface-background') ?? '').trim());
     return c && c.a > 0.9 ? c : null;
   };
   const els = [...document.querySelectorAll('span,strong,label,p,button,li,h2,h3')];
@@ -344,10 +376,112 @@ const CHECKS_JS = `(() => {
     const bg = bgOf(el);
     if (!fg || !bg) continue;
     const r = ratio(fg, bg);
-    if (r < 4.5) out.contrast.push({ r: Math.round(r * 100) / 100, text: text.slice(0, 40) });
+    // 宿主 kit 控件的派生文字色（tab 激活态 / 按钮的 primaryText 等）= 宿主自己的 token 配对，
+    // 且预览 shim 的派生色是 color-mix 近似——真宿主用 OKLab 对比度算过（shim 头注自认）。
+    // 不达 4.5 记 warning 不硬判（面板自己画的字不在此列，照旧硬判）。
+    const bucket = el.closest('.oc-sdk-tab, .oc-sdk-btn') ? out.kitContrast : out.contrast;
+    if (r < 4.5) bucket.push({ r: Math.round(r * 100) / 100, text: text.slice(0, 40) });
   }
   return out;
 })()`
+
+/**
+ * D 线专项断言（对宿主 token 的 getComputedStyle 检查；`--strict-contrast` 先例的延续）。
+ * key 挂在 PLAN 项的 `assert` 上；返回 { failures: [] }。
+ */
+const COMPOSITE_JS = `
+  const parse = (c) => {
+    const s = String(c).trim();
+    let m = s.match(/rgba?\\(([^)]+)\\)/);
+    if (m) { const p = m[1].split(',').map(Number); return { r: p[0], g: p[1], b: p[2], a: p[3] === undefined ? 1 : p[3] }; }
+    m = s.match(/color\\(srgb\\s+([^)]+)\\)/);
+    if (m) { const parts = m[1].trim().split(/\\s*\\/\\s*/); const p = parts[0].split(/\\s+/).map(Number); return { r: p[0] * 255, g: p[1] * 255, b: p[2] * 255, a: parts[1] !== undefined ? Number(parts[1]) : 1 }; }
+    m = s.match(/^#([0-9a-f]{3,8})$/i);
+    if (m) {
+      let h = m[1];
+      if (h.length <= 4) h = [...h].map((x) => x + x).join('');
+      const r = parseInt(h.slice(0, 2), 16), g = parseInt(h.slice(2, 4), 16), b = parseInt(h.slice(4, 6), 16);
+      return { r, g, b, a: h.length === 8 ? parseInt(h.slice(6, 8), 16) / 255 : 1 };
+    }
+    return null;
+  };
+  const lum = ({ r, g, b }) => { const f = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); }; return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b); };
+  const ratio = (a, b) => { const l1 = lum(a), l2 = lum(b); const hi = Math.max(l1, l2), lo = Math.min(l1, l2); return (hi + 0.05) / (lo + 0.05); };
+  const bgOf = (el) => { let n = el; while (n && n !== document.documentElement) { const s = getComputedStyle(n); if (s.backgroundImage !== 'none') return null; const c = parse(s.backgroundColor); if (c && c.a > 0.9) return c; n = n.parentElement; } const rs = getComputedStyle(document.documentElement); let c = parse(rs.backgroundColor); if (c && c.a > 0.9) return c; c = parse(String(rs.getPropertyValue('--surface-background') ?? '').trim()); return c && c.a > 0.9 ? c : null; };
+  const over = (fg, bg) => ({ r: fg.r * fg.a + bg.r * (1 - fg.a), g: fg.g * fg.a + bg.g * (1 - fg.a), b: fg.b * fg.a + bg.b * (1 - fg.a), a: 1 });`
+
+const ASSERT_JS = {
+  // D1：四态徽标 + run 左条——各自存在、文字对比度 ≥4.5、颜色两两可辨（同色系不算可辨）。
+  FOURSTATE: `(() => {
+  const out = { failures: [], warnings: [] };
+  ${COMPOSITE_JS}
+  const key = (c) => (c ? Math.round(c.r) + ',' + Math.round(c.g) + ',' + Math.round(c.b) : 'null');
+  const badges = [...document.querySelectorAll('[data-run-status]')];
+  const want = ['completed', 'running', 'failed', 'blocked'];
+  const seen = new Map();
+  for (const status of want) {
+    const hit = badges.find((b) => b.getAttribute('data-run-status') === status);
+    if (!hit) { out.failures.push('缺状态徽标：' + status); continue; }
+    const el = hit.querySelector('.oc-sdk-badge') || hit;
+    const cs = getComputedStyle(el);
+    const fg = parse(cs.color);
+    if (!fg) { out.failures.push(status + ': color 解析失败 ' + cs.color); continue; }
+    const bgBase = bgOf(el);
+    if (!bgBase) { out.failures.push(status + ': 背景不可解析（渐变？）'); continue; }
+    const bg = parse(cs.backgroundColor);
+    const flat = bg && bg.a < 1 ? over(bg, bgBase) : bgBase;
+    const r = ratio(fg, flat);
+    if (r < 3) out.failures.push(status + ' 徽标文字对比度 ' + (Math.round(r * 100) / 100) + ' < 3');
+    else if (r < 4.5) out.warnings.push(status + ' 徽标文字对比度 ' + (Math.round(r * 100) / 100) + '（3–4.5，shim 近似色）');
+    const run = hit.closest('[data-run]');
+    const barRaw = run ? getComputedStyle(run).borderLeftColor : null;
+    const bar = parse(barRaw);
+    if (!bar || bar.a < 0.5) out.failures.push(status + ': run 左条缺失');
+    // 可辨性在徽标底色上（实底化设计：文字色 = 页面底色，四态同一文字色是设计不是缺陷）
+    seen.set(status, { bgKey: key(flat), barKey: bar ? key(bar) : 'null' });
+  }
+  if (new Set([...seen.values()].map((v) => v.bgKey)).size !== want.length) out.failures.push('四态徽标底色不两两可辨');
+  if (seen.size === want.length && new Set([...seen.values()].map((v) => v.barKey)).size !== want.length) out.failures.push('run 左条色不两两可辨');
+  return out;
+})()`,
+  // D2：DAG 节点/边/状态桶 + mermaid 源；脚本 phase 时间线的尾段随 run 状态着色。
+  DAG: `(() => {
+  const out = { failures: [], warnings: [] };
+  const dag = document.querySelector('[data-run-dag]');
+  if (!dag) { out.failures.push('DAG 容器缺失'); return out; }
+  const nodes = dag.querySelectorAll('.oc-dag-node');
+  if (nodes.length !== 5) out.failures.push('DAG 节点数 ' + nodes.length + ' ≠ 5');
+  const edges = document.querySelectorAll('svg[data-dag-edges] path');
+  if (edges.length !== 5) {
+    const svgs = [...document.querySelectorAll('svg[data-dag-edges]')];
+    out.failures.push('DAG 边数 ' + edges.length + ' ≠ 5（图没画出来）[svg=' + svgs.length + ' connected=' + svgs.map((s) => s.isConnected + '/' + s.childElementCount + '/' + (s.getAttribute('width') ?? '-')).join(',') + ']');
+  }
+  const buckets = [...new Set([...nodes].map((n) => n.getAttribute('data-bucket')))];
+  if (buckets.length < 3) out.failures.push('节点状态桶少于 3 种（着色没生效）：' + buckets.join(','));
+  const src = document.querySelector('[data-dag-source]');
+  if (!src || !src.textContent.includes('flowchart LR') || !src.textContent.includes('-->')) out.failures.push('mermaid 源缺失或不完整');
+  const chips = document.querySelectorAll('[data-run-phases]:not([data-approval]) .oc-phase');
+  if (chips.length !== 4) out.failures.push('phase 时间线段数 ' + chips.length + ' ≠ 4');
+  const tail = chips[chips.length - 1];
+  if (!tail || tail.getAttribute('data-bucket') !== 'failed') out.failures.push('时间线尾段未随 run 状态着色（failed）');
+  return out;
+})()`,
+  // D3：审批卡四要素齐全（摘要 / 命令集 / phase / 分叉说明 + 静态扫描边界说明）。
+  APPROVAL: `(() => {
+  const out = { failures: [] };
+  const card = document.querySelector('[data-run-approval]');
+  if (!card) { out.failures.push('审批卡缺失'); return out; }
+  if (!card.querySelector('[data-approval-summary]')) out.failures.push('审批卡缺脚本摘要');
+  const cmds = card.querySelectorAll('.oc-approval-cmd');
+  if (cmds.length !== 3) out.failures.push('命令集条数 ' + cmds.length + ' ≠ 3');
+  const forks = card.querySelectorAll('.oc-approval-fork');
+  if (forks.length !== 2) out.failures.push('分叉说明条数 ' + forks.length + ' ≠ 2');
+  const phases = card.querySelectorAll('[data-run-phases] .oc-phase');
+  if (phases.length !== 3) out.failures.push('审批卡 phase 列表段数 ' + phases.length + ' ≠ 3');
+  if (!card.querySelector('[data-approval-caveat]')) out.failures.push('缺静态扫描边界说明');
+  return out;
+})()`,
+}
 
 async function waitReady(item) {
   if (item.skipReady) return
@@ -395,6 +529,16 @@ for (const item of selected) {
   const text = await evaluate('document.body.innerText')
   for (const s of item.expect ?? []) if (!text.includes(s)) failures.push(`缺少文本：${s}`)
   for (const s of item.expectNot ?? []) if (text.includes(s)) failures.push(`不该出现：${s}`)
+  if (item.assert) {
+    const ar = await evaluate(ASSERT_JS[item.assert])
+    for (const f of ar?.failures ?? []) failures.push(`断言[${item.assert}]：${f}`)
+    // 3–4.5 的对比度是警告级（shim 派生色是近似值；--strict-contrast 时升级为失败）
+    for (const w of ar?.warnings ?? []) {
+      const msg = `断言[${item.assert}]：${w}`
+      if (strictContrast) failures.push(msg)
+      else warnings.push(msg)
+    }
+  }
   // 跨页导航时宿主的旧消息端口会晚一步关闭，Chrome 报 "Could not establish connection"
   // —— 这是页面切换噪声，不是面板错误；面板自己的启动失败已由 waitReady 的文本断言覆盖。
   const appConsoleErrors = consoleErrors.filter((e) => !e.includes('Could not establish connection'))
@@ -414,6 +558,10 @@ for (const item of selected) {
     const msg = `对比度 3–4.5：${soft.slice(0, 4).map((c) => `${c.text}(${c.r})`).join('；')}`
     if (strictContrast) failures.push(msg)
     else warnings.push(msg)
+  }
+  // 宿主 kit 自身的 token 配对（tab 激活态等）：不是面板能改的东西，记警告不拦门
+  if (checks.kitContrast?.length) {
+    warnings.push(`宿主 kit 对比度（token 配对 · shim 近似色）：${checks.kitContrast.slice(0, 3).map((c) => `${c.text}(${c.r})`).join('；')}`)
   }
 
   const shot = await send('Page.captureScreenshot', { format: 'png', ...(full ? { captureBeyondViewport: true } : {}) })

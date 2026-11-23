@@ -1,11 +1,11 @@
 {
-  "generatedAt": "2026-10-25T10:28:29.413Z",
+  "generatedAt": "2026-11-23T06:30:11.475Z",
   "locale": "zh-CN",
   "fixture": true,
   "strictContrast": false,
-  "total": 45,
+  "total": 51,
   "failed": 0,
-  "warned": 0,
+  "warned": 47,
   "items": [
     {
       "id": "01-chain-default",
@@ -13,7 +13,9 @@
       "file": "01-chain-default.png",
       "scenario": null,
       "failures": [],
-      "warnings": [],
+      "warnings": [
+        "对比度 3–4.5：@free(3.49)；自动(3.49)；默认(3.12)；@free(3.49)"
+      ],
       "consoleErrors": []
     },
     {
@@ -22,7 +24,10 @@
       "file": "02-chain-row-selected.png",
       "scenario": null,
       "failures": [],
-      "warnings": [],
+      "warnings": [
+        "对比度 3–4.5：@free(3.49)；自动(3.49)；默认(3.12)；@free(3.49)",
+        "宿主 kit 对比度（token 配对 · shim 近似色）：移除(3.48)"
+      ],
       "consoleErrors": []
     },
     {
@@ -31,7 +36,10 @@
       "file": "03-chain-picker.png",
       "scenario": null,
       "failures": [],
-      "warnings": [],
+      "warnings": [
+        "对比度 3–4.5：@free(3.49)；自动(3.49)；默认(3.12)；@free(3.49)",
+        "宿主 kit 对比度（token 配对 · shim 近似色）：移除(3.48)"
+      ],
       "consoleErrors": []
     },
     {
@@ -40,7 +48,10 @@
       "file": "04-chain-picker-search.png",
       "scenario": null,
       "failures": [],
-      "warnings": [],
+      "warnings": [
+        "对比度 3–4.5：@free(3.49)；自动(3.49)；默认(3.12)；@free(3.49)",
+        "宿主 kit 对比度（token 配对 · shim 近似色）：移除(3.48)"
+      ],
       "consoleErrors": []
     },
     {
@@ -49,7 +60,10 @@
       "file": "05-chain-added.png",
       "scenario": null,
       "failures": [],
-      "warnings": [],
+      "warnings": [
+        "对比度 3–4.5：未保存(3.75)；未保存(3.75)；@free(3.49)；自动(3.49)",
+        "宿主 kit 对比度（token 配对 · shim 近似色）：移除(3.48)；保存并应用(2.98)"
+      ],
       "consoleErrors": []
     },
     {
@@ -58,7 +72,10 @@
       "file": "06-chain-saved.png",
       "scenario": null,
       "failures": [],
-      "warnings": [],
+      "warnings": [
+        "对比度 3–4.5：已生效 14:28:34(3.77)；@free(3.49)；自动(3.49)；默认(3.12)",
+        "宿主 kit 对比度（token 配对 · shim 近似色）：移除(3.48)"
+      ],
       "consoleErrors": []
     },
     {
@@ -67,7 +84,9 @@
       "file": "07-chain-menu.png",
       "scenario": null,
       "failures": [],
-      "warnings": [],
+      "warnings": [
+        "对比度 3–4.5：@free(3.49)；删除（reeve/pro 正在使用）(3.51)；自动(3.49)；默认(3.12)"
+      ],
       "consoleErrors": []
     },
     {
@@ -76,7 +95,9 @@
       "file": "08-chain-new.png",
       "scenario": null,
       "failures": [],
-      "warnings": [],
+      "warnings": [
+        "对比度 3–4.5：@free(3.49)；自动(3.49)；默认(3.12)；@free(3.49)"
+      ],
       "consoleErrors": []
     },
     {
@@ -85,7 +106,9 @@
       "file": "09-tier-mapping.png",
       "scenario": null,
       "failures": [],
-      "warnings": [],
+      "warnings": [
+        "对比度 3–4.5：@free(3.49)；自动(3.49)；默认(3.12)；@free(3.49)"
+      ],
       "consoleErrors": []
     },
     {
@@ -94,7 +117,9 @@
       "file": "10-chain-policy.png",
       "scenario": null,
       "failures": [],
-      "warnings": [],
+      "warnings": [
+        "对比度 3–4.5：@free(3.49)；自动(3.49)；默认(3.12)；@free(3.49)"
+      ],
       "consoleErrors": []
     },
     {
@@ -103,7 +128,9 @@
       "file": "11-chain-narrow.png",
       "scenario": null,
       "failures": [],
-      "warnings": [],
+      "warnings": [
+        "对比度 3–4.5：@free(3.49)；自动(3.49)；默认(3.12)；@free(3.49)"
+      ],
       "consoleErrors": []
     },
     {
@@ -112,7 +139,9 @@
       "file": "12-chain-dark.png",
       "scenario": null,
       "failures": [],
-      "warnings": [],
+      "warnings": [
+        "对比度 3–4.5：@free(4.27)；自动(4.27)；默认(3.35)；@free(4.27)"
+      ],
       "consoleErrors": []
     },
     {
@@ -121,7 +150,9 @@
       "file": "13-stats-light.png",
       "scenario": null,
       "failures": [],
-      "warnings": [],
+      "warnings": [
+        "宿主 kit 对比度（token 配对 · shim 近似色）：统计(2.39)"
+      ],
       "consoleErrors": []
     },
     {
@@ -139,7 +170,10 @@
       "file": "15-ledger-light.png",
       "scenario": null,
       "failures": [],
-      "warnings": [],
+      "warnings": [
+        "对比度 3–4.5：collect(3.77)；analyze(3.77)；verify(3.41)；已完成(3.77)",
+        "宿主 kit 对比度（token 配对 · shim 近似色）：任务(2.39)"
+      ],
       "consoleErrors": []
     },
     {
@@ -148,7 +182,9 @@
       "file": "16-chain-dirty-discard.png",
       "scenario": null,
       "failures": [],
-      "warnings": [],
+      "warnings": [
+        "对比度 3–4.5：@free(3.49)；自动(3.49)；默认(3.12)；@free(3.49)"
+      ],
       "consoleErrors": []
     },
     {
@@ -157,7 +193,10 @@
       "file": "17-chain-keyboard.png",
       "scenario": null,
       "failures": [],
-      "warnings": [],
+      "warnings": [
+        "对比度 3–4.5：@free(3.49)；自动(3.49)；默认(3.12)；@free(3.49)",
+        "宿主 kit 对比度（token 配对 · shim 近似色）：移除(3.48)"
+      ],
       "consoleErrors": []
     },
     {
@@ -166,7 +205,10 @@
       "file": "18-chain-selected-dark.png",
       "scenario": null,
       "failures": [],
-      "warnings": [],
+      "warnings": [
+        "对比度 3–4.5：@free(4.27)；自动(4.27)；默认(3.35)；@free(4.27)",
+        "宿主 kit 对比度（token 配对 · shim 近似色）：移除(3.4)"
+      ],
       "consoleErrors": []
     },
     {
@@ -175,7 +217,9 @@
       "file": "19-free-default.png",
       "scenario": null,
       "failures": [],
-      "warnings": [],
+      "warnings": [
+        "对比度 3–4.5：@free(3.49)；自动(3.49)；默认(3.12)；@free(3.49)"
+      ],
       "consoleErrors": []
     },
     {
@@ -184,7 +228,9 @@
       "file": "20-free-cooling.png",
       "scenario": "free-cooling",
       "failures": [],
-      "warnings": [],
+      "warnings": [
+        "对比度 3–4.5：@free(3.49)；自动(3.49)；默认(3.12)；@free(3.49)"
+      ],
       "consoleErrors": []
     },
     {
@@ -193,7 +239,9 @@
       "file": "21-free-empty.png",
       "scenario": "free-empty",
       "failures": [],
-      "warnings": [],
+      "warnings": [
+        "对比度 3–4.5：@free(3.49)；自动(3.49)；默认(3.12)；@free(3.49)"
+      ],
       "consoleErrors": []
     },
     {
@@ -202,7 +250,9 @@
       "file": "22-free-error.png",
       "scenario": "free-error",
       "failures": [],
-      "warnings": [],
+      "warnings": [
+        "对比度 3–4.5：@free(3.49)；自动(3.49)；默认(3.12)；@free(3.49)"
+      ],
       "consoleErrors": []
     },
     {
@@ -211,7 +261,10 @@
       "file": "23-free-max-dirty.png",
       "scenario": null,
       "failures": [],
-      "warnings": [],
+      "warnings": [
+        "对比度 3–4.5：未保存(3.75)；@free(3.49)；自动(3.49)；默认(3.12)",
+        "宿主 kit 对比度（token 配对 · shim 近似色）：保存并应用(2.98)"
+      ],
       "consoleErrors": []
     },
     {
@@ -220,7 +273,10 @@
       "file": "24-free-prefer-add.png",
       "scenario": null,
       "failures": [],
-      "warnings": [],
+      "warnings": [
+        "对比度 3–4.5：未保存(3.75)；@free(3.49)；自动(3.49)；默认(3.12)",
+        "宿主 kit 对比度（token 配对 · shim 近似色）：保存并应用(2.98)"
+      ],
       "consoleErrors": []
     },
     {
@@ -229,7 +285,9 @@
       "file": "25-gate-down.png",
       "scenario": "gate-down",
       "failures": [],
-      "warnings": [],
+      "warnings": [
+        "对比度 3–4.5：路由未就绪 · 0 个运行中(3.83)；@free(3.49)；自动(3.49)；默认(3.12)"
+      ],
       "consoleErrors": []
     },
     {
@@ -238,7 +296,9 @@
       "file": "26-gate-problems.png",
       "scenario": "gate-problems",
       "failures": [],
-      "warnings": [],
+      "warnings": [
+        "对比度 3–4.5：@free(3.49)；自动(3.49)；默认(3.12)；@free(3.49)"
+      ],
       "consoleErrors": []
     },
     {
@@ -265,7 +325,9 @@
       "file": "29-ledger-missing.png",
       "scenario": "ledger-missing",
       "failures": [],
-      "warnings": [],
+      "warnings": [
+        "对比度 3–4.5：数据未就绪(3.75)；@free(3.49)；自动(3.49)；默认(3.12)"
+      ],
       "consoleErrors": []
     },
     {
@@ -274,7 +336,10 @@
       "file": "30-ledger-denied.png",
       "scenario": "ledger-denied",
       "failures": [],
-      "warnings": [],
+      "warnings": [
+        "对比度 3–4.5：数据未就绪(3.75)",
+        "宿主 kit 对比度（token 配对 · shim 近似色）：任务(2.39)"
+      ],
       "consoleErrors": []
     },
     {
@@ -283,7 +348,10 @@
       "file": "31-save-fail.png",
       "scenario": "save-fail",
       "failures": [],
-      "warnings": [],
+      "warnings": [
+        "对比度 3–4.5：未生效(3.83)；未保存(3.75)；@free(3.49)；自动(3.49)",
+        "宿主 kit 对比度（token 配对 · shim 近似色）：移除(3.48)；保存并应用(2.98)"
+      ],
       "consoleErrors": []
     },
     {
@@ -292,7 +360,10 @@
       "file": "32-apply-stall.png",
       "scenario": "apply-stall",
       "failures": [],
-      "warnings": [],
+      "warnings": [
+        "对比度 3–4.5：应用中…(3.81)；@free(3.49)；自动(3.49)；默认(3.12)",
+        "宿主 kit 对比度（token 配对 · shim 近似色）：移除(3.48)；保存并应用(2.98)"
+      ],
       "consoleErrors": []
     },
     {
@@ -301,7 +372,10 @@
       "file": "33-policy-dirty.png",
       "scenario": null,
       "failures": [],
-      "warnings": [],
+      "warnings": [
+        "对比度 3–4.5：未保存(3.75)；@free(3.49)；自动(3.49)；默认(3.12)",
+        "宿主 kit 对比度（token 配对 · shim 近似色）：保存并应用(2.98)"
+      ],
       "consoleErrors": []
     },
     {
@@ -310,7 +384,10 @@
       "file": "34-ledger-filter-empty.png",
       "scenario": null,
       "failures": [],
-      "warnings": [],
+      "warnings": [
+        "对比度 3–4.5：collect(3.77)；analyze(3.77)；verify(3.41)",
+        "宿主 kit 对比度（token 配对 · shim 近似色）：任务(2.39)"
+      ],
       "consoleErrors": []
     },
     {
@@ -319,7 +396,9 @@
       "file": "35-stats-empty.png",
       "scenario": "empty-stats",
       "failures": [],
-      "warnings": [],
+      "warnings": [
+        "宿主 kit 对比度（token 配对 · shim 近似色）：统计(2.39)"
+      ],
       "consoleErrors": []
     },
     {
@@ -328,7 +407,9 @@
       "file": "36-stats-stale.png",
       "scenario": "stale",
       "failures": [],
-      "warnings": [],
+      "warnings": [
+        "宿主 kit 对比度（token 配对 · shim 近似色）：统计(2.39)"
+      ],
       "consoleErrors": []
     },
     {
@@ -337,7 +418,9 @@
       "file": "37-ledger-dark.png",
       "scenario": null,
       "failures": [],
-      "warnings": [],
+      "warnings": [
+        "对比度 3–4.5：verify(3.65)；错误(3.63)"
+      ],
       "consoleErrors": []
     },
     {
@@ -355,7 +438,9 @@
       "file": "40-chain-narrow-306.png",
       "scenario": null,
       "failures": [],
-      "warnings": [],
+      "warnings": [
+        "对比度 3–4.5：@free(3.49)；自动(3.49)；默认(3.12)；@free(3.49)"
+      ],
       "consoleErrors": []
     },
     {
@@ -364,7 +449,9 @@
       "file": "39-gate-running.png",
       "scenario": "gate-running",
       "failures": [],
-      "warnings": [],
+      "warnings": [
+        "对比度 3–4.5：2 个运行中 · 1 个排队(3.41)；@free(3.49)；自动(3.49)；默认(3.12)"
+      ],
       "consoleErrors": []
     },
     {
@@ -373,7 +460,10 @@
       "file": "41-chain-selected-306.png",
       "scenario": null,
       "failures": [],
-      "warnings": [],
+      "warnings": [
+        "对比度 3–4.5：@free(3.49)；自动(3.49)；默认(3.12)；@free(3.49)",
+        "宿主 kit 对比度（token 配对 · shim 近似色）：移除(3.48)"
+      ],
       "consoleErrors": []
     },
     {
@@ -382,7 +472,9 @@
       "file": "42-stats-306.png",
       "scenario": null,
       "failures": [],
-      "warnings": [],
+      "warnings": [
+        "宿主 kit 对比度（token 配对 · shim 近似色）：统计(2.39)"
+      ],
       "consoleErrors": []
     },
     {
@@ -391,7 +483,9 @@
       "file": "43-free-advanced-306.png",
       "scenario": null,
       "failures": [],
-      "warnings": [],
+      "warnings": [
+        "对比度 3–4.5：@free(3.49)；自动(3.49)；默认(3.12)；@free(3.49)"
+      ],
       "consoleErrors": []
     },
     {
@@ -400,7 +494,9 @@
       "file": "44-gate-down-306.png",
       "scenario": "gate-down",
       "failures": [],
-      "warnings": [],
+      "warnings": [
+        "对比度 3–4.5：路由未就绪 · 0 个运行中(3.83)；@free(3.49)；自动(3.49)；默认(3.12)"
+      ],
       "consoleErrors": []
     },
     {
@@ -409,7 +505,79 @@
       "file": "45-free-only-chain.png",
       "scenario": null,
       "failures": [],
-      "warnings": [],
+      "warnings": [
+        "对比度 3–4.5：@free(3.49)；自动(3.49)；默认(3.12)；@free(3.49)"
+      ],
+      "consoleErrors": []
+    },
+    {
+      "id": "46-ledger-runs",
+      "note": "引擎运行步卡：摘要数字格 + 声明/脚本/挂起三类运行 + 状态徽标",
+      "file": "46-ledger-runs.png",
+      "scenario": null,
+      "failures": [],
+      "warnings": [
+        "对比度 3–4.5：collect(3.77)；analyze(3.77)；verify(3.41)；已完成(3.77)",
+        "宿主 kit 对比度（token 配对 · shim 近似色）：任务(2.39)"
+      ],
+      "consoleErrors": []
+    },
+    {
+      "id": "47-ledger-runs-dark",
+      "note": "引擎运行步卡 · 深色",
+      "file": "47-ledger-runs-dark.png",
+      "scenario": null,
+      "failures": [],
+      "warnings": [
+        "对比度 3–4.5：verify(3.65)；错误(3.63)"
+      ],
+      "consoleErrors": []
+    },
+    {
+      "id": "48-runs-fourstate",
+      "note": "D1 四态一眼可辨：run 左条/状态徽标两两可辨 + 失败步突出 + 耗时/重试可见（程序化断言：宿主 token getComputedStyle 对比度）",
+      "file": "48-runs-fourstate.png",
+      "scenario": "runs-fourstate",
+      "failures": [],
+      "warnings": [
+        "对比度 3–4.5：已完成(3.77)；已完成(3.77)；错误(3.83)",
+        "宿主 kit 对比度（token 配对 · shim 近似色）：任务(2.39)"
+      ],
+      "consoleErrors": []
+    },
+    {
+      "id": "49-runs-dag",
+      "note": "D2 DAG 视图：声明 steps+deps → 图（mermaid 源可展开）+ 脚本 phase 时间线，随状态着色",
+      "file": "49-runs-dag.png",
+      "scenario": "runs-dag",
+      "failures": [],
+      "warnings": [
+        "对比度 3–4.5：fetch-source(3.77)；clean-normalize(3.77)；analyze-patterns(3.41)；cross-check×2(3.41)",
+        "宿主 kit 对比度（token 配对 · shim 近似色）：任务(2.39)"
+      ],
+      "consoleErrors": []
+    },
+    {
+      "id": "50-runs-approval",
+      "note": "D3 workflow-script 审批卡：脚本摘要 + 静态扫描命令集 + phase 列表 + 分叉说明",
+      "file": "50-runs-approval.png",
+      "scenario": "runs-approval",
+      "failures": [],
+      "warnings": [
+        "对比度 3–4.5：collect(3.77)；aggregate(3.77)；report(3.75)；已完成(3.77)",
+        "宿主 kit 对比度（token 配对 · shim 近似色）：任务(2.39)"
+      ],
+      "consoleErrors": []
+    },
+    {
+      "id": "51-runs-fourstate-dark",
+      "note": "D1 四态 · 深色：同一套程序化断言在宿主深色 token 下复跑",
+      "file": "51-runs-fourstate-dark.png",
+      "scenario": "runs-fourstate",
+      "failures": [],
+      "warnings": [
+        "对比度 3–4.5：错误(3.63)"
+      ],
       "consoleErrors": []
     }
   ]

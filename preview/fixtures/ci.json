@@ -440,6 +440,41 @@
       "path": "~/.config/opencode/opencode.jsonc",
       "detail": null
     },
+    "engine": {
+      "runs": [
+        {
+          "runId": "run-ci-demo",
+          "kind": "declaration",
+          "status": "running",
+          "updatedAt": 1792646300000,
+          "steps": [
+            { "stepId": "fetch-source", "state": "done", "attempts": 1 },
+            { "stepId": "clean-normalize", "state": "done", "attempts": 2 },
+            { "stepId": "analyze-patterns", "state": "running", "attempts": 1 },
+            { "stepId": "cross-check", "state": "declared", "attempts": 0 },
+            { "stepId": "report-writeup", "state": "failed", "attempts": 3 }
+          ]
+        },
+        {
+          "runId": "run-ci-script",
+          "kind": "script",
+          "status": "running",
+          "updatedAt": 1792646350000,
+          "steps": [],
+          "phases": ["collect", "analyze", "verify"]
+        },
+        {
+          "runId": "run-ci-blocked",
+          "kind": "declaration",
+          "status": "blocked",
+          "updatedAt": 1792646200000,
+          "steps": [
+            { "stepId": "prepare", "state": "done", "attempts": 1 },
+            { "stepId": "await-human", "state": "blocked", "attempts": 1 }
+          ]
+        }
+      ]
+    },
     "counts": {
       "total": 4,
       "running": 0,

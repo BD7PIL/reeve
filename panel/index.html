@@ -204,6 +204,98 @@
     .oc-stat-row > .oc-stat-calls { text-align: left; }
     .oc-stat-lat { text-align: right; }
   }
+
+  /* ── 引擎运行（E1 · D 线打磨）：四态一眼可辨 = run 卡状态左条 + 状态徽标；
+     失败步整行微染 + 左竖条。颜色全走宿主 token（深浅两主题各自成立）。 ── */
+  .oc-run { display: flex; flex-direction: column; gap: 6px; min-width: 0; padding: 6px 0 6px 10px; border-left: 3px solid var(--interactive-border, var(--surface-subtle)); }
+  .oc-run[data-status="completed"] { border-left-color: var(--status-success, var(--success-text)); }
+  .oc-run[data-status="running"] { border-left-color: var(--primary); }
+  .oc-run[data-status="failed"] { border-left-color: var(--status-error, var(--error-text)); }
+  .oc-run[data-status="blocked"] { border-left-color: var(--status-warning, var(--warning-text)); }
+  /* run 级状态徽标实底化（四态一眼可辨的字面实现）：实色 token 底 + 页面底色作文字——
+     浅色 token 配浅字、深色 token 配深字，两个主题都成立。kit 的 tone 徽标在浅色下
+     文字色（--*-text 派生色）对 15% 染底只有 ~2.8–3.1（shim 近似色实测），不够「一眼」。
+     面板覆写 kit 配色已有先例（上面的选中行同款做法）。 */
+  .oc-run .oc-sdk-badge[data-tone] {
+    background: var(--oc-sdk-tone, var(--surface-muted-foreground));
+    color: var(--surface-background, Canvas);
+  }
+  /* 失败点突出：徽标为 error 的步行整行 error 微染 + 左竖条；blocked 同理用警示色 */
+  .oc-runs-steps .oc-sdk-row:has(.oc-sdk-badge[data-tone="error"]) {
+    background: color-mix(in srgb, var(--status-error) 9%, transparent);
+    box-shadow: inset 2px 0 0 var(--status-error, currentColor);
+    border-radius: calc(var(--radius, 9px) - 4px);
+  }
+  .oc-runs-steps .oc-sdk-row:has(.oc-sdk-badge[data-tone="warning"]) {
+    background: color-mix(in srgb, var(--status-warning) 8%, transparent);
+    border-radius: calc(var(--radius, 9px) - 4px);
+  }
+
+  /* 声明 DAG：按依赖深度分列（LR）；边画在 SVG 覆层；节点 chip 按视觉桶着色 */
+  .oc-dag-wrap { position: relative; overflow-x: auto; min-width: 0; padding: 4px 0 2px; }
+  .oc-dag { display: grid; gap: 6px 16px; align-items: center; min-width: max-content; }
+  .oc-dag-col { display: flex; flex-direction: column; gap: 6px; }
+  .oc-dag-node {
+    display: inline-flex; align-items: center; gap: 4px; max-width: 180px; padding: 2px 8px;
+    border: 1px solid color-mix(in srgb, var(--interactive-border) 85%, transparent);
+    border-radius: 999px;
+    background: var(--surface-elevated, transparent);
+    font-size: 11.5px; font-family: var(--font-mono, ui-monospace, monospace);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .oc-dag-retry { flex: 0 0 auto; font-size: 10.5px; color: var(--surface-muted-foreground); }
+  .oc-dag-edges { position: absolute; top: 0; left: 0; pointer-events: none; }
+  .oc-dag-edge { fill: none; stroke: color-mix(in srgb, var(--surface-muted-foreground, currentColor) 50%, transparent); stroke-width: 1.4; }
+  .oc-dag-details { margin-top: 2px; }
+
+  /* 脚本 phase 时间线（链式 chips；pending/plan 不着色——「不知道/还没跑」不假红假绿） */
+  .oc-phases { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; min-width: 0; }
+  .oc-phase {
+    display: inline-flex; padding: 2px 8px; max-width: 180px;
+    border: 1px solid color-mix(in srgb, var(--interactive-border) 85%, transparent);
+    border-radius: 999px;
+    font-size: 11.5px; font-family: var(--font-mono, ui-monospace, monospace);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .oc-phase-sep { color: var(--surface-muted-foreground); font-size: 11px; }
+  .oc-dag-node[data-bucket="done"], .oc-phase[data-bucket="done"] {
+    border-color: color-mix(in srgb, var(--status-success) 45%, transparent);
+    background: color-mix(in srgb, var(--status-success) 12%, transparent);
+    color: var(--success-text, var(--surface-foreground));
+  }
+  .oc-dag-node[data-bucket="running"], .oc-phase[data-bucket="running"] {
+    border-color: color-mix(in srgb, var(--primary) 45%, transparent);
+    background: color-mix(in srgb, var(--primary) 12%, transparent);
+    color: var(--primary-text, var(--surface-foreground));
+  }
+  .oc-dag-node[data-bucket="failed"], .oc-phase[data-bucket="failed"] {
+    border-color: color-mix(in srgb, var(--status-error) 50%, transparent);
+    background: color-mix(in srgb, var(--status-error) 13%, transparent);
+    color: var(--error-text, var(--surface-foreground));
+  }
+  .oc-dag-node[data-bucket="blocked"], .oc-phase[data-bucket="blocked"] {
+    border-color: color-mix(in srgb, var(--status-warning) 50%, transparent);
+    background: color-mix(in srgb, var(--status-warning) 13%, transparent);
+    color: var(--warning-text, var(--surface-foreground));
+  }
+  .oc-dag-node[data-bucket="superseded"] { border-style: dashed; color: var(--surface-muted-foreground); opacity: 0.75; }
+
+  /* workflow-script 审批卡（D3）：警示色描边 + 摘要/命令集/phase/分叉说明 四段 */
+  .oc-approval {
+    display: flex; flex-direction: column; gap: 7px; margin-top: 2px; padding: 8px 10px;
+    border: 1px solid color-mix(in srgb, var(--status-warning) 45%, transparent);
+    border-radius: calc(var(--radius, 9px) - 2px);
+    background: color-mix(in srgb, var(--status-warning) 6%, var(--surface-elevated, transparent));
+  }
+  .oc-approval-block { gap: 3px; }
+  .oc-approval-cmds { gap: 3px; }
+  .oc-approval-cmd {
+    display: block; padding: 3px 8px; overflow-wrap: anywhere;
+    border-radius: calc(var(--radius, 9px) - 4px);
+    background: var(--surface-muted, color-mix(in srgb, currentColor 7%, transparent));
+    font-size: 12px;
+  }
+  .oc-approval-caveat { opacity: 0.85; }
 </style>
 </head>
 <body>
