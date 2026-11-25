@@ -23,17 +23,24 @@
 //   纯函数面      renderSalvageReport：脚本 record 无 outcome → unknown（终局标记不落盘，
 //                 推导不出就明说）；垃圾 record 软错误不抛；ask 事件缺 value 跳过；
 //                 TypeError 只归程序错误（runId/now/journalRecord 形状）。
+//   Q4 机器读数   runStatusCode 六码映射（0 completed / 1 failed / 2 blocked-escalation /
+//                 3 interrupted / 4 journal-torn / 5 unknown）：六类夹具逐一断言 + 事件级
+//                 blocked-escalation 判据（escalated 无 escalation-answered 配对——配对销账
+//                 不误报、重复挂起再入账、跨步不误销）+ 混合现场（1 failed + 1 挂起 → 2 非 1）
+//                 + --status CLI 真 spawn 断言退出码（六类 + 撕裂/形状坏/不存在 → 4 + 用法错 64）。
 //
 // 运行：node plugin/test/engine-salvage-report.test.mjs（assert 失败即抛、非零退出；成功自然退出）
 import assert from 'node:assert/strict'
-import { existsSync, mkdtempSync, readFileSync } from 'node:fs'
+import { spawnSync } from 'node:child_process'
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 import { createDriver } from '../src/engine/driver.js'
-import { createJournal, makeJournalStorage } from '../src/engine/journal.js'
+import { createJournal, makeJournalStorage, validateJournalRecord } from '../src/engine/journal.js'
 import { ABORT_CODE, run } from '../src/engine/scheduler.js'
-import { renderSalvageReport, salvageReportPath, writeSalvageReport } from '../src/engine/salvage-report.js'
+import { renderSalvageReport, runStatusCli, runStatusCode, RUN_STATUS_CODES, salvageReportPath, writeSalvageReport } from '../src/engine/salvage-report.js'
 import { runScript } from '../src/engine/script-runner.js'
 
 let passed = 0
@@ -421,6 +428,97 @@ console.log('7. 纯函数面')
   const r4 = renderSalvageReport({ runId: 'run-s7d', journalRecord: doneRecord, outcome: { status: 'completed' }, now: fixedClock() })
   assert.deepEqual([r4.status, r4.statusSource], ['completed', 'outcome'], 'outcome 优先')
   ok('纯函数面：unknown 不发明终局 + 缺 value 软错误 + 垃圾形状不抛 + outcome 优先')
+}
+
+// ---- 8. Q4 机器读数契约：runStatusCode 六码映射 + --status CLI 退出码 ----
+// 计划 Q4 行验收：六类夹具逐一断言退出码 + 混合现场（1 failed + 1 挂起 → 2 非 1）；
+// blocked-escalation 推导 = 事件级判据（escalated 无 escalation-answered 配对）非纯状态扫描。
+console.log('8. Q4 机器读数契约（六码映射 + --status CLI）')
+{
+  // 夹具基座：validateJournalRecord 合法的最小 record（步账 + 事件流水；计划写死 CLI 先过形状校验）。
+  const stepEntry = (state) => ({ state, attempts: 1, history: [{ from: null, to: state, at: 1 }] })
+  const rec = (steps, events = []) => ({ version: 1, runId: 'run-q4', updatedAt: 1000, steps, engineSessions: [], events })
+  const esc = (stepId) => ({ type: 'escalated', at: 2, payload: { stepId, question: '卡住了，怎么走？' } })
+  const ans = (stepId) => ({ type: 'escalation-answered', at: 3, payload: { stepId, answer: '走北线', operator: null, source: 'unknown' } })
+
+  // 六类夹具：一类一码（record 或 null；null = torn，CLI 认不出合法 record 时传入的形状）。
+  const fixtures = [
+    ['completed', rec({ a: stepEntry('done'), b: stepEntry('done') }), 0],
+    ['failed', rec({ a: stepEntry('done'), b: stepEntry('failed'), c: stepEntry('superseded') }), 1],
+    ['blocked-escalation', rec({ a: stepEntry('done'), b: stepEntry('blocked') }, [esc('b')]), 2],
+    ['interrupted', rec({ a: stepEntry('done'), b: stepEntry('running'), c: stepEntry('declared') }), 3],
+    ['journal-torn', null, 4],
+    ['unknown', rec({}, [{ type: 'phase', at: 1, payload: { name: '采集' } }, { type: 'ask', at: 2, payload: { stepId: 'script-ask-1', value: 'V' } }]), 5],
+  ]
+  for (const [name, record, code] of fixtures) {
+    if (record !== null) assert.notEqual(validateJournalRecord(record), null, `夹具 ${name} 本身过形状校验（CLI 的准入形状）`)
+    assert.equal(runStatusCode(record), code, `六码映射：${name} → ${code}`)
+  }
+  assert.equal(RUN_STATUS_CODES['blocked-escalation'], 2, '六码字典：blocked-escalation=2（消费方按名引用）')
+  assert.throws(() => runStatusCode(42), TypeError, 'record 既非对象也非 null → TypeError（程序错误分轨）')
+  ok('六类夹具逐一断言 runStatusCode（0/1/2/3/4/5）+ TypeError 分轨')
+
+  // blocked-escalation 事件级判据（非纯状态扫描）：配对与否只有事件流水能证明。
+  assert.equal(
+    runStatusCode(rec({ a: stepEntry('done'), b: stepEntry('blocked') }, [esc('b'), ans('b')])),
+    RUN_STATUS_CODES.interrupted,
+    'escalated 有 escalation-answered 配对 → 不判挂起（blocked 步态退为半途 interrupted）',
+  )
+  assert.equal(
+    runStatusCode(rec({ a: stepEntry('done'), b: stepEntry('blocked') }, [esc('b'), ans('b'), esc('b')])),
+    RUN_STATUS_CODES['blocked-escalation'],
+    '同步再挂起（答复后又 escalated）→ 仍未配对 → 判挂起',
+  )
+  assert.equal(
+    runStatusCode(rec({ b: stepEntry('blocked') }, [esc('b'), ans('b'), ans('b')])),
+    RUN_STATUS_CODES.interrupted,
+    '重复答复只销一次账（不跨对误配）→ 挂起已清 → 非挂起',
+  )
+  assert.equal(
+    runStatusCode(rec({ a: stepEntry('blocked'), b: stepEntry('blocked') }, [esc('a'), esc('b'), ans('a')])),
+    RUN_STATUS_CODES['blocked-escalation'],
+    '跨步不误销（a 答复不消 b 的挂起）→ 判挂起',
+  )
+  ok('事件级判据：配对销账不误报 + 再挂起再入账 + 重复答复不跨对 + 跨步不误销')
+
+  // 混合现场（计划点名）：1 failed + 1 挂起 → 2 非 1（优先级对齐 scheduler.finish：挂起先判）。
+  const mixed = rec({ a: stepEntry('done'), b: stepEntry('failed'), c: stepEntry('blocked') }, [esc('c')])
+  assert.equal(runStatusCode(mixed), RUN_STATUS_CODES['blocked-escalation'], '混合现场：1 failed + 1 挂起 → 2 非 1')
+  ok('混合现场：failed 步与挂起问句并存 → blocked-escalation(2) 优先于 failed(1)')
+
+  // --status CLI：真 spawn 断言退出码（验收原文「以状态码退出」），夹具落 tmpdir 真 fs。
+  const cliPath = fileURLToPath(new URL('../src/engine/salvage-report.js', import.meta.url))
+  const dir = mkdtempSync(join(tmpdir(), 'reeve-q4-status-'))
+  const spawnStatus = (journalPath) => spawnSync(process.execPath, [cliPath, '--status', journalPath], { encoding: 'utf8' })
+  const tornPath = join(dir, 'torn.journal.json')
+  writeFileSync(tornPath, '{"runId":"run-q4","updatedAt":1,"steps":{"a":{"stat', 'utf8') // 撕裂 JSON
+  const badShapePath = join(dir, 'bad-shape.journal.json')
+  writeFileSync(badShapePath, JSON.stringify({ runId: 'run-q4' }), 'utf8') // 形状坏（缺 steps/events/engineSessions/updatedAt）
+  const missingPath = join(dir, 'absent.journal.json') // 不存在（崩在首次落盘之前）
+  const cliCases = [
+    ...fixtures.map(([name, record, code]) => [name, record === null ? tornPath : join(dir, `${name}.journal.json`), record === null ? null : JSON.stringify(record), code]),
+    ['shape-invalid', badShapePath, null, 4],
+    ['file-missing', missingPath, null, 4],
+  ]
+  for (const [name, path, content, code] of cliCases) {
+    if (content !== null) writeFileSync(path, content, 'utf8')
+    const spawned = spawnStatus(path)
+    assert.equal(spawned.status, code, `CLI --status ${name} 以状态码 ${code} 退出（实得 ${spawned.status}）`)
+  }
+  const mixedPath = join(dir, 'mixed.journal.json')
+  writeFileSync(mixedPath, JSON.stringify(mixed), 'utf8')
+  const mixedSpawn = spawnStatus(mixedPath)
+  assert.equal(mixedSpawn.status, 2, 'CLI 混合现场退出码 2 非 1')
+  assert.equal(mixedSpawn.stdout.trim(), '2 blocked-escalation', 'CLI stdout 一行「<码> <名>」（机器吃退出码，人看 stdout）')
+  ok('CLI --status：六类夹具 + 形状坏 + 不存在 全部真 spawn 断言退出码（撕裂族 → 4）')
+
+  // 用法错：无参 → 用法行进 stderr + 退出码 64（EX_USAGE，六码域外不混音）。
+  const usageSpawn = spawnSync(process.execPath, [cliPath], { encoding: 'utf8' })
+  assert.equal(usageSpawn.status, 64, 'CLI 无参 → 用法错 64（不与六码混音）')
+  assert.ok(usageSpawn.stderr.includes('用法'), '用法行进 stderr')
+  assert.ok(usageSpawn.stderr.includes('2 blocked-escalation'), '六码语义随用法行写死')
+  assert.equal(runStatusCli(['--status']), 64, 'runStatusCli 可注入 argv 直测（缺路径 → 64）')
+  ok('用法错：退出码 64 + 用法行（含六码语义）进 stderr + runStatusCli 注入式可测')
 }
 
 console.log(`\nC3 打捞报告测试：${passed} 项全过`)

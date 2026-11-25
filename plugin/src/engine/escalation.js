@@ -14,11 +14,17 @@
 //   问句 → 步 running→blocked（台账记 blocked，payload 带 question）+ journal 记 escalated
 //   审计事件 + onEscalate 恰一次；依赖闭包内的未派步停在 declared（挂起——readySteps 要求
 //   deps 全 done，天然不派），无依赖的兄弟步照常派发与完成（只暂停依赖分支）。
-//   答复 → answerFor 非阻塞拉到非空字符串：journal 记 escalation-answered、blocked→dispatching
+//   答复 → answerFor 非阻塞拉到答复（Q3 契约：非空字符串旧形状按 {operator:null,
+//   source:'unknown'} 兼容归一；或 {answer, operator?, source?} 对象——source ∈
+//   harness/api/panel，面板现无用户标识概念，真 operator 归档登记二期）：journal 记
+//   escalation-answered（payload 带 answer/operator/source）、blocked→dispatching
 //   （P4-E 在 journal 状态机新增的唯一恢复重入边，attempts/lastDispatchAt 照 dispatching 语义
 //   刷新——超时窗口重开），以 escalationPrompt 组装的「原 prompt + 问句 + 答复」重派新会话。
 /** 问句判定键（步产出 JSON 对象里标识问句的字段名）。 */
 export const ESCALATION_QUESTION_KEY = 'question'
+
+/** 答复来源枚举（escalation-answered payload 的 source 域；'unknown' = 纯字符串旧形状/不可判定）。 */
+export const ESCALATION_SOURCES = Object.freeze(['harness', 'api', 'panel'])
 
 const isPlainObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v)
 
@@ -48,4 +54,27 @@ export function parseQuestion(text) {
 export function escalationPrompt(prompt, question, answer) {
   const notice = `[reeve escalation] 本步上一轮产出了一个待裁决问句（步已挂起等待人工答复）。以下是人工答复，请依据答复继续完成本步并给出最终产出。\n问句：${question}\n答复：${answer}`
   return `${prompt}\n\n${notice}`
+}
+
+/**
+ * answerFor 返回值归一（Q3 来源归档；纯函数不抛）。
+ * 收 `非空字符串 | { answer, operator?, source? } | null|undefined`——
+ *   纯字符串（旧形状）按 `{ answer, operator: null, source: 'unknown' }` 兼容（硬校验不破）；
+ *   对象形状：answer 必须非空字符串；operator 仅非空字符串才收（否则 null）；source 仅
+ *   harness/api/panel 才收，越界/缺失一律 'unknown'（推导不出就明说）。
+ * 其余一切（null/undefined/空串/answer 缺失或非字符串/非对象垃圾）→ null = 本轮未答，
+ * 调度器照旧跳过（与抛错/非字符串同口径）。
+ */
+export function normalizeAnswer(value) {
+  if (typeof value === 'string') {
+    return value.length > 0 ? { answer: value, operator: null, source: 'unknown' } : null
+  }
+  if (!isPlainObject(value)) return null
+  const { answer, operator, source } = value
+  if (typeof answer !== 'string' || answer.length === 0) return null
+  return {
+    answer,
+    operator: typeof operator === 'string' && operator.length > 0 ? operator : null,
+    source: ESCALATION_SOURCES.includes(source) ? source : 'unknown',
+  }
 }

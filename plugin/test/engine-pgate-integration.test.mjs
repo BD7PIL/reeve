@@ -174,16 +174,16 @@ const step = (id, deps = []) => ({ stepId: id, prompt: `步 ${id}`, deps })
     { name: 'prompt 超长', body: { runId: 'r', steps: [{ stepId: 'a', prompt: 'x'.repeat(8001), deps: [] }] }, match: /超过上限 8000/ },
     { name: '裸 kind（无声明体）', body: {}, match: /缺失必填字段 "runId"/ },
   ]
-  invalidCases.forEach((c, i) => {
+  for (const [i, c] of invalidCases.entries()) {
     const p = join(home, `invalid-${i}.json`)
     writeFileSync(p, JSON.stringify({ kind: ENGINE_RUN_KIND, ...c.body }))
     const sessionId = `session-s9-bad-${i}`
-    const refused = gate.registerSession(sessionId, p)
+    const refused = await gate.registerSession(sessionId, p)
     assert.equal(refused.ok, false, `[${c.name}] register 拒绝`)
     assert.match(refused.error, /engine-run declaration invalid/, `[${c.name}] 报错点名声明不合法`)
     assert.match(refused.error, c.match, `[${c.name}] 报错带校验器原文`)
     assert.equal(existsSync(storeFile(sessionId)), false, `[${c.name}] 零记录：store 文件不建`)
-  })
+  }
   // 工具面同一拒绝（registerSession 的薄包装，语义一致）
   const toolRefused = await call({ op: 'register', planPath: join(home, 'invalid-0.json') }, 'session-s9-bad-tool')
   assert.equal(toolRefused.ok, false, '工具面对不合法声明同样拒绝')
@@ -192,7 +192,7 @@ const step = (id, deps = []) => ({ stepId: id, prompt: `步 ${id}`, deps })
   // 撕裂 store 优先于声明校验：store 进不去时无论 artifact 是什么都报 torn（矩阵：自动化不重建）
   const S_TORN = 'session-s9-torn'
   writeFileSync(storeFile(S_TORN), '{"planPath":"engine-run.json","pending":{')
-  const tornFirst = gate.registerSession(S_TORN, join(home, 'invalid-0.json'))
+  const tornFirst = await gate.registerSession(S_TORN, join(home, 'invalid-0.json'))
   assert.deepEqual([tornFirst.ok, tornFirst.error], [false, 'gate store unreadable; only a human override may rebuild the store'], 'torn 判定先于声明校验')
 
   ok('register：engine-run 声明接受（全字节哈希 + payload）非法拒绝零记录；kind 外文件照旧普通 artifact；torn 优先')
@@ -378,7 +378,7 @@ const drive = async (sessionId, artifact, { tamper, restore, registerArgs = {} }
   const syntaxErrPath = join(home, 'script-syntax-err.mjs')
   writeFileSync(syntaxErrPath, 'const const const')
   const S_BAD = 'session-m24-bad-syntax'
-  const refusedSyntax = gate.registerSession(S_BAD, syntaxErrPath, 'workflow-script')
+  const refusedSyntax = await gate.registerSession(S_BAD, syntaxErrPath, 'workflow-script')
   assert.equal(refusedSyntax.ok, false, '语法不过 register 拒绝')
   assert.match(refusedSyntax.error, /workflow-script invalid/, '报错点名 workflow-script invalid')
   assert.match(refusedSyntax.error, /语法不过/, '报错带语法门原文')
@@ -387,7 +387,7 @@ const drive = async (sessionId, artifact, { tamper, restore, registerArgs = {} }
   const emptyPath = join(home, 'script-empty.mjs')
   writeFileSync(emptyPath, '')
   const S_EMPTY = 'session-m24-empty'
-  const refusedEmpty = gate.registerSession(S_EMPTY, emptyPath, 'workflow-script')
+  const refusedEmpty = await gate.registerSession(S_EMPTY, emptyPath, 'workflow-script')
   assert.equal(refusedEmpty.ok, false, '空脚本文件拒绝')
   assert.match(refusedEmpty.error, /函数体为空/)
   assert.equal(existsSync(storeFile(S_EMPTY)), false, '零记录：store 文件不建')
@@ -401,7 +401,7 @@ const drive = async (sessionId, artifact, { tamper, restore, registerArgs = {} }
   const badKind = await call({ op: 'register', planPath: scriptPath, kind: 'engine-run' }, 'session-m24-bad-kind')
   assert.equal(badKind.ok, false, 'kind="engine-run" 作为参数拒绝（它是文件内容判别器）')
   assert.match(badKind.error, /kind "plan" or "workflow-script"/)
-  const badKind2 = gate.registerSession('session-m24-bad-kind2', scriptPath, 'lookalike')
+  const badKind2 = await gate.registerSession('session-m24-bad-kind2', scriptPath, 'lookalike')
   assert.equal(badKind2.ok, false, 'kind 别值拒绝')
   assert.equal(existsSync(storeFile('session-m24-bad-kind2')), false, '零记录')
 
@@ -412,7 +412,7 @@ const drive = async (sessionId, artifact, { tamper, restore, registerArgs = {} }
   // torn store 优先于脚本校验（矩阵：自动化迁移不重建）
   const S_TORN = 'session-m24-torn'
   writeFileSync(storeFile(S_TORN), '{"planPath":"workflow-script.mjs","pending":{')
-  const tornFirst = gate.registerSession(S_TORN, syntaxErrPath, 'workflow-script')
+  const tornFirst = await gate.registerSession(S_TORN, syntaxErrPath, 'workflow-script')
   assert.deepEqual([tornFirst.ok, tornFirst.error], [false, 'gate store unreadable; only a human override may rebuild the store'], 'torn 判定先于脚本校验')
 
   ok('register workflow-script：接受（全字节哈希 + commands payload）语法/空文件拒绝零记录；kind 参数别值拒；缺 kind 旧行为；torn 优先')

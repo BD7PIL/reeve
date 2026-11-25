@@ -970,11 +970,11 @@ const readStoreRaw = (storeDir, sessionId) => JSON.parse(readFileSync(storeFile(
   })
 
   // registerSession 负分支：非根拒绝 / 空 planPath / artifact 不可读
-  const regChild = childGate.registerSession('ses_child', planPath)
+  const regChild = await childGate.registerSession('ses_child', planPath)
   assert.equal(regChild.ok, false, 'register 非根拒绝')
   assert.ok(regChild.error.includes('root-session-only'))
-  assert.deepEqual(g.registerSession(S, '   '), { ok: false, error: 'register requires planPath (the artifact file under review)' })
-  const regUnreadable = g.registerSession(S, join(home, 'no-such-plan.md'))
+  assert.deepEqual(await g.registerSession(S, '   '), { ok: false, error: 'register requires planPath (the artifact file under review)' })
+  const regUnreadable = await g.registerSession(S, join(home, 'no-such-plan.md'))
   assert.equal(regUnreadable.ok, false, 'register 对不可读 artifact 拒绝')
   assert.ok(regUnreadable.error.includes('artifact unreadable at register'))
 

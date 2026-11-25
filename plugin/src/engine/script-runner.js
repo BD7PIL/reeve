@@ -3,7 +3,8 @@
 // 必修④「callSeq 三不变量」）。
 //
 // 职责：脚本前端——把一段 ESM JavaScript **函数体**包成 `async function main(F){…}` 在 vm 沙箱
-// 里跑（编译=无：JS 直读；v1 不接 TS），F = facade 六成员（ask/run/phase/hole/escalate/log），
+// 里跑（JS 直读；P4 起 .ts 函数体经 ts-front.js 剥类型喂 vm——TS 语法 only，坐标系唯一落在
+// .ts 源文本，见 ts-front.js 头注），F = facade 六成员（ask/run/phase/hole/escalate/log），
 // 底座全部复用既有件：
 //   ask      走 typedAsk（ask.js，3 修 1 催口径/超时/重派口径不变；driver.create + result 的
 //            wait+context 解析都在 driver/typedAsk 里，本文件不复制）；
@@ -29,7 +30,7 @@
 // （async 函数体首个 await 前同步执行，调用序 = 分配序；Promise.all 内多 ask 的序号 = 数组求值序）；
 // attempt 重派在 typedAsk 内部循环、缓存命中归 M2.2——均不额外消耗序号。ask 事件缓存键 =
 // `${sha256(script)}:${callSeq}`（C1 v2 起仅作诊断链，不作匹配判据）；同一同步入口还抓调用点栈
-// （captureAskSite——C1 v2 作用点证据的写端半边，首个 await 前栈上还站着脚本 caller）。
+// （captureVmSite——C1 v2 作用点证据的写端半边，首个 await 前栈上还站着脚本 caller）。
 //
 // 失败语义：脚本 throw（含语法错/ask 耗尽/答复源连续异常）= run failed，**journal 保留**——已完成
 // 的 ask 结果在 journal 的 ask 事件 payload.value 里（报告打捞 + M2.2 按序返还），result.asks 是
@@ -74,7 +75,7 @@
 // 调用终结）。补段产物文件与 patch 事件由 script-patch.js applyPatch 机械落盘；本文件只新增
 // 两个面：SCRIPT_EVENT_TYPES 收 'patch'（run 级事件，非 facade 成员）；失败归类 reason 扩
 // 'patch-failed'——opts.patchFrom（applyPatch 返回的 changedFrom = base 与 patched 的首个变更
-// 字节偏移，JS 字符串下标）给出时，script-threw（vm 栈 captureAskSite 换算脚本体坐标）或
+// 字节偏移，JS 字符串下标）给出时，script-threw（vm 栈 captureVmSite 换算脚本体坐标）或
 // ask-failed（ask 作用点证据 bodyOffset）的失败点偏移 ≥ patchFrom → 'patch-failed'（失败在
 // 补段内），否则维持原 reason（失败在未变更前缀 = 首跑语义；证据缺失不发明归类；
 // answer-source-error 环境失败与 script-syntax 整文件级恒不归类）。补段内已完成的 ask/run
@@ -218,28 +219,50 @@ function createAskGate(cap) {
   throw new TypeError('runScript: cap 必须是 ≥0 整数（0=无限）或带 acquire(key)→release() 的租户形状对象（concurrency.js Admission 同款）')
 }
 
-/** 沙箱 preamble：删 Date 绑定（intrinsic，缺席即 ReferenceError）与 Math.random（删后调用 = TypeError）。 */
-const SANDBOX_PREAMBLE = '"use strict";\ndelete globalThis.Date;\ndelete globalThis.Math.random;\n'
+/** 沙箱 preamble 与包装（P4 起经 script-wrap.js 单源——ts-front 的 TS transform 输入必须与
+ * vm 编译输入逐字节相同，包装出现两份 = 语法/坐标判定分叉）。 */
+import { WRAPPER_BODY_LINE_BASE, wrapScriptBody } from './script-wrap.js'
+import { compileScriptBodyAsync, generatedToSource, isTsScriptName } from './ts-front.js'
 
 // ---- C1 v2 作用点证据（蓝图 optimization-plan-v3.md「C1」行的写端半边）--------------------
 //
 // 包装头部占用的行数（SANDBOX_PREAMBLE 的 3 行 + `(async function main(F) {` 1 行）：vm 栈
-// 行号 → 脚本体行号的换算基数；compileScriptBody 是包装的唯一事实来源，基数从它推导。
-const WRAPPER_BODY_LINE_BASE = (SANDBOX_PREAMBLE.match(/\n/g) ?? []).length + 1
+// 行号 → 脚本体行号的换算基数；compileScriptBody/wrapScriptBody 是包装的唯一事实来源，基数
+// 从它推导（script-wrap.js 单源）。
 
 /**
- * 从栈文本抓 F.ask 调用点：第一个 vm 脚本帧的 filename:line:col，换算成**脚本体**坐标
- * （1-based；vm 包装头部占 WRAPPER_BODY_LINE_BASE 行，列不受前导行影响）。抓不到/形状怪 →
- * null（调用点证据缺失——命中复核时 null 恒不过，宁弃用不假完成）。纯函数。
+ * 从栈文本抓 F.ask/throw 点：第一个 vm 脚本帧的 filename:line:col，**原始 vm 坐标**（1 基；
+ * 未减包装头部行——换算归调用方：JS 路径减 WRAPPER_BODY_LINE_BASE，TS 路径先经 sourcemap
+ * 映回 .ts 源文本再减）。抓不到/形状怪 → null（调用点证据缺失——命中复核时 null 恒不过，
+ * 宁弃用不假完成）。纯函数。
  */
-function captureAskSite(stackText, vmFilename) {
+function captureVmSite(stackText, vmFilename) {
   if (typeof stackText !== 'string' || stackText.length === 0) return null
   const m = new RegExp(`${escapeRegExp(vmFilename)}:(\\d+):(\\d+)`).exec(stackText)
   if (!m) return null
   const line = Number(m[1])
   const col = Number(m[2])
-  if (!Number.isInteger(line) || line - WRAPPER_BODY_LINE_BASE < 1 || !Number.isInteger(col) || col < 1) return null
-  return { line: line - WRAPPER_BODY_LINE_BASE, col }
+  if (!Number.isInteger(line) || line < 1 || !Number.isInteger(col) || col < 1) return null
+  return { line, col }
+}
+
+/**
+ * 原始 vm 坐标 → 脚本体坐标（P4 坐标系写死：**.ts 源文本为唯一坐标域**）。
+ * JS 路径：行减 WRAPPER_BODY_LINE_BASE（列不受前导行影响）；头部行 → null。
+ * TS 路径：先经 sourcemap 把生成域（esbuild 不保行数——探针实测 interface/type 行被删除）
+ * 映回包装文本域，再减基数。映射缺失（map 无该线段）→ null → 证据 null 走既有保守面
+ * （命中恒不过 / patch-failed 不发明归类）。
+ */
+function vmSiteToBodySite(vmSite, sourceMap) {
+  if (!vmSite) return null
+  if (sourceMap) {
+    const mapped = generatedToSource(sourceMap, vmSite.line, vmSite.col)
+    if (!mapped) return null
+    const line = mapped.line - WRAPPER_BODY_LINE_BASE
+    return line >= 1 ? { line, col: mapped.col } : null
+  }
+  const line = vmSite.line - WRAPPER_BODY_LINE_BASE
+  return line >= 1 ? { line, col: vmSite.col } : null
 }
 
 /** 脚本体 (line,col) → 字节偏移（行起点表预建）；出界 → null。 */
@@ -250,12 +273,14 @@ function bodyOffsetAt(scriptText, lineStarts, site) {
 }
 
 /**
- * 函数体编译：蓝图 M2.1「引擎包装为 async function main(F){…}」；表达式语句的完成值 = main 函数。
- * 导出给 M2.4 review_gate 的登记语法门（engine/pgate.js classifyWorkflowScript）——登记时点与
- * 执行时点用同一包装，语法判定零分叉（单一事实来源）。
+ * 函数体编译（JS 路径）：蓝图 M2.1「引擎包装为 async function main(F){…}」；表达式语句的
+ * 完成值 = main 函数。导出给 M2.4 review_gate 的登记语法门（engine/pgate.js
+ * classifyWorkflowScript）——登记时点与执行时点用同一包装，语法判定零分叉（单一事实来源）。
+ * TS 脚本（.ts）走 ts-front.js compileScriptBodyAsync（transform 后同一 vm.Script 构造——
+ * 语法判定仍零分叉，P4）。
  */
 export function compileScriptBody(body, scriptName = 'script.js') {
-  return new vm.Script(`${SANDBOX_PREAMBLE}(async function main(F) {\n${body}\n})`, { filename: scriptName })
+  return new vm.Script(wrapScriptBody(body), { filename: scriptName })
 }
 
 /**
@@ -368,10 +393,18 @@ export async function runScript(input, opts = {}) {
     return starts
   })()
   let cacheVoidFrom = Number.POSITIVE_INFINITY // 命中证据不符的弃用下界：该 callSeq 起（含）全弃用
+  let tsSourceMap = null // TS 路径的 sourcemap 段表（compileScriptBodyAsync 产物；JS 路径恒 null）
+
+  /**
+   * 栈文本 → 脚本体坐标（写端与 throw 归类共用；P4 坐标系唯一 = .ts 源文本）。JS 路径减包装
+   * 头部行；TS 路径先经 tsSourceMap 映回源文本再减——esbuild 不保行数（探针实测），直接减
+   * 生成域行号 = 坐标域漂移，C1 导入/patch-failed 静默失准（蓝图风险表行）。
+   */
+  const siteFromStack = (stackText) => vmSiteToBodySite(captureVmSite(stackText, filename), tsSourceMap)
 
   /** ask 调用身份证据（写端与命中复核共用同一实算）：调用点 + prompt/前缀/opts 三个哈希。 */
   const askEvidence = (instructions, askOpts, stackText) => {
-    const site = captureAskSite(stackText, filename)
+    const site = siteFromStack(stackText)
     const offset = bodyOffsetAt(script, bodyLineStarts, site)
     return {
       site,
@@ -404,7 +437,7 @@ export async function runScript(input, opts = {}) {
 
   // ---- journal 预检：torn/degraded 一律 fail-closed（T3.5 同款：零 driver 调用、零事件、零广播）----
   const status0 = journal.status()
-  if (!status0 || !status0.ok) {
+  if (status0?.ok !== true) {
     return finishBlocked(status0 ?? null)
   }
 
@@ -539,6 +572,11 @@ export async function runScript(input, opts = {}) {
           stepId,
           reason: outcome.reason,
           attempts: outcome.attempts,
+          // C1 v2/P3：失败 ask 的作用点证据（buildPatchContext failedPoint 的盘上数据源；ask
+          // 成功事件同款字段）。坐标域 = 脚本体/.ts 源文本（P4 唯一坐标域，TS 同域）；site 为
+          // null（栈抓不到）时 bodyOffset 同为 null——context 面按「证据缺失」如实带 null。
+          site: live.site,
+          bodyOffset: bodyOffsetAt(script, bodyLineStarts, live.site),
           ...(Array.isArray(outcome.errors) ? { errors: outcome.errors } : {}),
           ...(outcome.error !== undefined ? { error: outcome.error } : {}),
           ...(outcome.timeoutMs !== undefined ? { timeoutMs: outcome.timeoutMs } : {}),
@@ -750,9 +788,22 @@ export async function runScript(input, opts = {}) {
   const facade = Object.freeze({ ask, run, phase, hole, escalate, log })
 
   // ---- 编译（语法错 = 脚本失败，零 journal 写、零 driver 调用）----
+  // P4：.ts 脚本先经 compileScriptBodyAsync 剥类型（esbuild async transform——部署注记 ①只async；
+  // 坐标系唯一 = .ts 源文本，tsSourceMap 供栈坐标映射），vm 编译 transform 产物——语法判定与
+  // JS 路径同一 vm.Script 构造，零分叉。平台包缺失 → compileScriptBodyAsync 抛显式 Error（原则
+  // 4 禁静默回退 JS）→ 按脚本失败收敛为 script-syntax，原文进 result.error/salvage。
   let main = null
   try {
-    main = compileScriptBody(script, filename).runInContext(vm.createContext({ console: routedConsole, now: nowFn }), {
+    let compiled = null
+    if (isTsScriptName(filename)) {
+      const lowered = await compileScriptBodyAsync(script, filename)
+      if (!lowered.ok) return finishFailed('script-syntax', lowered.errors.join('；'))
+      tsSourceMap = lowered.sourceMap
+      compiled = lowered.script
+    } else {
+      compiled = compileScriptBody(script, filename)
+    }
+    main = compiled.runInContext(vm.createContext({ console: routedConsole, now: nowFn }), {
       filename,
       displayErrors: true,
     })
@@ -766,7 +817,7 @@ export async function runScript(input, opts = {}) {
   // ---- 执行：main throw / facade 失败分类收敛（ask-failed / journal halted / 其余 = 脚本 throw）----
   // C2 补段失败归类（patchFrom 给出时）：失败点脚本体偏移 ≥ patchFrom（补段首个变更字节）→
   // reason='patch-failed'。ask-failed 用抛出点附带的 bodyOffset（ask 作用点证据）；script-threw
-  // 现抓 vm 栈（captureAskSite 同款换算——栈上第一个本脚本帧即 throw 点）。证据缺失（offset
+  // 现抓 vm 栈（siteFromStack 换算——栈上第一个本脚本帧即 throw 点；TS 先经 sourcemap 映射）。证据缺失（offset
   // null）或 < patchFrom → 维持原 reason；answer-source-error（环境失败）与 script-syntax
   // （整文件级，register 语法门已拦补段）不参与归类。
   const inPatchSegment = (offset) => patchFrom !== undefined && typeof offset === 'number' && offset >= patchFrom
@@ -789,7 +840,7 @@ export async function runScript(input, opts = {}) {
     if (error?.code === 'E1_SCRIPT_ANSWER_SOURCE_BROKEN') {
       return finishFailed('answer-source-error', brief(error))
     }
-    const throwOffset = bodyOffsetAt(script, bodyLineStarts, captureAskSite(error?.stack, filename))
+    const throwOffset = bodyOffsetAt(script, bodyLineStarts, siteFromStack(error?.stack))
     return finishFailed(inPatchSegment(throwOffset) ? 'patch-failed' : 'script-threw', brief(error))
   }
 

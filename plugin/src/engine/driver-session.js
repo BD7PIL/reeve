@@ -16,9 +16,13 @@
 //   - v2 face context 形状实测（2026-11-23，M1.3b/c 挂载探针 probe-raw-entry 逐条落盘）：**扁平条目**
 //     {id, time:{created,firstToken,streamed,completed}, type:'user'|'assistant'|'idle', text?（user 扁平文）,
 //     agent?, model?, content?:[{type:'reasoning'|'text', text}...]（assistant 产出轨）, finish?, cost?, tokens?}，
-//     且 run 收尾后追加**非消息条** {type:'idle', outcome:'succeeded'}——role 必须 info.role/role/type 三级取，
-//     末条 idle 要回看末条 assistant 下结论（judgeContext 已扩；旧「info.role 二级」会把每一步读成 running，
-//     M1.3b/c 前四次挂载全超时正是栽在这里）。插件自建会话要**显式 agent+model** 才有 turn 产出
+//     且 run 收尾后追加**非消息条** {type:'idle', outcome:'succeeded'}（实测四键：无 info 信封无 role；
+//     与末条 assistant 的实测滞后仅 9-17ms）——role 必须 info.role/role/type 三级取。
+//     P1.0 判据考古裁决（2026-11-26，evidence/m4/p10-decision.md）把 idle 升格为**终态前置门槛**
+//     （A-idle-confirm）：末条 idle 在场才进终态分支，中段 assistant 的任何形状（含 m4 翻车的
+//     「叙事 text」与 fresh 发现的「冻结流式条」）一律不作终态证据——旧「末条 assistant 带 text → done」
+//     在 m4 4/4 误报（假 done 与真收敛差 5-29 分钟），judgeContext 已按裁决重写（见下方判定节）。
+//     插件自建会话要**显式 agent+model** 才有 turn 产出
 //     （model 缺省 → 2.3.2 桌面栈 turn 不启动；实测 agent:'general' + model:{providerID:'reeve',id:'standard'} 可用）。
 //
 // 对冻结规格的两处偏离（M1.3 定位声明）与实测修正（decisions，与蓝图冲突处以实测为准）：
@@ -31,8 +35,8 @@
 //      wait 有界（waitAttemptMs，注入 sleep 赛跑）防未来宿主 wait 真阻塞时挂死调用方。
 //      「超时 → failed 交 journal 不无限等」由调度器的声明 timeoutMs 兜底成立（sweepTimeouts，
 //      T3.2b 已测）；driver 自身不持超时——声明 timeoutMs 是 per-step 的，driver face 不携带。
-//   3. **result = 单轮探针**（与 mock/replay 的 result 同语义）：wait 优先一次 + context 一次 + 末条
-//      assistant 判定，running 即刻返回。「重试禁忙等 backoff」由此成立：driver 内零定时器忙等——
+//   3. **result = 单轮探针**（与 mock/replay 的 result 同语义）：wait 优先一次 + context 一次 +
+//      末条 idle 门槛判定（A-idle-confirm），running 即刻返回。「重试禁忙等 backoff」由此成立：driver 内零定时器忙等——
 //      重试节奏归调用方（scheduler 事件驱动 pollAll + sweep 兜底；typedAsk pollMs）。ask.js 头注
 //      「事件驱动型调用方让 driver.result 自己挂起等待」在实测宿主上不成立（无可靠阻塞原语、
 //      session.execution.* 缺失），等待活性由 events() 的合成 recheck 心跳保证（下）。
@@ -69,10 +73,15 @@
 //     heartbeatMs=0 关闭。队列 cap 32：消费者不拉时丢合成保内存有界。
 //   - 宿主流抛错/结束：记 hostErrors，合成通道保活到 close；events 流的 done 只由 close/return 触发。
 //
-// context 判定（judgeContext，导出供测试）：取消息数组【末条】消息，**必须 role=assistant**
-//   （deep-memory index.ts:385-423 同款 + 蓝图「空数组或末条非 assistant = running」）：
-//   error part（或 info.error 形状容错）→ failed（errorPart：字符串直用、对象 JSON.stringify——
-//   deep-memory 同款）；首个非空 text part → done 取 text（error 优先于 text）；其余 → running。
+// context 判定（judgeContext，导出供测试；P1.1 按 P1.0 裁决 A-idle-confirm 重写，裁决与失败模式表
+//   在 evidence/m4/p10-decision.md）：**末条 v2 扁平 idle 条目是终态唯一入口**——
+//   末条非 idle（含末条 assistant 带 text / finish:'stop' / finish:'tool-calls'、v1 信封、中段冻结
+//   流式条）→ running（fail-open，m4 痛点 #1「中段叙事 text 被当终态」由此关死）；末条 idle 且
+//   outcome==='succeeded'（实测词表单值）→ 回看末条 assistant 下结论：error part（或 info.error
+//   形状容错）→ failed（errorPart：字符串直用、对象 JSON.stringify——deep-memory 同款），首个
+//   非空 text part → done 取 text（error 优先于 text）；末条 idle 但 outcome 词表外/缺失 →
+//   running 并记 shape 观测（失败模式 2 fail-open，禁扩大化为常态烧超时——正常路径 succeeded
+//   立即终态，异常路径由调度器 per-step timeoutMs 兜底）。
 //   容器形状容错（terminal-gate pickMessages 同款）：数组直用；{data|messages|history:[...]} 信封取数组；
 //   认不出 → running（fail-open，绝不下结论）。
 //
@@ -161,10 +170,12 @@ function pickMessages(transcript) {
 }
 
 /**
- * assistant 消息的产出判定（error 优先于 text；parts/content 双容器 + 顶层 text 扁平回退）：
+ * assistant 消息的产出判定（error 优先于 text；parts/content 双容器 + 顶层 text 扁平回退）。
+ * P1.1 起只从 judgeContext 的 idle 分支被调（末条 idle succeeded 后回看末条 assistant）——
+ * 本函数自身不是终态入口，裸调它不构成 done 依据。判定：
  *   error part → failed（errorPart：字符串直用、对象 JSON.stringify——deep-memory 同款）；
  *   首个非空 text part → done 取 text；assistant 自身带非空 text（v2 扁平形状）→ done 取之；
- *   其余 → running（流式中/无结论，fail-open）。shape 记判定依据（calls.parse 与测试用）。
+ *   其余 → running（无结论/冻结条，fail-open）。shape 记判定依据（calls.parse 与测试用）。
  */
 function verdictOfAssistant(entry, shape) {
   const parts = Array.isArray(entry?.parts) ? entry.parts : Array.isArray(entry?.content) ? entry.content : []
@@ -191,13 +202,28 @@ function verdictOfAssistant(entry, shape) {
 const roleOf = (message) => message?.info?.role ?? message?.role ?? (message?.type === 'user' || message?.type === 'assistant' ? message.type : undefined)
 
 /**
- * context 解析消息数组判定（蓝图/deep-memory 同款 + 2026-11-23 桌面栈 v2 face 实测扩展）：
- *   v1 形状：末条 assistant（info.role/role）→ verdictOfAssistant(last, 'assistant-text')；
- *   v2 扁平形状（实测）：条目 {type:'user'|'assistant', text?, content?:[{type:'text',text}…]}，
- *     且 run 结束后追加**非消息条目** {type:'idle', outcome:'succeeded'|…}——末条是 idle 时：
- *     outcome==='succeeded' → 回看末条 assistant 消息下结论；其他 outcome → running（fail-open，
- *     绝不发明失败语义，超时兜底）；回看不到 assistant 同样 running。
- *   末条非 assistant（或空数组/形状认不出）→ running（fail-open）。
+ * context 解析消息数组判定（P1.1 A-idle-confirm 判据；裁决规则与失败模式表 evidence/m4/p10-decision.md
+ * 裁决规则①/②写死，2026-11-26 fresh + retro 双段实测背书）：
+ *
+ *   前置门槛：终态判定只认【末条】v2 扁平 idle 条目（实测四键 {id, time:{created}, type:'idle',
+ *   outcome}、无 info 信封——判定式 `entry.type === 'idle' && !isPlainObject(entry.info)`）。
+ *   idle 只在真实收敛（末条 assistant 完成）后由宿主同步追加（实测滞后 9-17ms，等待代价可忽略）。
+ *
+ *   - 末条非 idle → running（fail-open），无论末条 assistant 长什么样——text / finish:'stop' /
+ *     finish:'tool-calls' 的叙事 text 都不是终态证据（失败模式 4：m4 4/4 误报 done，假 done 与
+ *     真收敛差 5-29 分钟）；中段冻结流式条（finish/completed 恒缺，fresh 实测失败模式 3）既不作
+ *     running 证据也不作终态证据——终态判定只看末条条目，不发明「存在无 finish 条目 → running」
+ *     类全局规则（否则冻结条永不更新、会话永远 running）。
+ *   - 末条 idle 且 outcome==='succeeded'（实测词表单值 ["succeeded"]）→ 回看末条 assistant 下
+ *     结论（verdictOfAssistant：error 优先于 text）；回看不到 assistant → running（fail-open）。
+ *   - 末条 idle 但 outcome 词表外/缺失/非字符串 → running 并记 shape 观测（失败模式 2 fail-open，
+ *     绝不发明失败语义；禁扩大化为常态烧超时——正常路径 succeeded 立即终态，异常路径由调度器
+ *     per-step timeoutMs 兜底，失败模式 1：idle 永不出现同样步至 timeoutMs 判 failed 不无限等）。
+ *   - v1 {info:{role}} 信封形状写死口径（裁决规则②-2）：不被 A 判据豁免——v1-only transcript
+ *     （无 v2 idle 尾条）恒 running 交 timeoutMs 兜底；带 type:'idle' 键的 v1 条目因 info 信封
+ *     在场不构成门槛（v1 面现役不可达：回环 HTTP 兜底已删）。
+ *   - 容器形状容错（terminal-gate pickMessages 同款）：数组直用；{data|messages|history:[...]}
+ *     信封取数组；认不出 → running（fail-open，绝不下结论）。
  * shape 字段记录判定依据（calls.parse 与测试用）。
  */
 export function judgeContext(transcript) {
@@ -212,8 +238,11 @@ export function judgeContext(transcript) {
     if (!assistant) return { status: 'running', shape: 'idle-no-assistant' }
     return verdictOfAssistant(assistant, 'assistant-text-v2-idle')
   }
-  if (roleOf(last) !== 'assistant') return { status: 'running', shape: 'last-not-assistant' }
-  return verdictOfAssistant(last, 'assistant-text')
+  // A 前置门槛关死：末条不是 v2 idle 形状 → running（末条是 assistant 记 assistant-no-idle——
+  // m4 翻车分支的观测名；其余（user 等）记 last-not-idle）
+  return roleOf(last) === 'assistant'
+    ? { status: 'running', shape: 'assistant-no-idle' }
+    : { status: 'running', shape: 'last-not-idle' }
 }
 
 /**

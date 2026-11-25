@@ -138,38 +138,38 @@ console.log('0. 域枚举与参数面')
     patch: { anchor: 'tail', reason: 'r', source: 's' },
     ...over,
   })
-  assert.throws(() => applyPatch(goodInput({ scriptPath: '' })), TypeError, 'scriptPath 空串拒')
-  assert.throws(() => applyPatch(goodInput({ scriptPath: 42 })), TypeError, 'scriptPath 非字符串拒')
-  assert.throws(() => applyPatch(goodInput({ patchedScript: '' })), TypeError, 'patchedScript 空串拒')
-  assert.throws(() => applyPatch(goodInput({ runId: '' })), TypeError, 'runId 空串拒')
-  assert.throws(() => applyPatch(goodInput({ storage: {} })), TypeError, 'storage 缺 read 拒')
-  assert.throws(() => applyPatch(goodInput({ journal: {} })), TypeError, 'journal 缺 recordEvent 拒')
-  assert.throws(() => applyPatch(goodInput({ patch: null }), {}), TypeError, 'patch 非对象拒')
-  assert.throws(() => applyPatch(goodInput({ patch: { anchor: 'mid', reason: 'r', source: 's' } })), TypeError, 'anchor 别值拒')
-  assert.throws(() => applyPatch(goodInput({ patch: { anchor: 'tail', reason: '', source: 's' } })), TypeError, 'reason 空串拒')
-  assert.throws(() => applyPatch(goodInput({ patch: { anchor: 'tail', reason: 'r', source: '' } })), TypeError, 'source 空串拒')
-  assert.throws(
-    () => applyPatch(goodInput({ patch: { anchor: 'hole-site', reason: 'r', source: 's' } })),
+  await assert.rejects(applyPatch(goodInput({ scriptPath: '' })), TypeError, 'scriptPath 空串拒')
+  await assert.rejects(applyPatch(goodInput({ scriptPath: 42 })), TypeError, 'scriptPath 非字符串拒')
+  await assert.rejects(applyPatch(goodInput({ patchedScript: '' })), TypeError, 'patchedScript 空串拒')
+  await assert.rejects(applyPatch(goodInput({ runId: '' })), TypeError, 'runId 空串拒')
+  await assert.rejects(applyPatch(goodInput({ storage: {} })), TypeError, 'storage 缺 read 拒')
+  await assert.rejects(applyPatch(goodInput({ journal: {} })), TypeError, 'journal 缺 recordEvent 拒')
+  await assert.rejects(applyPatch(goodInput({ patch: null }), {}), TypeError, 'patch 非对象拒')
+  await assert.rejects(applyPatch(goodInput({ patch: { anchor: 'mid', reason: 'r', source: 's' } })), TypeError, 'anchor 别值拒')
+  await assert.rejects(applyPatch(goodInput({ patch: { anchor: 'tail', reason: '', source: 's' } })), TypeError, 'reason 空串拒')
+  await assert.rejects(applyPatch(goodInput({ patch: { anchor: 'tail', reason: 'r', source: '' } })), TypeError, 'source 空串拒')
+  await assert.rejects(
+    applyPatch(goodInput({ patch: { anchor: 'hole-site', reason: 'r', source: 's' } })),
     TypeError,
     "anchor='hole-site' 缺 holeRef 拒",
   )
-  assert.throws(
-    () => applyPatch(goodInput({ patch: { anchor: 'hole-site', holeRef: { kind: 'step', seq: 1 }, reason: 'r', source: 's' } })),
+  await assert.rejects(
+    applyPatch(goodInput({ patch: { anchor: 'hole-site', holeRef: { kind: 'step', seq: 1 }, reason: 'r', source: 's' } })),
     TypeError,
     'holeRef.kind 别值拒',
   )
-  assert.throws(
-    () => applyPatch(goodInput({ patch: { anchor: 'hole-site', holeRef: { kind: 'hole', seq: 0 }, reason: 'r', source: 's' } })),
+  await assert.rejects(
+    applyPatch(goodInput({ patch: { anchor: 'hole-site', holeRef: { kind: 'hole', seq: 0 }, reason: 'r', source: 's' } })),
     TypeError,
     'holeRef.seq < 1 拒',
   )
-  assert.throws(
-    () => applyPatch(goodInput({ patch: { anchor: 'tail', holeRef: { kind: 'hole', seq: 1 }, reason: 'r', source: 's' } })),
+  await assert.rejects(
+    applyPatch(goodInput({ patch: { anchor: 'tail', holeRef: { kind: 'hole', seq: 1 }, reason: 'r', source: 's' } })),
     TypeError,
     "anchor='tail' 带 holeRef 拒（严格未知面）",
   )
-  assert.throws(() => applyPatch(goodInput(), { writeScript: 1 }), TypeError, 'writeScript 非函数拒')
-  assert.throws(() => applyPatch(goodInput(), { readScript: 1 }), TypeError, 'readScript 非函数拒')
+  await assert.rejects(applyPatch(goodInput(), { writeScript: 1 }), TypeError, 'writeScript 非函数拒')
+  await assert.rejects(applyPatch(goodInput(), { readScript: 1 }), TypeError, 'readScript 非函数拒')
   ok('域枚举 + firstChangedOffset/patchedScriptPath 纯函数面 + 参数面 15 路 TypeError')
 }
 
@@ -189,7 +189,7 @@ console.log('1. applyPatch 记 patch 事件')
     journal.recordEvent('ask', { callSeq: 3, cacheKey: 'k:3', stepId: 'script-ask-3', value: 'v', attempts: 1 })
     journal.recordEvent('ask-failed', { callSeq: 5, cacheKey: 'k:5', stepId: 'script-ask-5', reason: 'invalid-output', attempts: 3 })
 
-    const out = applyPatch(
+    const out = await applyPatch(
       {
         scriptPath: basePath,
         patchedScript: PATCHED,
@@ -236,7 +236,7 @@ console.log('1. applyPatch 记 patch 事件')
     assert.deepEqual(patchEvent.payload, out.payload, '盘上 payload 与返回一致')
 
     // 第二笔：patchSeq 递增成链；anchor='tail' 无 holeRef 键
-    const out2 = applyPatch({
+    const out2 = await applyPatch({
       scriptPath: basePath,
       patchedScript: `${PATCHED}\nF.log('patched-2')`,
       runId: 'run-patch-1',
@@ -252,7 +252,7 @@ console.log('1. applyPatch 记 patch 事件')
 
     // 中段编辑的 changedFrom：首个差异字节（不是 base 长度）
     const midPatched = BASE.replace("F.log('step1')", "F.log('step1b')")
-    const out3 = applyPatch({
+    const out3 = await applyPatch({
       scriptPath: basePath,
       patchedScript: midPatched,
       runId: 'run-patch-1',
@@ -271,7 +271,7 @@ console.log('1. applyPatch 记 patch 事件')
     // ---- 语义拒绝面（ok:false；零事件零落盘）----
     // 语法坏补段：register 反正会拒——提前拦，零落盘零事件
     const eventsBefore = diskEvents(storage).length
-    const badSyntax = applyPatch({
+    const badSyntax = await applyPatch({
       scriptPath: basePath,
       patchedScript: 'const const const',
       runId: 'run-patch-1',
@@ -283,7 +283,7 @@ console.log('1. applyPatch 记 patch 事件')
     assert.equal(diskEvents(storage).length, eventsBefore, '语法拒零事件')
 
     // writeScript 注入故障缝：写败 → patch-write-failed，零事件（journal 分毫未动）
-    const writeFail = applyPatch(
+    const writeFail = await applyPatch(
       { scriptPath: basePath, patchedScript: PATCHED, runId: 'run-patch-1', storage, journal, patch: { anchor: 'tail', reason: 'r', source: 's' } },
       { writeScript: () => { throw new Error('ENOSPC: 注入写败') } },
     )
@@ -292,7 +292,7 @@ console.log('1. applyPatch 记 patch 事件')
     assert.equal(diskEvents(storage).length, eventsBefore, '写败零事件')
 
     // readScript 注入故障缝：base 读不到 → base-unreadable，零事件
-    const readFail = applyPatch(
+    const readFail = await applyPatch(
       { scriptPath: basePath, patchedScript: PATCHED, runId: 'run-patch-1', storage, journal, patch: { anchor: 'tail', reason: 'r', source: 's' } },
       { readScript: () => { throw Object.assign(new Error('no such file'), { code: 'ENOENT' }) } },
     )
@@ -300,23 +300,23 @@ console.log('1. applyPatch 记 patch 事件')
     assert.equal(diskEvents(storage).length, eventsBefore, '读败零事件')
 
     // journal 真相保守判定（resume-script.js 同款四形 + 无记录）：锚点建立不起来就不补
-    const noRecord = applyPatch({ scriptPath: basePath, patchedScript: PATCHED, runId: 'r-none', storage: memStorage(), journal: createJournal({ storage: memStorage(), runId: 'r-none', now: fixedClock() }), patch: { anchor: 'tail', reason: 'r', source: 's' } })
+    const noRecord = await applyPatch({ scriptPath: basePath, patchedScript: PATCHED, runId: 'r-none', storage: memStorage(), journal: createJournal({ storage: memStorage(), runId: 'r-none', now: fixedClock() }), patch: { anchor: 'tail', reason: 'r', source: 's' } })
     assert.deepEqual([noRecord.ok, noRecord.reason], [false, 'shape-invalid'], '盘上无 journal 记录（run 从未落账）→ 拒')
     const tornStorage = memStorage('{broken-json')
-    const torn = applyPatch({ scriptPath: basePath, patchedScript: PATCHED, runId: 'r-torn', storage: tornStorage, journal: createJournal({ storage: tornStorage, runId: 'r-torn', now: fixedClock() }), patch: { anchor: 'tail', reason: 'r', source: 's' } })
+    const torn = await applyPatch({ scriptPath: basePath, patchedScript: PATCHED, runId: 'r-torn', storage: tornStorage, journal: createJournal({ storage: tornStorage, runId: 'r-torn', now: fixedClock() }), patch: { anchor: 'tail', reason: 'r', source: 's' } })
     assert.deepEqual([torn.ok, torn.reason], [false, 'unparseable'], 'journal 撕裂拒')
     const mismatchStorage = memStorage()
     const mismatchJournal = createJournal({ storage: mismatchStorage, runId: 'other-run', now: fixedClock() })
     mismatchJournal.recordEvent('log', { message: 'x' })
-    const mismatch = applyPatch({ scriptPath: basePath, patchedScript: PATCHED, runId: 'r-mm', storage: mismatchStorage, journal: mismatchJournal, patch: { anchor: 'tail', reason: 'r', source: 's' } })
+    const mismatch = await applyPatch({ scriptPath: basePath, patchedScript: PATCHED, runId: 'r-mm', storage: mismatchStorage, journal: mismatchJournal, patch: { anchor: 'tail', reason: 'r', source: 's' } })
     assert.deepEqual([mismatch.ok, mismatch.reason], [false, 'run-mismatch'], 'runId 不符拒')
     const readErrStorage = { read: () => { throw new Error('disk yanked') } }
-    const readErr = applyPatch({ scriptPath: basePath, patchedScript: PATCHED, runId: 'r-re', storage: readErrStorage, journal: { recordEvent: () => ({ ok: true }) }, patch: { anchor: 'tail', reason: 'r', source: 's' } })
+    const readErr = await applyPatch({ scriptPath: basePath, patchedScript: PATCHED, runId: 'r-re', storage: readErrStorage, journal: { recordEvent: () => ({ ok: true }) }, patch: { anchor: 'tail', reason: 'r', source: 's' } })
     assert.deepEqual([readErr.ok, readErr.reason], [false, 'read-error'], 'storage.read 抛错拒')
 
     // recordEvent 失败（torn/degraded）→ journal-not-ok（孤儿文件无事件，重试同序号覆盖无害）
     const denyJournal = { recordEvent: () => ({ ok: false, degraded: true, reason: 'degraded' }) }
-    const notOk = applyPatch(
+    const notOk = await applyPatch(
       { scriptPath: basePath, patchedScript: PATCHED, runId: 'r', storage: memStorage('{"runId":"r","updatedAt":1,"steps":{},"engineSessions":[],"events":[]}'), journal: denyJournal, patch: { anchor: 'tail', reason: 'r', source: 's' } },
       { writeScript: () => {} }, // 写面注入假成功——本笔只验 recordEvent not-ok 的上抛
     )
@@ -353,7 +353,7 @@ console.log('2. patch 事件不污染 ask 缓存')
     const askEventCountBefore = resumeBefore.askEventCount
 
     // 打补段（journal 里多一笔 patch 事件）
-    const patchOut = applyPatch({ scriptPath: basePath, patchedScript: PATCHED, runId: RUN, storage, journal: journalA, patch: { anchor: 'tail', reason: '尾部补段', source: 'model' } })
+    const patchOut = await applyPatch({ scriptPath: basePath, patchedScript: PATCHED, runId: RUN, storage, journal: journalA, patch: { anchor: 'tail', reason: '尾部补段', source: 'model' } })
     assert.equal(patchOut.ok, true)
     assert.equal(patchOut.appliedAfterCallSeq, 2, '补段锚点 = 首跑最大 callSeq 2')
     assert.equal(diskEvents(storage).filter((e) => e.type === 'patch').length, 1, '盘上恰一笔 patch 事件')
@@ -404,7 +404,7 @@ console.log('3. 尾部补段重跑')
     const resA = await runScript({ script: BASE, runId: RUN, journal: journalA, driver: driverA }, { now: fixedClock(), sleep: instantSleep })
     assert.deepEqual([resA.status, resA.reason], ['failed', 'script-threw'], '首跑尾部 throw → failed（补段动机现场）')
 
-    const patchOut = applyPatch({ scriptPath: basePath, patchedScript: PATCHED, runId: RUN, storage, journal: journalA, patch: { anchor: 'tail', reason: '尾部出口换成补段', source: 'model' } })
+    const patchOut = await applyPatch({ scriptPath: basePath, patchedScript: PATCHED, runId: RUN, storage, journal: journalA, patch: { anchor: 'tail', reason: '尾部出口换成补段', source: 'model' } })
     assert.equal(patchOut.ok, true)
     assert.equal(patchOut.changedFrom, BASE.lastIndexOf("throw new Error('tail-boom')"), 'changedFrom = 被换掉的 throw 行首（首个变更字节）')
 
@@ -450,7 +450,7 @@ console.log('4. 补段内失败归类与打捞')
     const resA = await runScript({ script: BASE, runId: RUN, journal: journalA, driver: driverA }, { now: fixedClock(), sleep: instantSleep })
     assert.equal(resA.status, 'completed', '首跑在补段之前就结束了（completed，补段动机=事后追加）')
 
-    const patchOut = applyPatch({ scriptPath: basePath, patchedScript: PATCHED, runId: RUN, storage, journal: journalA, patch: { anchor: 'tail', reason: '追加分析段', source: 'model' } })
+    const patchOut = await applyPatch({ scriptPath: basePath, patchedScript: PATCHED, runId: RUN, storage, journal: journalA, patch: { anchor: 'tail', reason: '追加分析段', source: 'model' } })
     assert.equal(patchOut.ok, true)
     assert.equal(patchOut.changedFrom, BASE.length, '尾部追加 → 边界 = base 长度')
 
@@ -503,7 +503,7 @@ console.log('4. 补段内失败归类与打捞')
     await runScript({ script: BASE, runId: 'run-patch-nofrom', journal: journalAN, driver: driverAN }, { now: fixedClock(), sleep: instantSleep })
     const basePathN = join(home, 'wf-nofrom.js')
     writeFileSync(basePathN, BASE)
-    const patchN = applyPatch({ scriptPath: basePathN, patchedScript: PATCHED, runId: 'run-patch-nofrom', storage: storageN, journal: journalAN, patch: { anchor: 'tail', reason: 'r', source: 's' } })
+    const patchN = await applyPatch({ scriptPath: basePathN, patchedScript: PATCHED, runId: 'run-patch-nofrom', storage: storageN, journal: journalAN, patch: { anchor: 'tail', reason: 'r', source: 's' } })
     const journalBN = createJournal({ storage: storageN, runId: 'run-patch-nofrom', now: fixedClock() })
     const driverBN = createDriver('mock', { scenarios: [sc(P1, '1'), sc(P2, '2')] })
     const resN = await runScript(
@@ -530,7 +530,7 @@ console.log('4. 补段内失败归类与打捞')
     const driverAF = createDriver('mock', { scenarios: [sc(PF, '{"a": 1}'), ...scenarios] })
     const resAF = await runScript({ script: BASEF, runId: RUNF, journal: journalAF, driver: driverAF }, { now: fixedClock(), sleep: instantSleep })
     assert.deepEqual([resAF.status, resAF.reason], ['failed', 'ask-failed'], '首跑：callSeq 2 ask 耗尽 → ask-failed（对照）')
-    const patchF = applyPatch({ scriptPath: basePathF, patchedScript: PATCHEDF, runId: RUNF, storage: storageF, journal: journalAF, patch: { anchor: 'tail', reason: 'r', source: 's' } })
+    const patchF = await applyPatch({ scriptPath: basePathF, patchedScript: PATCHEDF, runId: RUNF, storage: storageF, journal: journalAF, patch: { anchor: 'tail', reason: 'r', source: 's' } })
     assert.equal(patchF.ok, true)
     const resumeF = resumeScript(PATCHEDF, storageF, RUNF)
     assert.equal(resumeF.matchedCount, 1, '只有 callSeq 1 进缓存（ask-failed 不进）')
@@ -575,7 +575,7 @@ console.log('5. gate 通路（workflow-script 同矩阵）')
     journal.recordEvent('log', { message: 'seed' }) // 让盘上 record 存在（补段锚点前提）
 
     // 补段产物直接走 gate（applyPatch 真 fs 落盘的文件路径）
-    const patchOut = applyPatch({ scriptPath: basePath, patchedScript: PATCHED, runId: 'run-patch-gate', storage, journal, patch: { anchor: 'tail', reason: '补出口', source: 'model' } })
+    const patchOut = await applyPatch({ scriptPath: basePath, patchedScript: PATCHED, runId: 'run-patch-gate', storage, journal, patch: { anchor: 'tail', reason: '补出口', source: 'model' } })
     assert.equal(patchOut.ok, true)
     const patchedBytes = readFileSync(patchOut.patchedPath)
     assert.equal(Buffer.from(PATCHED, 'utf8').equals(patchedBytes), true, '夹具自检：补段文件字节 = patchedScript')
@@ -623,7 +623,7 @@ console.log('5. gate 通路（workflow-script 同矩阵）')
     const badPath = join(home, 'wf-gate.patch-9.js')
     writeFileSync(badPath, 'const const const')
     const S_BAD = 'session-patch-gate-bad'
-    const refused = gate.registerSession(S_BAD, badPath, 'workflow-script')
+    const refused = await gate.registerSession(S_BAD, badPath, 'workflow-script')
     assert.equal(refused.ok, false, '语法坏补段 register 拒绝')
     assert.match(refused.error, /workflow-script invalid/, '报错点名 workflow-script invalid')
     assert.equal(existsSync(join(storeDir, `${storeStem(S_BAD)}.json`)), false, '零记录：store 文件不建')

@@ -13,7 +13,7 @@
     "node": ">=22"
   },
   "scripts": {
-    "test": "node test/unit.mjs && node test/reconcile.mjs && node test/snapshot.mjs && node test/gate.mjs && node test/free.mjs && node test/model-meta.mjs && node test/guard.mjs && node test/stats.mjs && node test/entry.mjs && node test/wiring.mjs && node test/plan-gate.mjs && node test/runtime.mjs && node test/engine-declaration.test.mjs && node test/engine-journal.test.mjs && node test/engine-driver-contract.test.mjs && node test/engine-driver-session.test.mjs && node test/engine-scheduler.test.mjs && node test/engine-ask.test.mjs && node test/engine-resume.test.mjs && node test/engine-p4-E.test.mjs && node test/engine-p4-H.test.mjs && node test/engine-p4-A.test.mjs && node test/engine-script.test.mjs && node test/engine-script-patch.test.mjs && node test/engine-replay-fixture.test.mjs && node test/engine-pgate-integration.test.mjs && node test/engine-skill-visual-gate.test.mjs && node test/engine-visualize.test.mjs && node test/engine-salvage-report.test.mjs && node test/pilot-run.mjs",
+    "test": "node test/unit.mjs && node test/reconcile.mjs && node test/snapshot.mjs && node test/gate.mjs && node test/free.mjs && node test/model-meta.mjs && node test/guard.mjs && node test/stats.mjs && node test/entry.mjs && node test/wiring.mjs && node test/plan-gate.mjs && node test/runtime.mjs && node test/engine-declaration.test.mjs && node test/engine-journal.test.mjs && node test/engine-driver-contract.test.mjs && node test/engine-driver-session.test.mjs && node test/engine-scheduler.test.mjs && node test/engine-ask.test.mjs && node test/engine-resume.test.mjs && node test/engine-p4-E.test.mjs && node test/engine-p4-H.test.mjs && node test/engine-p4-A.test.mjs && node test/engine-dataplane.test.mjs && node test/engine-script.test.mjs && node test/engine-script-patch.test.mjs && node test/engine-patch-context.test.mjs && node test/engine-ts-front.test.mjs && node test/engine-replay-fixture.test.mjs && node test/engine-pgate-integration.test.mjs && node test/engine-skill-visual-gate.test.mjs && node test/engine-visualize.test.mjs && node test/engine-salvage-report.test.mjs && node test/pilot-run.mjs",
     "test:coverage": "c8 --reporter=text --reporter=json-summary --reports-dir=coverage --exclude=test/** --exclude=bench.mjs npm test",
     "check:coverage": "node ../scripts/check-coverage.mjs",
     "prepublishOnly": "npm test"
@@ -47,6 +47,9 @@
     "opencode-plugin",
     "orchestration"
   ],
+  "dependencies": {
+    "esbuild": "0.28.2"
+  },
   "devDependencies": {
     "c8": "^12.0.0"
   }

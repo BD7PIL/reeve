@@ -22,6 +22,7 @@ import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
 
 import {
+  JOURNAL_RECORD_VERSION,
   JOURNAL_STATES,
   LEGAL_TRANSITIONS,
   createJournal,
@@ -465,6 +466,49 @@ console.log('7. clock 注入')
   const at = jd.appendStepState('s', null, 'declared').at
   assert.ok(Number.isInteger(at) && at >= before && at <= Date.now(), `缺省 now = Date.now（${at} ∈ [${before}, ${Date.now()}]）`)
   ok('clock 注入：at/lastDispatchAt/updatedAt/事件 at 全走注入时钟；缺省回 Date.now')
+}
+
+// ---- 8. record 版本字段（P1.2 第 8 条，lightflow passport_version 先例）----
+console.log('8. record 版本字段')
+{
+  // 新 record 落盘带 version（emptyRecord 写 v1；与导出常量同源）。
+  const storage = memStorage()
+  const j = createJournal({ storage, runId: 'run-ver', now: clock() })
+  j.appendStepState('s', null, 'declared')
+  const onDisk = JSON.parse(readRaw(storage))
+  assert.equal(onDisk.version, JOURNAL_RECORD_VERSION, `新 record version=${JOURNAL_RECORD_VERSION}`)
+  // validateJournalRecord 三态：v1 过 / 无 version（旧形状）过 / 其他 version 不过。
+  const v1 = JSON.parse(readRaw(storage))
+  assert.deepEqual(validateJournalRecord(v1), v1, 'version=1 原样通过')
+  const legacy = v1
+  delete legacy.version
+  assert.deepEqual(validateJournalRecord(legacy), legacy, '旧 record（无 version 字段）兼容放行')
+  const v2 = { ...v1, version: JOURNAL_RECORD_VERSION + 1 }
+  assert.equal(validateJournalRecord(v2), null, '未来 version 不猜 → 形状不过')
+  assert.equal(validateJournalRecord({ ...v1, version: '1' }), null, 'version 非数字 → 形状不过')
+  // 装载路径：旧 record 可读 + console.warn 显式记迁移事实；重写落盘补 version。
+  const legacyStorage = memStorage()
+  legacyStorage.write(JSON.stringify(legacy))
+  const warns = []
+  const origWarn = console.warn
+  console.warn = (m) => warns.push(String(m))
+  try {
+    const jl = createJournal({ storage: legacyStorage, runId: 'run-ver', now: clock() })
+    assert.equal(jl.status().ok, true, '旧 record 装载不 torn（兼容放行）')
+    assert.equal(jl.getStepState('s').state, 'declared', '旧 record 步记账可读')
+    jl.appendStepState('s', 'declared', 'dispatching')
+    assert.equal(JSON.parse(readRaw(legacyStorage)).version, JOURNAL_RECORD_VERSION, '下次落盘补写 version')
+  } finally {
+    console.warn = origWarn
+  }
+  assert.equal(warns.length, 1, `旧 record 装载恰记一条 warn（得到 ${warns.length}）`)
+  assert.ok(warns[0].includes('version'), `warn 记版本迁移事实：${warns[0]}`)
+  // 未来 version 的盘上 record → torn（shape-invalid），宁可 fail-closed 不静默误读。
+  const futureStorage = memStorage()
+  futureStorage.write(JSON.stringify({ ...v1, version: JOURNAL_RECORD_VERSION + 1 }))
+  const jf = createJournal({ storage: futureStorage, runId: 'run-ver', now: clock() })
+  assert.deepEqual([jf.status().ok, jf.status().torn, jf.status().reason], [false, true, 'shape-invalid'], '未来 version record → torn')
+  ok(`record 版本字段：新 record version=${JOURNAL_RECORD_VERSION} + 旧 record 无版本兼容放行（warn 恰 1 条、重写补版本）+ 未来版本 torn`)
 }
 
 console.log(`\n引擎 journal 测试（S2 门：T3.4-torn 半边 + T3.5 journal 侧）：${passed} 项全过`)

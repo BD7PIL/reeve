@@ -16,6 +16,13 @@
 //         崩溃现场）；done 步续跑零 create 调用（S6 resume 的前置证据）；空声明平凡完成；
 //         派发异常臂（create 抛错/缺 sessionId/帽拒/create 挂死 dispatching 超时/result 抛错/
 //         未知 status/onEvent 抛错）与事件通道异常（events-end/events-error 后兜底照走）。
+//   P1.2（蓝图 next-round-plan-v4.md 逐项写死）：schema 校验（合法/越界/耗尽）+ outputs 盘上
+//         检查（缺→重派→done+下游 / 耗尽+下游作废 / ~/ 注入 homedir 展开 / 目录非文件 /
+//         无字段无 schema 零影响）+ 窄域重试与熔断交互（pendingRetry 不计 consecutiveFailures /
+//         耗尽计入触发熔断且步级 payload 仍 outputs-missing / 熔断打断冷却重试收口 blocked ∧
+//         retry-pending 显示 / 结构性四臂与 timeout 不进重试环）+ cooldown 生效与跳过 +
+//         叶子步 cooldown 期 run 不收口 + journal 旧 record 无版本字段可读 + retry/fs 参数面
+//         + escalation×schema 判定序（问句先于校验）。
 //
 // 夹具全合成（内存 storage + 可控时钟 + 手工喂事件的总线）；replay 录制件属 S7a，本文件不得引用。
 // 期望逐行来自规格；实现与规格冲突时改实现，不改这里的期望。
@@ -24,10 +31,11 @@
 import assert from 'node:assert/strict'
 
 import { Admission } from '../src/concurrency.js'
-import { DECLARATION_DEFAULTS } from '../src/engine/declaration.js'
+import { retryPrompt } from '../src/engine/ask.js'
+import { DECLARATION_DEFAULTS, validateValue } from '../src/engine/declaration.js'
 import { createDriver } from '../src/engine/driver.js'
 import { createJournal } from '../src/engine/journal.js'
-import { ABORT_CODE, NOT_FRESH_CODE, RUN_FAILURE_LIMIT, SWEEP_TICK_MS, run } from '../src/engine/scheduler.js'
+import { RETRYABLE_REASONS, RETRY_COOLDOWN_MS, RUN_FAILURE_LIMIT, SWEEP_TICK_MS, ABORT_CODE, NOT_FRESH_CODE, run } from '../src/engine/scheduler.js'
 
 let passed = 0
 const ok = (label) => {
@@ -99,13 +107,38 @@ const fakeDriver = ({ create, result } = {}) => ({
   context: async () => ({}),
 })
 
+/** P1.2 假 fs 面：files/dirs 集合 + home + 调用记录（不碰真实盘；判「存在但非文件」用 dirs）。 */
+const fakeFs = ({ files = [], dirs = [], home = '/home/u' } = {}) => {
+  const fileSet = new Set(files)
+  const dirSet = new Set(dirs)
+  const calls = { existsSync: [], statSync: [], homedir: 0 }
+  return {
+    files: fileSet,
+    dirs: dirSet,
+    calls,
+    existsSync: (p) => {
+      calls.existsSync.push(p)
+      return fileSet.has(p) || dirSet.has(p)
+    },
+    statSync: (p) => {
+      calls.statSync.push(p)
+      if (dirSet.has(p)) return { isFile: () => false }
+      return { isFile: () => true }
+    },
+    homedir: () => {
+      calls.homedir += 1
+      return home
+    },
+  }
+}
+
 /** 一套测试装具：journal + mock driver + run() 同时起跑；计数两级广播（scheduler 的 run 事件 / journal 的盘上事件）。 */
-const rig = ({ runId, steps, scenarios = [], now = manualClock(), fault = null, journalFault = null, storage = memStorage(), cap, directory, events, driver: customDriver }) => {
+const rig = ({ runId, steps, scenarios = [], now = manualClock(), fault = null, journalFault = null, storage = memStorage(), cap, directory, events, driver: customDriver, retry, fs }) => {
   const runEvents = []
   const journalEvents = []
   const journal = createJournal({ storage, runId, fault: journalFault, now, onEvent: (e) => journalEvents.push(e) })
   const driver = customDriver ?? createDriver('mock', { scenarios, now, fault })
-  const p = run({ runId, steps }, { journal, driver, cap, fault, directory, events, now, onEvent: (e) => runEvents.push(e) })
+  const p = run({ runId, steps }, { journal, driver, cap, fault, directory, events, now, onEvent: (e) => runEvents.push(e), retry, fs })
   return { p, journal, driver, storage, runEvents, journalEvents, now }
 }
 
@@ -761,6 +794,547 @@ console.log('8. 派发异常臂与事件通道异常')
   const out = await settle(p)
   assert.equal(out.status, 'failed', 'run failed')
   ok('events-error：事件通道异常不致命，兜底独立推进')
+}
+
+// ---- 9. P1.2 schema 校验（done 分支 move 前接线；合法/越界/类型错/第 2 次成功）----
+console.log('9. P1.2 schema 校验')
+{
+  // 9a. 合法产出：一次 done，零重派，零 retryPending。
+  const schemaA = { type: 'object', required: ['verdict'], properties: { verdict: { type: 'integer' } }, additionalProperties: false }
+  const bus = makeEvents()
+  const clock = manualClock(110_000)
+  const { p, journal, driver } = rig({
+    runId: 'run-schema-ok',
+    steps: [step('a', [], { schema: schemaA })],
+    scenarios: [sc('a', [{ status: 'done', text: '{"verdict":1}' }])],
+    now: clock,
+    events: bus.events,
+  })
+  await until(() => createIds(driver).length >= 1, 'a 派发')
+  bus.feed(idleEv())
+  const out = await settle(p)
+  assert.equal(out.status, 'completed', 'schema 合法 → completed')
+  assert.equal(createIds(driver).length, 1, '恰 1 次 create（零重派）')
+  assert.deepEqual([out.steps.a.state, out.steps.a.attempts, out.steps.a.retryPending], ['done', 1, undefined], 'done 且无重试挂起痕迹')
+  assert.equal(journal.getStepState('a').history.filter((e) => e.to === 'failed').length, 0, '无 failed 迁移')
+  ok('P1.2 schema 合法：done 一次过，零重派零挂起')
+}
+{
+  // 9b. 越界 → 可重试失败（payload=ask errors 形状）→ retryPrompt 附言重派 → 第 2 次成功 → done 且下游正常派发。
+  const schemaB = { type: 'object', required: ['verdict'], properties: { verdict: { type: 'integer' } }, additionalProperties: false }
+  const badText = '{"verdict":"no"}'
+  const errors = validateValue(JSON.parse(badText), schemaB, '产出').errors
+  const retryPrompt2 = retryPrompt(P('a'), errors, { attempt: 2, maxAttempts: 3 })
+  const bus = makeEvents()
+  const clock = manualClock(111_000)
+  const { p, journal, driver, runEvents } = rig({
+    runId: 'run-schema-retry',
+    steps: [step('a', [], { schema: schemaB }), step('b', ['a'])],
+    scenarios: [sc('a', [{ status: 'done', text: badText }]), { name: 'a-retry', match: { prompt: retryPrompt2 }, result: [{ status: 'done', text: '{"verdict":7}' }] }, sc('b', [{ status: 'done', text: 'B 完' }])],
+    now: clock,
+    retry: { cooldownMs: 100 },
+    events: bus.events,
+  })
+  await until(() => createIds(driver).length >= 1, 'a 派发')
+  bus.feed(idleEv()) // 首轮 poll：schema 不过 → running→failed + pendingRetry（cooldown 挂起）
+  await until(() => journal.getStepState('a')?.history.some((e) => e.to === 'failed'), 'a 校验失败进 failed')
+  const failedMove = journal.getStepState('a').history.find((e) => e.from === 'running' && e.to === 'failed')
+  assert.deepEqual(
+    failedMove.payload,
+    { reason: 'schema-invalid', errors, attempt: 1, retryNote: 'cooldown 挂起：第 2/3 次尝试将在固定 cooldown 100ms 后重派' },
+    'schema 失败 payload = ask errors 形状 + attempt + retryNote',
+  )
+  clock.advance(100) // cooldown 到期
+  bus.feed(idleEv())
+  await until(() => createIds(driver).length >= 2, 'cooldown 到期重派')
+  assert.equal(createIds(driver)[1], retryPrompt2, '重派 prompt = 原 prompt + retryPrompt 错误附言（F6 同款）')
+  bus.feed(idleEv()) // 重派轮询：schema 过 → done
+  await until(() => journal.getStepState('a')?.state === 'done', '第 2 次尝试 done')
+  assert.equal(journal.getStepState('a').attempts, 2, 'attempts=2（含重派，journal 既有计数）')
+  bus.feed(idleEv())
+  const out = await settle(p)
+  assert.equal(out.status, 'completed', '重试成功 → run completed')
+  assert.deepEqual([out.completed, out.failed], [['a', 'b'], []], '第 2 次成功 → done 且下游 b 正常派发')
+  assert.deepEqual(createIds(driver).slice(2), [P('b')], '下游在 a done 后派发')
+  assert.ok(runEvents.some((e) => e.type === 'step-failed' && e.stepId === 'a'), '挂起失败也广播 step-failed（先落盘再广播）')
+  ok('P1.2 schema 越界：payload=ask errors 形状 → cooldown 后 retryPrompt 重派 → 第 2 次成功 done + 下游派发 + attempts=2')
+}
+{
+  // 9c. 耗尽：maxAttempts=2 两次越界 → 第 2 次（末次重派带 nudge）failed 记「尝试已耗尽」→ run failed。
+  const schemaC = { type: 'object', required: ['verdict'], properties: { verdict: { type: 'integer' } } }
+  const badText = '{"verdict":"x"}'
+  const errors = validateValue(JSON.parse(badText), schemaC, '产出').errors
+  const retryPrompt2 = retryPrompt(P('a'), errors, { attempt: 2, maxAttempts: 2 }) // 末次重派 → 带 nudge
+  const bus = makeEvents()
+  const clock = manualClock(112_000)
+  const { p, journal, driver } = rig({
+    runId: 'run-schema-exhaust',
+    steps: [step('a', [], { schema: schemaC, maxAttempts: 2 })],
+    scenarios: [sc('a', [{ status: 'done', text: badText }]), { name: 'a-retry', match: { prompt: retryPrompt2 }, result: [{ status: 'done', text: badText }] }],
+    now: clock,
+    retry: { cooldownMs: 100 },
+    events: bus.events,
+  })
+  await until(() => createIds(driver).length >= 1, 'a 派发')
+  bus.feed(idleEv())
+  await until(() => journal.getStepState('a')?.state === 'failed', '首次校验失败')
+  clock.advance(100)
+  bus.feed(idleEv())
+  await until(() => createIds(driver).length >= 2, '重派（末次，prompt 带 nudge）')
+  bus.feed(idleEv())
+  const out = await settle(p)
+  assert.equal(out.status, 'failed', '耗尽 → run failed（未触熔断：仅 1 计）')
+  const exhaustedMove = journal.getStepState('a').history.filter((e) => e.to === 'failed').at(-1)
+  assert.deepEqual(
+    exhaustedMove.payload,
+    { reason: 'schema-invalid', errors, attempt: 2, retryNote: '尝试已耗尽（2/2），不再重派' },
+    '耗尽 stamp 记「为何不重试」',
+  )
+  assert.equal(createIds(driver).length, 2, '恰初派 + 1 重派')
+  assert.equal(out.steps.a.retryPending, undefined, '耗尽后无 retryPending')
+  ok('P1.2 schema 耗尽：末次重派带 nudge → failed 记「尝试已耗尽」→ run failed（未触熔断）')
+}
+
+// ---- 10. P1.2 outputs 盘上检查（missing→重派→文件出现→done+下游；耗尽；~/ 展开；非文件；零影响）----
+console.log('10. P1.2 outputs 盘上检查')
+{
+  // 10a. 缺 → cooldown 重派 → 文件落盘 → done + 下游正常派发；payload 带 missing 展开路径。
+  const bus = makeEvents()
+  const clock = manualClock(120_000)
+  const ffs = fakeFs()
+  const retryPrompt2 = retryPrompt(P('a'), ['产出文件缺失：/data/out.json'], { attempt: 2, maxAttempts: 3 })
+  const { p, journal, driver } = rig({
+    runId: 'run-outputs-retry',
+    steps: [step('a', [], { outputs: ['/data/out.json'] }), step('b', ['a'])],
+    scenarios: [sc('a', [{ status: 'done', text: 'ok' }]), { name: 'a-retry', match: { prompt: retryPrompt2 }, result: [{ status: 'done', text: 'ok-2' }] }, sc('b', [{ status: 'done', text: 'B 完' }])],
+    now: clock,
+    retry: { cooldownMs: 100 },
+    fs: ffs,
+    events: bus.events,
+  })
+  await until(() => createIds(driver).length >= 1, 'a 派发')
+  bus.feed(idleEv())
+  await until(() => journal.getStepState('a')?.state === 'failed', 'outputs 缺 → failed')
+  const failedMove = journal.getStepState('a').history.find((e) => e.from === 'running' && e.to === 'failed')
+  assert.deepEqual(
+    failedMove.payload,
+    { reason: 'outputs-missing', missing: ['/data/out.json'], attempt: 1, retryNote: 'cooldown 挂起：第 2/3 次尝试将在固定 cooldown 100ms 后重派' },
+    'outputs 失败 payload = {reason, missing[], attempt, retryNote}',
+  )
+  clock.advance(100)
+  bus.feed(idleEv())
+  await until(() => createIds(driver).length >= 2, 'cooldown 到期重派')
+  assert.equal(createIds(driver)[1], retryPrompt2, '重派 prompt 附「产出文件缺失」错误清单（F6 同款）')
+  ffs.files.add('/data/out.json') // 文件在第 2 次尝试判定前落盘
+  bus.feed(idleEv())
+  await until(() => journal.getStepState('a')?.state === 'done', '文件在 → 第 2 次 done')
+  assert.equal(journal.getStepState('a').attempts, 2, 'attempts=2')
+  bus.feed(idleEv())
+  const out = await settle(p)
+  assert.equal(out.status, 'completed', 'run completed')
+  assert.deepEqual(createIds(driver).slice(2), [P('b')], '下游 b 在 a done 后正常派发')
+  assert.equal(out.steps.b.text, 'B 完', '下游照常完成')
+  ok('P1.2 outputs：缺→重派（missing 清单附言）→ 文件落盘 → done + 下游派发（m4 report 步场景）')
+}
+{
+  // 10b. 耗尽：maxAttempts=2 一直缺 → failed 记「尝试已耗尽」+ 下游未派先废 superseded。
+  const bus = makeEvents()
+  const clock = manualClock(121_000)
+  const ffs = fakeFs()
+  const retryPrompt2 = retryPrompt(P('a'), ['产出文件缺失：/data/out.json'], { attempt: 2, maxAttempts: 2 })
+  const { p, journal, driver, storage } = rig({
+    runId: 'run-outputs-exhaust',
+    steps: [step('a', [], { outputs: ['/data/out.json'], maxAttempts: 2 }), step('b', ['a'])],
+    scenarios: [sc('a', [{ status: 'done', text: 'ok' }]), { name: 'a-retry', match: { prompt: retryPrompt2 }, result: [{ status: 'done', text: 'ok' }] }, sc('b', [{ status: 'done', text: 'B 完' }])],
+    now: clock,
+    retry: { cooldownMs: 100 },
+    fs: ffs,
+    events: bus.events,
+  })
+  await until(() => createIds(driver).length >= 1, 'a 派发')
+  bus.feed(idleEv())
+  await until(() => journal.getStepState('a')?.state === 'failed', '首次缺')
+  clock.advance(100)
+  bus.feed(idleEv())
+  await until(() => createIds(driver).length >= 2, '重派')
+  bus.feed(idleEv())
+  await until(() => journal.getStepState('b')?.state === 'superseded', '耗尽 → 下游未派先废')
+  const out = await settle(p)
+  assert.equal(out.status, 'failed', '耗尽 → run failed')
+  const exhaustedMove = journal.getStepState('a').history.filter((e) => e.to === 'failed').at(-1)
+  assert.deepEqual(
+    exhaustedMove.payload,
+    { reason: 'outputs-missing', missing: ['/data/out.json'], attempt: 2, retryNote: '尝试已耗尽（2/2），不再重派' },
+    '耗尽 stamp 记「为何不重试」+ missing 路径保留',
+  )
+  assert.deepEqual([out.failed, out.superseded], [['a'], ['b']], 'b superseded（payload via a）')
+  assert.equal(journal.getStepState('b').history.at(-1).payload.via, 'a', '废源 = a')
+  assert.ok(!journalEventTypes(storage).includes('run-blocked'), '单步耗尽未触熔断')
+  ok('P1.2 outputs 耗尽：failed 带 missing + 「尝试已耗尽」→ 下游未派先废')
+}
+{
+  // 10c. ~/ 展开：引擎以注入 homedir 展开（其余字面），missing 记展开后路径。
+  const bus = makeEvents()
+  const clock = manualClock(122_000)
+  const ffs = fakeFs({ home: '/home/user' })
+  const { p, journal, driver } = rig({
+    runId: 'run-outputs-home',
+    steps: [step('h', [], { outputs: ['~/reports/x.json'], maxAttempts: 1 })],
+    scenarios: [sc('h', [{ status: 'done', text: 'ok' }])],
+    now: clock,
+    fs: ffs,
+    events: bus.events,
+  })
+  await until(() => createIds(driver).length >= 1, 'h 派发')
+  bus.feed(idleEv())
+  await until(() => journal.getStepState('h')?.state === 'failed', '~/ 缺 → failed')
+  const payload = journal.getStepState('h').history.find((e) => e.to === 'failed').payload
+  assert.deepEqual(payload.missing, ['/home/user/reports/x.json'], 'missing 记 ~/ 展开后的绝对路径')
+  assert.deepEqual(ffs.calls.existsSync, ['/home/user/reports/x.json'], 'fs 检查用展开路径')
+  const out = await settle(p)
+  assert.equal(out.status, 'failed', 'maxAttempts=1：耗尽即 failed（零重派）')
+  assert.equal(createIds(driver).length, 1, '恰 1 次 create')
+  ok('P1.2 outputs ~/：注入 homedir 展开（/home/user/reports/x.json）+ maxAttempts=1 零重派')
+}
+{
+  // 10d. 存在但非文件（目录）→ 同判缺（必须 isFile）。
+  const bus = makeEvents()
+  const clock = manualClock(123_000)
+  const ffs = fakeFs({ dirs: ['/data'] })
+  const { p, journal, driver } = rig({
+    runId: 'run-outputs-dir',
+    steps: [step('d', [], { outputs: ['/data'], maxAttempts: 1 })],
+    scenarios: [sc('d', [{ status: 'done', text: 'ok' }])],
+    now: clock,
+    fs: ffs,
+    events: bus.events,
+  })
+  await until(() => createIds(driver).length >= 1, 'd 派发')
+  bus.feed(idleEv())
+  await until(() => journal.getStepState('d')?.state === 'failed', '目录 → failed')
+  assert.deepEqual(journal.getStepState('d').history.find((e) => e.to === 'failed').payload.missing, ['/data'], '目录记入 missing')
+  await settle(p)
+  ok('P1.2 outputs 非文件：existsSync 真 + isFile 假 → 同判缺')
+}
+{
+  // 10e. 无字段无 schema → 零影响：fs 面零调用，普通完成；schema-only 步同样零 fs 调用。
+  const bus = makeEvents()
+  const clock = manualClock(124_000)
+  const ffs = fakeFs()
+  const { p, driver } = rig({
+    runId: 'run-zero-impact',
+    steps: [step('plain'), step('schemaonly', ['plain'], { schema: { type: 'object' } })],
+    scenarios: [sc('plain', [{ status: 'done', text: '纯文本，不是 JSON' }]), sc('schemaonly', [{ status: 'done', text: '{"a":1}' }])],
+    now: clock,
+    fs: ffs,
+    events: bus.events,
+  })
+  await until(() => createIds(driver).length >= 1, 'plain 派发')
+  bus.feed(idleEv()) // plain done → schemaonly 就绪派发
+  await until(() => createIds(driver).length >= 2, 'schemaonly 补位派发')
+  bus.feed(idleEv())
+  const out = await settle(p)
+  assert.equal(out.status, 'completed', '无 outputs 无 schema → 零影响完成')
+  assert.deepEqual(ffs.calls.existsSync, [], 'fs 面零调用（校验路径零接触）')
+  assert.equal(ffs.calls.homedir, 0, 'homedir 零调用')
+  assert.deepEqual(createIds(driver), [P('plain'), P('schemaonly')], '普通拓扑照旧')
+  ok('P1.2 零影响：无字段无 schema → fs 面零调用、普通完成；schema-only 亦零 fs 调用')
+}
+
+// ---- 11. P1.2 重试语义与熔断交互（第 3 条：耗尽先于熔断；pendingRetry 不计；结构性/timeout 不进环）----
+console.log('11. P1.2 重试语义与熔断交互')
+{
+  // 11a. pendingRetry 不计入 consecutiveFailures：两步 driver 级失败（计 2）+ 一次校验失败（挂起不计）
+  //      → 重试成功清零 → run failed（非 blocked）且无 run-blocked 事件。
+  const bus = makeEvents()
+  const clock = manualClock(130_000)
+  const ffs = fakeFs()
+  const retryPrompt2 = retryPrompt(P('r'), ['产出文件缺失：/r/out.json'], { attempt: 2, maxAttempts: 3 })
+  const { p, journal, driver, storage } = rig({
+    runId: 'run-retry-count',
+    steps: [step('f1'), step('f2'), step('r', [], { outputs: ['/r/out.json'] })],
+    scenarios: [sc('f1', [{ status: 'failed', errorPart: 'x1' }]), sc('f2', [{ status: 'failed', errorPart: 'x2' }]), sc('r', [{ status: 'done', text: 'ok' }]), { name: 'r-retry', match: { prompt: retryPrompt2 }, result: [{ status: 'done', text: 'ok' }] }],
+    now: clock,
+    retry: { cooldownMs: 100 },
+    fs: ffs,
+    events: bus.events,
+  })
+  await until(() => createIds(driver).length >= 3, '三步派发')
+  bus.feed(idleEv()) // f1/f2 driver 失败（计 2）；r 校验失败（挂起，不计 → 未触熔断）
+  await until(() => journal.getStepState('r')?.state === 'failed', 'r 校验失败挂起')
+  clock.advance(100)
+  ffs.files.add('/r/out.json')
+  bus.feed(idleEv())
+  await until(() => createIds(driver).length >= 4, 'r cooldown 到期重派')
+  bus.feed(idleEv())
+  const out = await settle(p)
+  assert.equal(out.status, 'failed', 'f1/f2 失败 → run failed（若挂起计入则 = 3 连败 → blocked）')
+  assert.ok(!journalEventTypes(storage).includes('run-blocked'), '无 run-blocked（pendingRetry 未计入）')
+  assert.deepEqual([out.completed, out.failed], [['r'], ['f1', 'f2']], 'r 重试成功 completed；f1/f2 独立 failed')
+  assert.equal(journal.getStepState('r').attempts, 2, 'r attempts=2')
+  ok('P1.2 计数窄域：pendingRetry 不计入 consecutiveFailures（2 实败 + 1 挂起未触熔断，成功清零）')
+}
+{
+  // 11b. 耗尽触发熔断：f1/f2 实败（计 2）+ r 耗尽那次 failed 计入（第 3）→ run blocked
+  //      reason=consecutive-failures，步级 payload 仍为 outputs-missing。
+  const bus = makeEvents()
+  const clock = manualClock(131_000)
+  const ffs = fakeFs()
+  const { p, journal, driver, storage } = rig({
+    runId: 'run-exhaust-breaker',
+    steps: [step('f1'), step('f2'), step('r', [], { outputs: ['/r/out.json'], maxAttempts: 1 })],
+    scenarios: [sc('f1', [{ status: 'failed', errorPart: 'x1' }]), sc('f2', [{ status: 'failed', errorPart: 'x2' }]), sc('r', [{ status: 'done', text: 'ok' }])],
+    now: clock,
+    fs: ffs,
+    events: bus.events,
+  })
+  await until(() => createIds(driver).length >= 3, '三步派发')
+  bus.feed(idleEv())
+  const out = await settle(p)
+  assert.deepEqual([out.status, out.reason], ['blocked', 'consecutive-failures'], '耗尽那次计入 → 3 连败熔断')
+  assert.deepEqual(out.blocked, { trigger: 'consecutive-failures', failures: RUN_FAILURE_LIMIT, lastStep: 'r' }, '熔断信息')
+  assert.ok(journalEventTypes(storage).includes('run-blocked'), 'journal 记 run-blocked')
+  const payload = journal.getStepState('r').history.find((e) => e.to === 'failed').payload
+  assert.deepEqual(payload, { reason: 'outputs-missing', missing: ['/r/out.json'], attempt: 1, retryNote: '尝试已耗尽（1/1），不再重派' }, '熔断收口时步级 payload 仍为 outputs-missing')
+  assert.equal(out.steps.r.retryPending, undefined, '耗尽无 retryPending')
+  ok('P1.2 耗尽先于熔断：耗尽 failed 计入 → blocked(consecutive-failures)，步级 payload 仍 outputs-missing')
+}
+{
+  // 11c. pendingRetry 非空时熔断收口：兄弟三连败触发熔断打断冷却重试 → run blocked(reason) ∧ 挂起步显示 retry-pending。
+  const bus = makeEvents()
+  const clock = manualClock(132_000)
+  const ffs = fakeFs()
+  const { p, journal, driver, storage } = rig({
+    runId: 'run-breaker-pending',
+    steps: [step('r', [], { outputs: ['/r/out.json'] }), step('s1'), step('s2'), step('s3')],
+    scenarios: [sc('r', [{ status: 'done', text: 'ok' }]), sc('s1', [{ status: 'failed', errorPart: 'y1' }]), sc('s2', [{ status: 'failed', errorPart: 'y2' }]), sc('s3', [{ status: 'failed', errorPart: 'y3' }])],
+    now: clock,
+    fs: ffs,
+    events: bus.events, // cooldown 缺省 RETRY_COOLDOWN_MS=30s；时钟冻结 → cooldown 永不到期，挂起保持
+  })
+  await until(() => createIds(driver).length >= 4, '四步派发')
+  bus.feed(idleEv()) // 一轮 pollAll：r 挂起（不计）+ s1/s2/s3 三连败 → 熔断
+  const out = await settle(p)
+  assert.deepEqual([out.status, out.reason], ['blocked', 'consecutive-failures'], '熔断收口（打断冷却重试）')
+  assert.equal(createIds(driver).filter((x) => x === P('r')).length, 1, 'r 恰 1 次 create（cooldown 重派被熔断打断）')
+  assert.equal(out.steps.r.attempts, 1, 'r 无第二次尝试')
+  assert.equal(out.steps.r.retryPending, `failed(retry-pending, attempt 1/3, cooldown 剩 ${RETRY_COOLDOWN_MS / 1000}s)`, '挂起步显示 failed(retry-pending, attempt N/M, cooldown 剩 Xs)（默认 cooldown 取导出常量，不复制数字）')
+  const tailPayload = journal.getStepState('r').history.find((e) => e.to === 'failed').payload
+  assert.ok(tailPayload.retryNote.includes('cooldown 挂起'), 'journal 侧 stamp 记 cooldown 挂起')
+  assert.equal(journal.getStepState('r').state, 'failed', 'journal 态仍 failed（挂起是调度器视角的非终态）')
+  assert.ok(journalEventTypes(storage).includes('run-blocked'), 'journal 记 run-blocked')
+  assert.ok(RETRYABLE_REASONS.includes('outputs-missing') && RETRYABLE_REASONS.includes('schema-invalid'), '可重试分类表恰两类（导出常量核对）')
+  ok('P1.2 熔断打断冷却重试：blocked(consecutive-failures) ∧ 挂起步显示 retry-pending（attempt 1/3, 剩 30s）')
+}
+{
+  // 11d. 结构性错误不进重试环（四臂，全部带 outputs 声明——若误入重试环会有第二次 create）：
+  //      create 抛错 / create 缺 sessionId / result 抛错 / result status='failed'。
+  const arm = async ({ label, driver: d }) => {
+    const bus = makeEvents()
+    const clock = manualClock(133_000)
+    const ffs = fakeFs()
+    const { p, journal } = rig({
+      runId: `run-structural-${label}`,
+      steps: [step('a', [], { outputs: ['/a/out.json'] })],
+      driver: d,
+      fs: ffs,
+      now: clock,
+      events: bus.events,
+    })
+    await until(() => journal.getStepState('a')?.state !== null && journal.getStepState('a')?.state !== 'declared', `${label} 已记账`)
+    bus.feed(idleEv()) // 触发首轮 poll（create 抛错臂早在派发期收敛，轮询对它无害）
+    const out = await settle(p)
+    assert.equal(out.status, 'failed', `${label} → run failed`)
+    assert.equal(out.steps.a.attempts, 1, `${label} attempts=1（零重派）`)
+    assert.equal(out.steps.a.retryPending, undefined, `${label} 无 retryPending`)
+    return out
+  }
+  // 臂 1：create 抛错（无场景 → E1_DRIVER_NO_SCENARIO）。
+  await arm({ label: 'create-throw', driver: createDriver('mock', { scenarios: [], now: manualClock() }) })
+  // 臂 2：create 缺非空 sessionId（E1_ENGINE_BAD_SESSION）。
+  await arm({ label: 'bad-session', driver: fakeDriver({ create: async () => ({}) }) })
+  // 臂 3：result 抛错（running→failed 既有终态路径）。
+  await arm({
+    label: 'result-throw',
+    driver: fakeDriver({
+      result: async () => {
+        throw new Error('引擎掉线')
+      },
+    }),
+  })
+  // 臂 4：result status='failed'（宁可失败，不悬挂——保持既有终态语义）。
+  await arm({ label: 'status-failed', driver: fakeDriver({ create: async () => ({ sessionId: 'sess_x' }), result: async () => ({ status: 'failed', errorPart: 'boom' }) }) })
+  ok('P1.2 结构性四臂（create 抛/缺 sessionId/result 抛/status failed）：带 outputs 声明也不进重试环（attempts 恒 1）')
+}
+{
+  // 11e. timeout 不进重试环（sweepTimeouts 终态；ask.js F6 同口径）——带 outputs 声明也零重派。
+  const clock = manualClock(134_000)
+  const ffs = fakeFs()
+  const { p, journal, driver } = rig({
+    runId: 'run-timeout-no-retry',
+    steps: [step('t', [], { outputs: ['/t/out.json'], timeoutMs: 1000 })],
+    scenarios: [sc('t', [{ status: 'running' }])],
+    now: clock,
+    fs: ffs,
+    events: silentEvents,
+  })
+  await until(() => journal.getStepState('t')?.state === 'running', 't 入飞')
+  clock.advance(1000)
+  await until(() => journal.getStepState('t')?.state === 'failed', '超时兜底触发')
+  assert.deepEqual(journal.getStepState('t').history.find((e) => e.to === 'failed').payload, { reason: 'timeout', timeoutMs: 1000, elapsedMs: 1000 }, 'timeout payload 原样（分类表：timeout 不进重试环）')
+  const out = await settle(p)
+  assert.equal(out.status, 'failed', 'run failed')
+  assert.equal(createIds(driver).length, 1, '恰 1 次 create（timeout 后零重派）')
+  assert.equal(out.steps.t.attempts, 1, 'attempts=1')
+  ok('P1.2 timeout 不进重试环：sweepTimeouts 终态 + 零重派 + payload 原样')
+}
+
+// ---- 12. P1.2 cooldown 生效与跳过（判定全走注入时钟）----
+console.log('12. P1.2 cooldown 生效与跳过')
+{
+  const bus = makeEvents()
+  const clock = manualClock(140_000)
+  const ffs = fakeFs()
+  const { p, journal, driver } = rig({
+    runId: 'run-cooldown-gate',
+    steps: [step('c', [], { outputs: ['/c/out.json'] })],
+    scenarios: [sc('c', [{ status: 'done', text: 'ok' }]), { name: 'c-retry', match: { prompt: retryPrompt(P('c'), ['产出文件缺失：/c/out.json'], { attempt: 2, maxAttempts: 3 }) }, result: [{ status: 'done', text: 'ok' }] }],
+    now: clock,
+    retry: { cooldownMs: 200 },
+    fs: ffs,
+    events: bus.events,
+  })
+  await until(() => createIds(driver).length >= 1, 'c 派发')
+  bus.feed(idleEv())
+  await until(() => journal.getStepState('c')?.state === 'failed', '首次缺（failedAt 记账）')
+  clock.advance(199) // cooldown 未到
+  bus.feed(idleEv())
+  await tick()
+  await tick()
+  await tick()
+  assert.equal(createIds(driver).length, 1, 'cooldown 未到 → 跳过本轮（注入时钟判定）')
+  clock.advance(1) // 恰满 200ms
+  bus.feed(idleEv())
+  await until(() => createIds(driver).length >= 2, 'cooldown 到期 → 重派')
+  const dispatches = journal.getStepState('c').history.filter((e) => e.to === 'dispatching')
+  assert.equal(dispatches.length, 2, '初派 + cooldown 重派（failed→dispatching 唯一重入边）')
+  assert.equal(journal.getStepState('c').lastDispatchAt, dispatches[1].at, '重派窗口随 lastDispatchAt 重开（P1.2 第 4 条，P4-E 恢复派发同款记账）')
+  ffs.files.add('/c/out.json')
+  bus.feed(idleEv())
+  const out = await settle(p)
+  assert.equal(out.status, 'completed', '重试成功完成')
+  ok('P1.2 cooldown 生效与跳过：199ms 跳过 / 200ms 重派（固定间隔、注入时钟判定、零新定时器）')
+}
+
+// ---- 13. P1.2 叶子步 cooldown 期 run 不收口（其余全终态也不收）----
+console.log('13. P1.2 叶子步 cooldown 期不收口')
+{
+  const bus = makeEvents()
+  const clock = manualClock(150_000)
+  const ffs = fakeFs()
+  const retryPrompt2 = retryPrompt(P('leaf'), ['产出文件缺失：/leaf/r.json'], { attempt: 2, maxAttempts: 3 })
+  const { p, journal, driver } = rig({
+    runId: 'run-leaf-hold',
+    steps: [step('u'), step('leaf', ['u'], { outputs: ['/leaf/r.json'] })],
+    scenarios: [sc('u', [{ status: 'running' }, { status: 'done', text: 'U 完' }]), sc('leaf', [{ status: 'done', text: 'L1' }]), { name: 'leaf-retry', match: { prompt: retryPrompt2 }, result: [{ status: 'done', text: 'L2' }] } ],
+    now: clock,
+    retry: { cooldownMs: 200 },
+    fs: ffs,
+    events: bus.events,
+  })
+  let resolved = false
+  void p.then(() => {
+    resolved = true
+  })
+  await until(() => createIds(driver).length >= 1, 'u 派发')
+  bus.feed(idleEv()) // u 首轮 poll（running）
+  bus.feed(idleEv()) // u 二轮 poll done → leaf 就绪派发（同一唤醒内 dispatchReady）
+  await until(() => createIds(driver).length >= 2, 'leaf 补位派发')
+  bus.feed(idleEv()) // leaf done 产出但文件缺 → 挂起（pendingRetry）
+  await until(() => journal.getStepState('leaf')?.state === 'failed', 'leaf 校验失败挂起')
+  clock.advance(50) // cooldown 未到：其余全终态（u done）也不许收口
+  bus.feed(idleEv())
+  for (let i = 0; i < 30; i += 1) await tick()
+  assert.equal(resolved, false, '叶子步 cooldown 期：其余全终态 ∧ pendingRetry 非空 → run 不收口')
+  ffs.files.add('/leaf/r.json')
+  clock.advance(150) // 恰满 cooldown
+  bus.feed(idleEv())
+  await until(() => createIds(driver).length >= 3, 'cooldown 到期重派 leaf')
+  bus.feed(idleEv())
+  await until(() => journal.getStepState('leaf')?.state === 'done', '重试成功 done')
+  const out = await settle(p)
+  assert.equal(out.status, 'completed', '重试耗尽前不收口、成功后正确收口')
+  assert.deepEqual([out.completed, out.failed], [['u', 'leaf'], []], '全步 done')
+  assert.deepEqual([out.steps.leaf.attempts, out.steps.leaf.text, out.steps.leaf.retryPending], [2, 'L2', undefined], 'leaf attempts=2、text 取第 2 次、挂起痕迹清除')
+  ok('P1.2 叶子步 cooldown 期不收口：挂起期 resolved=false → 重试成功后 completed（m4 report 步场景防回归）')
+}
+
+// ---- 14. P1.2 旧 journal record（无 version 字段）可读（调度器续跑面）----
+console.log('14. 旧 journal record 兼容')
+{
+  const storage = memStorage()
+  const legacyClock = manualClock(160_000)
+  const j0 = createJournal({ storage, runId: 'run-legacy', now: legacyClock })
+  for (const [from, to, payload] of [[null, 'declared'], ['declared', 'dispatching'], ['dispatching', 'running', { sessionId: 'sess_w' }], ['running', 'done', { sessionId: 'sess_w', result: { text: '旧文' } }]]) {
+    assert.equal(j0.appendStepState('w', from, to, payload).ok, true, `播种 ${from}→${to}`)
+  }
+  const rec = JSON.parse(storage.read())
+  assert.equal(rec.version, 1, '新写 record 带版本')
+  delete rec.version // 退化成旧形状
+  storage.write(JSON.stringify(rec))
+  const warns = []
+  const origWarn = console.warn
+  console.warn = (m) => warns.push(String(m))
+  let out
+  try {
+    out = await run({ runId: 'run-legacy', steps: [step('w')] }, {
+      journal: createJournal({ storage, runId: 'run-legacy', now: manualClock(7_000) }),
+      driver: createDriver('mock', { scenarios: [], now: manualClock() }),
+      now: manualClock(7_000),
+    })
+  } finally {
+    console.warn = origWarn
+  }
+  assert.equal(out.status, 'completed', '旧 record（无版本字段）→ done 步续跑平凡完成')
+  assert.deepEqual([out.steps.w.state, out.steps.w.attempts, out.steps.w.sessionId, out.steps.w.text], ['done', 1, 'sess_w', '旧文'], '盘上 payload 回收不受版本字段影响')
+  assert.ok(warns.some((m) => m.includes('version')), '装载记了兼容 warn（warn 只发不阻塞）')
+  ok('P1.2 旧 record 无版本字段：调度器续跑可读（done 零 driver 调用）+ 兼容 warn')
+}
+
+// ---- 15. P1.2 参数面（retry/fs TypeError 分轨）+ escalation×schema 判定序 ----
+console.log('15. P1.2 参数面与判定序')
+{
+  const J = () => createJournal({ storage: memStorage(), runId: 'run-p', now: manualClock() })
+  const D = (scenarios = []) => createDriver('mock', { scenarios, now: manualClock() })
+  const good = { runId: 'run-p', steps: [step('a')] }
+  await assert.rejects(run(good, { journal: J(), driver: D(), retry: 'x' }), TypeError, 'retry 非对象应拒')
+  await assert.rejects(run(good, { journal: J(), driver: D(), retry: { cooldownMs: -1 } }), TypeError, 'cooldownMs 负数应拒')
+  await assert.rejects(run(good, { journal: J(), driver: D(), retry: { cooldownMs: 1.5 } }), TypeError, 'cooldownMs 非整数应拒')
+  await assert.rejects(run(good, { journal: J(), driver: D(), fs: {} }), TypeError, 'fs 缺面应拒')
+  await assert.rejects(run(good, { journal: J(), driver: D(), fs: { existsSync: 1, statSync: () => {}, homedir: () => '' } }), TypeError, 'fs 面非函数应拒')
+  // 合法边：retry null / cooldownMs 0 / fs null（缺省面）都收。
+  const bus = makeEvents()
+  bus.feed(idleEv()) // 预入队：run 派发 a 后首次 park 即消费（无事件则永不 poll，run 不终局）
+  const out0 = await run(good, { journal: J(), driver: D([sc('a', [{ status: 'done', text: '好' }])]), retry: { cooldownMs: 0 }, fs: null, now: manualClock(), events: bus.events })
+  assert.equal(out0.status, 'completed', 'cooldownMs=0 + fs=null（缺省面）合法')
+  // escalation×schema 判定序：问句产出是挂起不是坏产出——escalation 在前，不过 schema、不进重试环。
+  bus.feed(idleEv())
+  const escalateSeen = []
+  const outE = await run(
+    { runId: 'run-esc-schema', steps: [step('q', [], { schema: { type: 'object', required: ['answer'] } })] },
+    {
+      journal: J(),
+      driver: D([sc('q', [{ status: 'done', text: '{"question":"继续吗?"}' }])]),
+      escalation: { onEscalate: (r) => escalateSeen.push(r.stepId) },
+      now: manualClock(),
+      events: bus.events,
+    },
+  )
+  assert.equal(outE.reason, 'escalation-pending', '问句产出 → escalation 挂起（notify-only 终局）')
+  assert.deepEqual(escalateSeen, ['q'], 'onEscalate 恰一次')
+  assert.equal(outE.steps.q.state, 'blocked', '步 blocked（非 schema-invalid 重试环）')
+  assert.equal(outE.steps.q.retryPending, undefined, '无重试挂起痕迹')
+  ok('P1.2 参数面：retry/fs 五路 TypeError + cooldownMs=0/fs=null 合法边 + escalation 在 schema 前不过校验')
 }
 
 console.log(`\n引擎调度器测试（S4 门：T3.2 + T3.2b + T3.5 scheduler 侧）：${passed} 项全过`)

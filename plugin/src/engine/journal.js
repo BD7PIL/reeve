@@ -43,6 +43,15 @@ import { join } from 'node:path'
 export const JOURNAL_STATES = Object.freeze(['declared', 'dispatching', 'running', 'done', 'failed', 'blocked', 'superseded'])
 
 /**
+ * journal record 形状版本（P1.2 第 8 条，lightflow passport_version 先例）：emptyRecord 写
+ * version: 1，为 record 形状未来演进留迁移缝。读旧 record（无 version 字段——本版本之前的
+ * 盘上真相）兼容放行 + console.warn 一条（createJournal 装载路径记，validateJournalRecord
+ * 保持纯函数不吭声）；带 version 但 ≠ 本版本的一律 torn（shape-invalid）——未来形状不猜，
+ * 宁可 fail-closed 让人来看，不静默误读。
+ */
+export const JOURNAL_RECORD_VERSION = 1
+
+/**
  * 合法迁移表。键=当前态，值=允许的下一态；null（未注册）只允许到 declared（播种）。
  * failed→dispatching（attempt 循环）与 blocked→dispatching（P4-E 问句答复后恢复）是仅有的
  * 两条重入边；done/superseded 无出边。
@@ -127,6 +136,7 @@ function stepShapeOk(step) {
 /** 顶层形状校验（plan-gate validateStoreRecord 同哲学：顶层从严、深层适度）。合法返回原值，否则 null。 */
 export function validateJournalRecord(value) {
   if (!isPlainObject(value)) return null
+  if (value.version !== undefined && value.version !== JOURNAL_RECORD_VERSION) return null // 旧 record 无 version 放行；未来版本不猜
   if (typeof value.runId !== 'string' || value.runId.length === 0) return null
   if (!isFiniteNum(value.updatedAt)) return null
   if (!isPlainObject(value.steps)) return null
@@ -140,7 +150,7 @@ export function validateJournalRecord(value) {
 }
 
 function emptyRecord(runId, nowMs) {
-  return { runId, updatedAt: nowMs, steps: {}, engineSessions: [], events: [] }
+  return { version: JOURNAL_RECORD_VERSION, runId, updatedAt: nowMs, steps: {}, engineSessions: [], events: [] }
 }
 
 // ── journal 核心 ─────────────────────────────────────────────────────────────
@@ -197,7 +207,15 @@ export function createJournal({ storage, runId, fault = null, now, onEvent } = {
         const rec = validateJournalRecord(parsed)
         if (!rec) torn = { reason: 'shape-invalid' }
         else if (rec.runId !== runId) torn = { reason: 'run-mismatch' }
-        else record = rec
+        else {
+          // 旧版本 record（无 version 字段）兼容放行：按 v1 解释并就地补版本戳（下次落盘即带上）；
+          // 显式记 warn（P1.2 第 8 条迁移缝）。
+          const legacy = rec.version === undefined
+          if (legacy) {
+            console.warn(`[reeve journal] run "${runId}"：盘上 record 缺 version 字段（旧版本形状），按 v${JOURNAL_RECORD_VERSION} 兼容读取；下次落盘将补写 version`)
+          }
+          record = legacy ? { ...rec, version: JOURNAL_RECORD_VERSION } : rec
+        }
       }
     }
   }

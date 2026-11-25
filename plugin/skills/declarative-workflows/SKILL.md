@@ -1,6 +1,6 @@
 ---
 name: declarative-workflows
-description: "reeve 引擎 workflow 创作契约（脚本路径为主，声明为简单路径）。触发条件：请求是多步编排、长程 job、需要确定性门禁（F.run 机器裁决）或人裁决挂起（hole/escalate）时主动使用；也用于写、调试、重跑、补段（hole patch）reeve workflow 脚本，或评审、修改、排障既有脚本与声明文件。单次委派或几个独立查询不适用（直接委派即可）。"
+description: "reeve 引擎 workflow 创作契约（脚本路径为主，声明为简单路径）。触发条件：请求是多步编排、动态工作流（dynamic workflow/工作流编排——本 skill 即 reeve 版 dynamic workflows）、长程 job、需要确定性门禁（F.run 机器裁决）或人裁决挂起（hole/escalate）时主动使用；也用于写、调试、重跑、补段（hole patch）reeve workflow 脚本，或评审、修改、排障既有脚本与声明文件。单次委派或几个独立查询不适用（直接委派即可）。"
 when_to_use: "多步编排 / 长程任务 / 需要门禁的请求 → 主动使用。复杂编排（动态控制流：循环到门禁绿、分支、逐项流水线、阶段间传值）走脚本路径（§1–§10）；脚本失败后的机械化修订走补段章（§12）；简单流程（拓扑一次画得完的 DAG、可能要改常数重跑）走声明章（§11）。"
 license: Apache-2.0
 ---
@@ -33,10 +33,15 @@ JavaScript——`Promise.all`、`for` 循环、`if` 分支都是你的；引擎�
 
 ## 1. 脚本是什么：函数体 + facade + 沙箱边界
 
-**脚本是裸函数体。** 你提交一段 ESM JavaScript 函数体源码，引擎原样包装为
+**脚本是裸函数体。** 你提交一段 ESM JavaScript（或 TS）函数体源码，引擎原样包装为
 `async function main(F){…}` 在 Node vm 沙箱里执行：顶层 `await` 天然可用，最后的 `return`
-值就是 run 的结果。v1 不接 TS（无类型检查器把关——结果形状的把关在运行时 schema 校验，§4）。
-没有 `import`——函数体包装天然禁止（动态 `import()` 同样炸），**F 就是全部依赖**。
+值就是 run 的结果。**TS 脚本（文件名 .ts）= TS 语法 only**：插件自带 esbuild 把类型剥掉后按
+同一包装喂 vm——**没有类型检查器把关**（类型注解错了也不报，esbuild 只剥不查）；结果形状的
+把关仍在运行时 schema 校验（§4）。两条 TS 纪律：① **坐标系唯一 = .ts 源文本**——ask 作用点
+证据、补段边界都落在 .ts 源码上（引擎经 sourcemap 把 vm 栈坐标映回源码），改尾部/改头部的
+resume 语义与 JS 逐位一致（§9）；② esbuild 平台二进制缺失时 **.ts 显式报错、禁静默回退
+JS**——装好依赖再跑。JSDoc `@schema` 注释不合成 schema（schema 仍走 `F.ask` opts 显式给，
+§4）。没有 `import`——函数体包装天然禁止（动态 `import()` 同样炸），**F 就是全部依赖**。
 
 **facade 六成员（脚本可见的全部）**：
 
@@ -247,12 +252,17 @@ return {
 
 四个字段各有读者：`conclusion` 是用户所问的答案；`findings` 带证据与状态，让人分得清
 "看到了"与"怀疑有"；`verified` 说这次真的查了什么、怎么查的；`notCovered` 说没查什么、
-为什么——"我们没发现什么"与"我们哪儿都没看"的区别就在这。四项全部用会话语言写。
+为什么——"我们没发现什么"与"我们哪儿都没看"的区别就在这。四项全部用会话语言写。这四
+字段是下游稳定消费的**契约**——不按此形状，基线经验是各脚本发明自家形状（skill 审计
+实测），集成面会碎。
 
 **打捞是结构性的。**脚本 throw = run failed，但 **journal 保留**：已完成的 ask 结果在盘上
 `ask` 事件里，run 结果的 `asks` 镜像也带着它们——第十二步死掉的 run 保得住前十一步的成果。
 所以纪律是：边走边 `F.log`，报告值最后组装进 `return`；别把"全部发现攒一个大数组"当成唯一
-的成果载体——那正是失败时丢掉的东西。
+的成果载体——那正是失败时丢掉的东西。机器读盘上 journal 还有一条单命令：
+`node plugin/src/engine/salvage-report.js --status <journalPath>` 以状态码退出——0 completed /
+1 failed / 2 blocked-escalation / 3 interrupted / 4 journal-torn / 5 unknown（挂起问句未答复
+优先于 failed 判出）。
 
 **交付物。**本表面没有 `artifact.*` 发布面（偏差 A.4）：用户要的文件由 ask 指令让子代理写
 进工作区、报告里 return 路径（"写到 `out/…` 并返回路径"写进 ask）；用户要的答案就是 return
@@ -323,15 +333,19 @@ hole 是**答案**通道，不是**代码**通道——原表面"按发现生长
 **登记。**脚本是盘上的裸函数体文件，经 `review_gate.register(planPath, kind:"workflow-script")`
 登记：语法门用与执行**同一个包装**判定（登记过 = 执行一定能编译，零分叉）；`F.run` 字面量
 命令集静态扫描进评审；**哈希绑定文件全字节**。评审窗口里人看到的就是：脚本源码 + 命令清单
-+ 哈希——这是 §1 威胁模型里运行前的唯一闸门。
++ 哈希——这是 §1 威胁模型里运行前的唯一闸门。**.ts 脚本同一登记面**：语法门对剥类型后的
+文本做同一 vm 编译（零分叉不变），命令字面量扫 .ts 源文本，哈希仍绑 .ts 文件全字节——
+登记纪律与 JS 完全同轨。
 
 **重跑 = resume 缓存，前缀有效逐 ask 按序号返还。**重跑时引擎从 journal 按 callSeq 逐 ask
 复核导入三条件，通过的返还首跑值：零 driver 调用、零 journal 写、缓存命中的 ask 在结果里标
 `cached`。分支决策相同 → 后续 ask 发起序与首跑逐位一致——这是 §1 确定性沙箱存在的理由。
 
 **改脚本 = 前缀导入（v2 作用点位置匹配；推翻 v1「改一字 = 全量重跑」）。**每次 `F.ask` 落账时
-记录三样证据：调用点位置（脚本体 line:col）、prompt 哈希、调用点前脚本前缀哈希。重跑逐 ask
-复核三条件，**任一不过 → 该点起（含）全部弃用真跑，之前的照常导入**：
+记录三样证据：调用点位置（脚本体 line:col）、prompt 哈希、调用点前脚本前缀哈希。**.ts 脚本
+的证据坐标同样落在 .ts 源文本**（引擎经 sourcemap 把 vm 栈坐标映回源码——剥类型不改变
+"改尾部 → 前缀导入、改头部 → 全重跑"的语义）。重跑逐 ask 复核三条件，**任一不过 → 该点起
+（含）全部弃用真跑，之前的照常导入**：
 
 1. **调用点在首个变更字节之前**——调用点前缀哈希与重跑脚本实算相等（调用点之前的字节零变更；
    在调用点之后加行、改尾部不受影响，改头部则全体位移 → 全重跑）；
@@ -434,22 +448,53 @@ return {
 ## 11. 简单路径：声明（降级章）
 
 脚本管复杂编排；**简单流程用声明**——纯数据 DAG，换来的好处是 amend 按步便宜重跑与直渲
-可视化。声明是**纯数据**：一个 `runId` 加一个 `steps` 数组，没有脚本字段。每步六样东西：
-`stepId`、`prompt`、`deps`、`schema?`、`agent?`、`model?`，外加两个预算 `maxAttempts?`（默认
-3，含初派的总尝试上限）/ `timeoutMs?`（默认 900000ms）。核心纪律（详情见 git 历史里上一代
-SKILL.md 全文与本目录 `examples/visual-gate-repair-loop/` 的完整声明示例）：
+可视化。声明是**纯数据**：一个 `runId` 加一个 `steps` 数组，没有脚本字段。每步必填三样
+`stepId`、`prompt`、`deps`，可选四样 `schema?`、`agent?`、`model?`、`outputs?`（产出落盘
+契约，见下），外加两个预算 `maxAttempts?`（默认 3，含初派的总尝试上限）/
+`timeoutMs?`（默认 900000ms）。核心纪律（详情见 git 历史里上一代 SKILL.md 全文与本目录
+`examples/visual-gate-repair-loop/` 的完整声明示例）：
 
-- **deps 是唯一控制流**：无环、无自指、无未知引用；调度按拓扑序就绪集。没有 if / 循环 /
-  结果引用字段——每步 prompt 必须自含（目标、路径、禁做、验收），非空且 ≤ 8000 字符，
-  首行写人话。
+- **deps 是唯一控制流；步间数据流两条正道**：无环、无自指、无未知引用；调度按拓扑序就绪集。
+  没有 if / 循环——deps 只管**调度**（谁先谁后）。步间数据流 = **数据面引用**（小数据，
+  ≤32KiB）或**盘上文件总线**（大数据 / 无 schema 步）。数据面引用写 `{{outputs.<stepId>}}`
+  （整对象）或 `{{outputs.<stepId>.<key>}}`（恰一层 key）：被引用步必须声明 `schema`（无
+  schema 步无结构化产出可引用）且在本步 deps 的传递闭包内；词法无空白容差（`{{ outputs.x }}`
+  不匹配）、stepId 禁 `.`/`}`/空白、深 key 与数组下标不支持（深数据请整对象引用或走文件总线）、
+  一切形如 `{{…}}` 而不匹配语法者一律编译错——**prompt 需要字面花括号时改写文风或走文件总线**。
+  注入上限：单步全部占位符解析值合计 ≤32KiB，超限步 failed 不重试；渲染后 prompt 豁免 8000
+  字符上限（8000 管的是模板本体）。文件总线 = 上游步把产出写进约定路径的文件（配 `outputs`
+  字段），下游步 prompt 指名去读。每步 prompt 必须自含（目标、路径、禁做、验收），
+  非空且 ≤ 8000 字符，首行写人话。
 - **schema 同 §4**（同一套校验子集与"指令自含形状"纪律——每步 prompt 写清产出形状）。
-- **重派口径同脚本**：maxAttempts 3 修 1 催；耗尽 → 步 failed，不冒泡假结果。
+  声明路径的校验时机在步 done 迁移前：调度器拿回复文本过 `schema`（校验通过对象即该步
+  **结构化产出**，随 done 迁移落 journal，写入上限 32KiB）、再查 `outputs` 盘上存在（校验器
+  与脚本路径同一套）；schema/outputs 不过 → 可重试失败（重派口径见下条），产出超 32KiB →
+  `output-over-limit` 终态（确定性失败不重试——大数据走文件总线）。
+- **outputs 是产出落盘契约**（可选，1-8 项文件路径数组）：每项必须是绝对路径（Windows
+  盘符 `C:\…`、UNC `//…`、POSIX 根 `/…`）或 `~/` 前缀（引擎按 `os.homedir()` 展开，其余
+  字面处理）；相对路径与其余形式在声明校验即拒。步 done 判定前引擎逐项检查盘上存在且为
+  **文件**——声明了 outputs 的步，「说完成」不算完成，文件在盘上才算完成。
+- **重派口径与脚本不同**（「同脚本：maxAttempts 3 修 1 催」在声明路径不成立）：仅 schema
+  校验失败与 outputs 缺位两类进**窄域重试**——固定 cooldown（默认 30s，`retry.cooldownMs`
+  可配）到期后原 prompt 带错误附言重派（末次重派附催促），`maxAttempts` 是含初派的总尝试
+  上限；重试挂起期间 run 不收口（报告显示 `retry-pending`）。**driver 级失败（超时、启动
+  失败等）即终态**，不进重试环。耗尽 → 步 failed，不冒泡假结果；收口后再要跑，走 resume
+  （failed 步真跑）或 amend。
+- **done 语义**：步的完成 = 引擎判定的终态，不是子代理叙事说了"完成"——中段叙事（"正在
+  跑"、"快好了"）不构成终态证据；产出文本 = 收敛后末条 assistant 文本（与脚本路径
+  `F.ask`「等终态 + 解析末条回复」同口径）。`timeoutMs` 预算必须覆盖真实收敛窗——掐在
+  收敛前的预算把还在收敛的步判成假 failed；判据修真后 done 变晚是正常代价（试点实测教训）。
 - **resume**：已完成步从 journal 返还，零 driver 调用是结构性的；撕裂 journal 宁可整段重跑。
-- **amend（脚本没有的能力，§9）**：`stepId + sha256(prompt)` 字节相等的步逐字导入旧结果；
-  改一个常数只废那一步（下游 prompt 未变不级联——时效自担）。这是"常调常数"该走声明路径
-  的理由。
+- **amend（脚本没有的能力，§9）**：`stepId + sha256(prompt)` 字节相等的步逐字导入旧结果。
+  级联口径有条件句：**非引用步**改一个常数只废那一步（下游 prompt 未变不级联——时效自担）；
+  **引用步**（prompt 含 `{{outputs.…}}`）改被引用上游 ⇒ 引用闭包下游级联重跑——上游产出必变，
+  下游按旧上游导入即假完成（旧 journal 无 output 的迁移现场同按「变」处理）。这是"常调常数"
+  该走声明路径的理由。
 - **hole（声明版）**：运行中交接一份新声明（五类差量：pinned / kept / changed / dropped /
-  added；在飞与已完成的步不动）——"按发现生长"在声明路径的表达面。
+  added；在飞与已完成的步不动）——"按发现生长"在声明路径的表达面。数据面注意：交接里
+  changed/pinned 的步若被某个**已 done 的引用下游**（含闭包级联）引用，整次交接被拒
+  （TypeError）——上游内容将变而下游已按旧上游落账；先 drop 下游（交接里不点名，已开始步
+  反正按旧身携带）或改完再交。
 - **escalation（声明版）**：步产出 `{question,…}` 形状挂起问人，依赖分支停、兄弟继续
   （脚本路径是顺序 await 全停，§7——两版语义不同，别混）。
 - **登记**：声明文件顶层带 `"kind": "engine-run"`，走同一 `review_gate.register`（文件自带
@@ -488,15 +533,29 @@ runScript 调用**（引擎无续栈——run failed/blocked 即调用终结，�
 - 但门是 fail-closed 的：**每补段必经一轮评审才有 allow**——换文件字节 → 旧 verdict 哈希失配
   → 门禁保持关闭直到重评。补段发生在自动路径已失败之后（带压力产出），这一轮评审不可省。
 
-### 12.3 操作：补段四步
+### 12.3 操作：补段五步
 
-1. **applyPatch**（`plugin/src/engine/script-patch.js`）：给 base 脚本路径 + 补段后的完整脚本
+0. **buildPatchContext**（P3，`plugin/src/engine/script-patch.js` 导出）：补段前先从盘上读出
+   失败现场——`buildPatchContext({ storage, runId, scriptPath })` 返回写死的形状：
+   `{ runId, failedPoint: {reason, site?, bodyOffset?}, completedAsks: [{callSeq, site,
+   promptHash, value}], appliedAfterCallSeq, baseScriptPath, baseFingerprint }`（**不含
+   changedFrom**——那是 applyPatch 的产出）。用途：① 告诉补段作者哪些 ask 已完成（值可直接
+   复用，别再问一遍）、失败点在哪、补段须锚定在哪个执行序之后；② 归因规则写死——journal
+   末笔是带 callSeq 的 `ask-failed` 才可归因；`script-threw`/`answer-source-error` 不落盘上
+   事件、ask-failed 也可能被 try/catch 吞掉续跑，推导不出就返回
+   `failure-not-attributable`（**不发明归类**）——此时宿主手里的 runScript result.reason 才
+   是权威，凭它补段即可。评审 prompt 注入：`renderPatchReviewContext(context)` 把现场渲染成
+   确定性文本块。
+1. **applyPatch**（同文件导出，async）：给 base 脚本路径 + 补段后的完整脚本
    文本 + `{anchor: 'hole-site'|'tail', holeRef?, reason, source}`。base 文件字节不动；补段落
    新文件 `<stem>.patch-<seq><ext>`；journal 记 `patch` 事件（base→patched 指纹 + anchor +
-   appliedAfterCallSeq）；返回 changedFrom（首个变更字节偏移）。语法预门与执行/register 同一
-   包装——语法坏补段拒绝且零记录。
+   appliedAfterCallSeq）；返回 changedFrom（首个变更字节偏移，.ts 脚本 = .ts 源文本坐标）。
+   语法预门与执行/register 同一管线（.ts 走 TS 前端，§1）——语法坏补段拒绝且零记录。
 2. **review_gate register**（kind: `'workflow-script'`）：登记**新补段文件**的盘上路径——语法
    门与命令字面量扫描照走（静态扫描会看到补段新增的字面量命令，写清楚它们做什么）。
+   **把第 0 步的 context 作 `baseExecution` 传入**：register payload 原样回带它，评审派发的
+   prompt 里也带上（`renderPatchReviewContext` 的文本）——评审才知道 base 段已执行到哪、哪些
+   ask 值已落账，否则评审只看得见补段字节本身。
 3. **等评审 allow**：check 返回 deny/escalate 就等下一轮评审判决；偷改字节会让旧判决失配、
    门禁重新关闭（fail-closed）。
 4. **resumeScript 重跑**：`resumeScript(patchedScript, storage, runId).cached` 作 `askCache`，
@@ -507,10 +566,11 @@ runScript 调用**（引擎无续栈——run failed/blocked 即调用终结，�
 
 写给读过原 skill 的人：每条是原表面的一个能力/机制与本表面的差异，以及教学上要换掉的直觉。
 
-1. **TS 顶层 await 脚本 → JS 函数体包装。**原表面提交 TS 源码、编译器把关；本表面是裸 JS
-   函数体，引擎包装 `async function main(F){…}`，v1 不接 TS（无 esbuild、无类型检查）。
-   换掉的直觉：没有编译期类型诊断——形状把关在运行时 schema 校验（§4），写对形状的责任
-   移到指令与 schema 两次表述上。
+1. **TS 顶层 await 脚本 → 函数体包装（TS 语法 only）。**原表面提交 TS 源码、编译器把关；
+   本表面是裸函数体，引擎包装 `async function main(F){…}`；P4 起收 .ts 脚本（文件名定语言），
+   但**只有语法**——插件自带 esbuild 剥类型喂 vm（§1），无编译期类型诊断。换掉的直觉：类型
+   写错不报错——形状把关在运行时 schema 校验（§4），写对形状的责任移到指令与 schema 两次
+   表述上。
 2. **JSDoc→schema 合成 → 显式 schema 对象。**原表面在脚本里写 `interface` + JSDoc，类型参数
    `ask<T>()` 自动合成 schema 且子代理看得到字段说明；本表面传显式 JSON Schema 对象，且
    **子代理首读不到它**（§4）——指令必须自含产出形状。校验关键字是子集（`enum` 不强制）。

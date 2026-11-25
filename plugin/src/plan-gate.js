@@ -12,8 +12,11 @@
 //   四个 transition 到引擎挂点的映射、review_gate 工具。register 另接受两类引擎工件
 //   （分类/校验在 src/engine/pgate.js）：kind:"engine-run" 的运行声明文件（S9，文件内容自带
 //   kind 标记）与 kind:"workflow-script" 的脚本文件（M2.4，裸函数体无法在文件内自我描述，
-//   register 的 kind 参数显式给；语法门与命令字面量扫描，payload 带供评审的 commands）——
+//   register 的 kind 参数显式给；语法门与命令字面量扫描，payload 带供评审的 commands；P4 起
+//   .ts 脚本走 TS 前端同一语法门，registerSession 为 async）——
 //   均为仅登记时点校验，门禁判定（check）不分叉，照走同一权威决策矩阵。
+//   P3.3：register 可带 baseExecution（补段评审上下文，script-patch.js buildPatchContext 结果）
+//   ——payload 回带供评审 prompt 注入，不进 store（D1 不变）。
 //   装配层（src/index.js）——插件 options opt-in 后挂 hook、注册工具、台账进快照。
 //
 // reeve 侧的 transition 映射（适配器裁决，SPEC §3 的四值闭集不变）：
@@ -40,9 +43,10 @@
 import { createHash } from 'node:crypto'
 import { mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { basename, join, resolve } from 'node:path'
 
-import { ENGINE_RUN_KIND, WORKFLOW_SCRIPT_KIND, classifyArtifact, classifyWorkflowScript } from './engine/pgate.js'
+import { ENGINE_RUN_KIND, WORKFLOW_SCRIPT_KIND, classifyArtifact, classifyWorkflowScript, classifyWorkflowScriptAsync } from './engine/pgate.js'
+import { isTsScriptName } from './engine/ts-front.js'
 import { TOOL_NAMESPACE } from './constants.js'
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -799,11 +803,20 @@ export function createPlanGate({ options = null, ledger = null, logger = console
   }
 
   // ---- review_gate 工具：只有 register / check 两个操作 ----
-  // 没有 submit，也不会有：判决只能来自评审工具真实结果的观测（SPEC §2 对抗面立场），
+  // 没有 submit，也没有：判决只能来自评审工具真实结果的观测（SPEC §2 对抗面立场），
   // agent 自报判决 = 绕过门禁。人工解锁走 overrideSession()（只给人用）。
   // register 的 kind 参数（M2.4）：'plan'（缺省，文件内容自动判别 engine-run）|
   // 'workflow-script'（脚本文件显式登记——裸函数体无文件内 kind 标记）。未知 kind 拒绝。
-  const registerSession = (sessionId, planPath, kind = 'plan') => {
+  // P4（register 面与 P3.3 串行落地）：workflow-script 按 basename(planPath) 扩展名分流——
+  // .ts 走 classifyWorkflowScriptAsync（TS 语法 only：transform 喂 vm，坐标系唯一 = .ts 源
+  // 文本；哈希仍绑 .ts 文件全字节，D1 不变），其余走 classifyWorkflowScript 原样（JS 零回归）。
+  // .ts ⇒ registerSession 为 async（transform 是 async API，C4 注记 ①）——JS 行为除 await 外
+  // 逐位不变。
+  // P3.3：baseExecution 入参——补段评审上下文（script-patch.js buildPatchContext 的 ok:true
+  // 结果，编排方在登记补段文件时传入）；payload 原样回带，供编排方注入 review 派发 prompt
+  // （renderPatchReviewContext 的消费面）。只随 register payload 回带，**不进 store**（D1 哈希
+  // 绑定面不变；评审上下文是派发时点的现场快照，不是门禁判定输入）。
+  const registerSession = async (sessionId, planPath, kind = 'plan', baseExecution = undefined) => {
     if (!isRootSession(sessionId)) {
       return { ok: false, error: 'register is root-session-only; the calling session is a managed child' }
     }
@@ -813,6 +826,9 @@ export function createPlanGate({ options = null, ledger = null, logger = console
     if (kind !== 'plan' && kind !== WORKFLOW_SCRIPT_KIND) {
       return { ok: false, error: `register requires kind "plan" or "workflow-script" (got ${String(kind)})` }
     }
+    if (baseExecution !== undefined && (typeof baseExecution !== 'object' || baseExecution === null || Array.isArray(baseExecution))) {
+      return { ok: false, error: 'register: baseExecution must be an object (buildPatchContext result) or omitted' }
+    }
     const artifactPath = resolve(planPath.trim())
     const artifactBytes = readArtifactBytes(artifactPath)
     if (artifactBytes == null) {
@@ -821,10 +837,18 @@ export function createPlanGate({ options = null, ledger = null, logger = console
     }
     const artifactHash = canonicalPlanHash(artifactBytes)
     // S9（E1 集成）：kind:"engine-run" 的声明文件登记前过声明校验；M2.4：kind:"workflow-script"
-    // 的脚本文件登记前过语法门 + 命令字面量扫描（供评审）。不合法拒绝且零记录。
+    // 的脚本文件登记前过语法门 + 命令字面量扫描（供评审）。P4：.ts 走 TS 前端（transform 后
+    // 同一 vm.Script 构造，语法判定零分叉；平台包缺失 → classifyWorkflowScriptAsync 抛显式
+    // Error——禁静默回退 JS，原则 4）。不合法拒绝且零记录。
     // 普通方案文件（kind='plan'）不经任何内容校验（文件内 kind 是唯一判别器）。校验拒绝在
     // torn 判定之后：store 撕裂时 register 无论 artifact 是什么都进不去（矩阵：自动化迁移不重建）。
-    const artifact = kind === WORKFLOW_SCRIPT_KIND ? classifyWorkflowScript(artifactBytes) : classifyArtifact(artifactBytes)
+    const scriptName = basename(artifactPath)
+    const artifact =
+      kind === WORKFLOW_SCRIPT_KIND
+        ? isTsScriptName(scriptName)
+          ? await classifyWorkflowScriptAsync(artifactBytes, scriptName)
+          : classifyWorkflowScript(artifactBytes)
+        : classifyArtifact(artifactBytes)
     const read = readStore(io, sessionId, { cap })
     if (!read.ok) {
       noisy(`register refused: store unreadable (${read.reason}); only a human override may rebuild`)
@@ -844,7 +868,8 @@ export function createPlanGate({ options = null, ledger = null, logger = console
     record.updatedAt = now
     // 注意：register 只钉 artifact（planPath），不碰 verdicts/rounds/parseFailures/pending ——
     // 改路径后旧判决哈希必然对不上 → 门禁保持关闭直到重新评审（D1，fail-closed）。
-    // 脚本文件同轨：哈希绑文件全字节，gate-check TOCTOU 重读重哈希（门禁判定零分叉）。
+    // 脚本文件同轨：哈希绑文件全字节（.ts 绑 .ts 原字节），gate-check TOCTOU 重读重哈希
+    // （门禁判定零分叉）。
     writeStore(io, sessionId, record)
     const latest = record.verdicts.length > 0 ? record.verdicts[record.verdicts.length - 1] : null
     return {
@@ -856,6 +881,8 @@ export function createPlanGate({ options = null, ledger = null, logger = console
         artifact.kind === ENGINE_RUN_KIND ? ENGINE_RUN_KIND : artifact.kind === WORKFLOW_SCRIPT_KIND ? WORKFLOW_SCRIPT_KIND : 'artifact',
       declaration: artifact.kind === ENGINE_RUN_KIND && artifact.ok ? artifact.declaration : null,
       script: artifact.kind === WORKFLOW_SCRIPT_KIND && artifact.ok ? artifact.script : null,
+      // P3.3：补段评审上下文回带（评审 prompt 注入素材；未传 = null）
+      baseExecution: baseExecution ?? null,
       rounds: record.rounds,
       parseFailures: record.parseFailures,
       cap: record.cap,
@@ -869,7 +896,9 @@ export function createPlanGate({ options = null, ledger = null, logger = console
     description:
       'plan-gate 方案评审门禁。register：登记本会话的方案文件（评审与哈希绑定的盘上 artifact；' +
       '也接受 kind:"engine-run" 的引擎运行声明文件——文件内容自带 kind 标记——和 kind:"workflow-script" ' +
-      '的编排脚本文件（裸函数体，须以 kind 参数显式声明；登记前过语法门并返回命令字面量扫描供评审），不合法拒绝）。' +
+      '的编排脚本文件（裸函数体，须以 kind 参数显式声明；.js/.ts 均收，.ts 由插件自带 esbuild 剥类型后按同一语法门登记；' +
+      '登记前过语法门并返回命令字面量扫描供评审），不合法拒绝）。' +
+      '登记补段文件时传 baseExecution（buildPatchContext 结果）——payload 回带该现场，供拼进评审派发 prompt。' +
       'check：查询当前门禁判定（allow/deny/escalate、原因、轮值 rounds/cap）。' +
       '没有提交判决的操作——判决只能来自 critic 评审的真实结果观测，agent 不得自报。',
     input: {
@@ -879,13 +908,18 @@ export function createPlanGate({ options = null, ledger = null, logger = console
         planPath: {
           type: 'string',
           description:
-            'register 必填：方案文件的盘上路径（hash 绑定它的现字节）。也接受 engine-run 声明文件（顶层 "kind":"engine-run"）与 workflow-script 脚本文件（kind 参数给 "workflow-script"）',
+            'register 必填：方案文件的盘上路径（hash 绑定它的现字节）。也接受 engine-run 声明文件（顶层 "kind":"engine-run"）与 workflow-script 脚本文件（kind 参数给 "workflow-script"；.js/.ts）',
         },
         kind: {
           type: 'string',
           enum: ['plan', 'workflow-script'],
           description:
-            'register 可选（缺省 plan）：workflow-script = planPath 指向编排脚本文件（裸函数体，引擎包装为 async function main(F){…} 执行）；engine-run 声明文件无需此参数（文件内容自动判别）',
+            'register 可选（缺省 plan）：workflow-script = planPath 指向编排脚本文件（裸函数体，引擎包装为 async function main(F){…} 执行；.ts 脚本自动走 TS 前端剥类型，语法门与 JS 同一 vm 编译）；engine-run 声明文件无需此参数（文件内容自动判别）',
+        },
+        baseExecution: {
+          type: 'object',
+          description:
+            'register 可选（补段登记用）：补段评审上下文（buildPatchContext 的 ok:true 结果）——payload 原样回带，把 renderPatchReviewContext(baseExecution) 的文本拼进评审派发 prompt，critic 才知道 base 段已执行到哪',
         },
       },
       required: ['op'],
@@ -898,7 +932,7 @@ export function createPlanGate({ options = null, ledger = null, logger = console
       const sessionId = context?.sessionID
       let payload
       if (op === 'register') {
-        payload = registerSession(sessionId, args?.planPath, args?.kind ?? 'plan')
+        payload = await registerSession(sessionId, args?.planPath, args?.kind ?? 'plan', args?.baseExecution)
       } else if (op === 'check') {
         // 会话不可用先判：isRootSession 为真蕴含"非空字符串"，这条臂若排在它之后就是死代码
         if (typeof sessionId !== 'string' || sessionId.length === 0) {

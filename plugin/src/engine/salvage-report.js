@@ -43,8 +43,9 @@
 // （(path, text) => void；默认 mkdirSync+writeFileSync——测试注入假写做「报告写失败」的
 // 故障缝，禁 monkey-patch）。journal 只读不写；报告文件写失败 → {ok:false}，盘上 journal
 // 分毫未动（报告是 run 之外的附加产物，它的失败不回滚任何引擎事实）。
-import { mkdirSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname } from 'node:path'
+import { pathToFileURL } from 'node:url'
 
 import { validateJournalRecord } from './journal.js'
 import { renderRunReport } from './visualize.js'
@@ -500,3 +501,125 @@ export function writeSalvageReport(input = {}) {
     errors: rendered.errors,
   }
 }
+
+// ── Q4 机器读数契约（v4.3 计划 Q4 行）：runStatusCode 六码映射 + --status 单命令入口 ──
+// 盘上 journal 的机器读数：run 以状态码说话（编排方/脚本 if 判断的入口），渲染面（上面的
+// markdown 报告）照旧不受影响。入参 = 盘上 record 对象或 null（torn——CLI 负责读文件 +
+// validateJournalRecord，认不出合法 record 就传 null，本函数不自己读盘）。
+//
+// 六码：0 completed / 1 failed / 2 blocked-escalation / 3 interrupted / 4 journal-torn /
+// 5 unknown。优先级对齐 scheduler.finish（escalation-pending > 熔断 > failed——混合现场先判
+// 挂起）：其中熔断（scheduler.js:396 的 run-blocked 事件）在六码里无独立码，其现场在盘上
+// 就是 failed 步（熔断由连续失败触发，failed 步必然在账），故按 failed 读出；可判的先后序
+// 只有「挂起先于 failed」——这正是混合现场的验收断言点（1 failed + 1 挂起 → 2 非 1）。
+// blocked-escalation 推导 = 事件级判据（escalated 无 escalation-answered 配对）非纯状态扫描
+// （blocked 步态只说明曾经挂起过，答复与否只有事件流水能证明）。
+
+/** 六码字典（名 → 码；消费方按名引用，不散落魔法数）。 */
+export const RUN_STATUS_CODES = Object.freeze({
+  completed: 0,
+  failed: 1,
+  'blocked-escalation': 2,
+  interrupted: 3,
+  'journal-torn': 4,
+  unknown: 5,
+})
+
+/** 码 → 名（CLI 打印与测试断言用）。 */
+const RUN_STATUS_NAMES = new Map(Object.entries(RUN_STATUS_CODES).map(([name, code]) => [code, name]))
+
+/**
+ * blocked-escalation 事件级判据：存在无 escalation-answered 配对的 escalated 事件。
+ * 同一步可多次挂起-答复（挂起→答复→再挂起），按事件序逐对消耗：escalated 入账、answered
+ * 销账；销账时不越步Id乱配（本步无挂起则不误销别步——防手搓 journal 的重复答复串味）。
+ * payload 缺可用 stepId 的事件归全局兜底桶（scheduler 落盘必带 stepId，此桶纯防御）。
+ */
+function hasPendingEscalation(record) {
+  const events = Array.isArray(record?.events) ? record.events : []
+  const open = new Map() // stepId → 未答复 escalated 计数
+  let openUnknown = 0
+  for (const event of events) {
+    if (!isPlainObject(event)) continue
+    const payload = isPlainObject(event.payload) ? event.payload : null
+    const stepId = payload !== null && typeof payload.stepId === 'string' && payload.stepId.length > 0 ? payload.stepId : null
+    if (event.type === 'escalated') {
+      if (stepId === null) openUnknown += 1
+      else open.set(stepId, (open.get(stepId) ?? 0) + 1)
+    } else if (event.type === 'escalation-answered') {
+      if (stepId !== null && (open.get(stepId) ?? 0) > 0) open.set(stepId, open.get(stepId) - 1)
+      else if (stepId === null && openUnknown > 0) openUnknown -= 1
+    }
+  }
+  if (openUnknown > 0) return true
+  for (const count of open.values()) {
+    if (count > 0) return true
+  }
+  return false
+}
+
+/**
+ * run 状态码（六码映射；Q4 机器读数契约的唯一读数口）。
+ * @param {object|null} record 盘上 record 对象（validateJournalRecord 产物或同形状）或 null（torn——
+ *   撕裂/形状坏/读盘错/无记录，CLI 侧已认不出合法 record）
+ * @returns {number} RUN_STATUS_CODES 之一（0-5）
+ * @throws {TypeError} record 既非对象也非 null（程序级接线错误，与渲染面分轨）
+ */
+export function runStatusCode(record) {
+  if (record !== null && !isPlainObject(record)) {
+    throw new TypeError('runStatusCode: record 必须是盘上 record 形状的对象或 null（torn）')
+  }
+  if (record === null) return RUN_STATUS_CODES['journal-torn']
+  // 1) blocked-escalation 先判（事件级判据）——对齐 scheduler.finish 的 escalPending 先于
+  //    blockedInfo/failed；混合现场（failed 步 + 挂起问句并存）必须读 2 非 1。
+  if (hasPendingEscalation(record)) return RUN_STATUS_CODES['blocked-escalation']
+  // 2) 步记账扫描（口径同 deriveStatus；blocked 步态若无事件级挂起佐证，按半途 interrupted
+  //    读出——「挂起过」与「还挂着」的区别只有事件流水能证明）。
+  const states = Object.values(isPlainObject(record.steps) ? record.steps : {})
+    .map((step) => (isPlainObject(step) && typeof step.state === 'string' ? step.state : null))
+    .filter((state) => state !== null)
+  if (states.length === 0) return RUN_STATUS_CODES.unknown // 脚本路径 record 无步记账——推导不出就明说
+  if (states.some((state) => state === 'failed' || state === 'superseded')) return RUN_STATUS_CODES.failed
+  if (states.every((state) => state === 'done')) return RUN_STATUS_CODES.completed
+  return RUN_STATUS_CODES.interrupted // declared/dispatching/running/blocked（无挂起佐证）——死在半途
+}
+
+/** 用法行（usage 错误打印；六码语义一并写死在这里，--help 无需单独旗标）。 */
+const RUN_STATUS_USAGE =
+  '用法：node plugin/src/engine/salvage-report.js --status <journalPath>（以状态码退出：' +
+  '0 completed / 1 failed / 2 blocked-escalation / 3 interrupted / 4 journal-torn / 5 unknown）'
+
+/**
+ * --status 单命令入口（可注入 argv 直测；返回退出码，不自己 process.exit——退出码交给调用
+ * 方/主守卫设 process.exitCode，stdout 自然冲刷）。读文件 + JSON.parse + validateJournalRecord
+ * 是 CLI 的职责（计划写死）：认不出合法 record（撕裂/形状坏/读盘错/不存在）一律按 torn 传
+ * null → 4。成功打一行「<码> <名>」（机器吃退出码，人看 stdout 一眼）；用法错 → 用法行进
+ * stderr + 退出码 64（EX_USAGE，在六码域外，不与状态码混音）。
+ * @param {string[]} argv 命令行参数（缺省 process.argv.slice(2)）
+ * @returns {number} 退出码（0-5，或 64 = 用法错）
+ */
+export function runStatusCli(argv = process.argv.slice(2)) {
+  if (!Array.isArray(argv) || argv.length !== 2 || argv[0] !== '--status' || typeof argv[1] !== 'string' || argv[1].length === 0) {
+    process.stderr.write(`${RUN_STATUS_USAGE}\n`)
+    return 64
+  }
+  let record = null
+  try {
+    let parsed = null
+    try {
+      parsed = JSON.parse(readFileSync(argv[1], 'utf8'))
+    } catch {
+      parsed = null // 撕裂/空文件：parse 不出形状，落 torn 口径
+    }
+    record = validateJournalRecord(parsed) // 合法返回原值，否则 null（形状坏/非对象）
+  } catch {
+    record = null // 读盘失败（不存在/无权限）：同 torn 口径
+  }
+  const code = runStatusCode(record)
+  process.stdout.write(`${code} ${RUN_STATUS_NAMES.get(code)}\n`)
+  return code
+}
+
+// 直跑主守卫（ESM 标准判据）：node plugin/src/engine/salvage-report.js --status <journalPath>
+// 以状态码退出；被 import（测试/引擎内复用）时不触发。
+const INVOKED_AS_CLI = process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href
+if (INVOKED_AS_CLI) process.exitCode = runStatusCli(process.argv.slice(2))

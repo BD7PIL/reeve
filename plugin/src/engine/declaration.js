@@ -2,12 +2,15 @@
 //
 // 依赖方向：declaration.js ← declaration.schema.json——结构性约束（允许字段、必填、
 // 类型、prompt ≤8000、maxAttempts ≥1、timeoutMs ≥1000）从 schema 文件读，本文件不复制数字；
-// schema 表达不了的图性质（stepId 唯一、deps 无环/无自指/无未知引用）在这里用代码补。
+// schema 表达不了的图性质（stepId 唯一、deps 无环/无自指/无未知引用）与 R.1 数据面编译检查
+// （stepId 字符约束、占位词法、引用三查——词法判定与渲染共用 prompt-render.js）在这里用代码补。
 // validateDeclaration(decl) → { ok, errors[] }：纯函数，不抛（任何垃圾输入都返形状良好的
 // 结果），错误累积（一次报全，不首错即停）。本校验器无时钟/无随机/fault 面——那些注入点
 // 属于 journal/scheduler/ask（规格 §6），声明校验是纯数据判定。
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
+
+import { scanTemplate } from './prompt-render.js'
 
 /** schema 文件路径（打包面内，与 declaration.js 同目录）。 */
 export const DECLARATION_SCHEMA_PATH = fileURLToPath(new URL('./declaration.schema.json', import.meta.url))
@@ -51,7 +54,8 @@ function matchesType(value, type) {
 
 /**
  * 走 schema 子集（本仓用到的关键字：type / required / properties /
- * additionalProperties:false / items / minLength / maxLength / minimum）。
+ * additionalProperties（false → 未知字段报错；schema 对象 → 未声明键逐键校验，Q5 metadata 用；
+ * true/缺省 → 放行）/ items / minLength / maxLength / minimum）。
  * 类型不符即停在当前节点（内层形状留给类型修复后重报），错误累积不中断。
  */
 function walkSchema(value, node, path, errors) {
@@ -61,18 +65,23 @@ function walkSchema(value, node, path, errors) {
     else errors.push(`${label(path)}: 必须是${TYPE_LABEL[type] ?? type}（得到 ${describeValue(value)}）`)
     return
   }
-  if (isObject(value) && node.properties) {
+  if (isObject(value)) {
     for (const key of node.required ?? []) {
       if (!Object.hasOwn(value, key)) errors.push(`${label(path)}: 缺失必填字段 "${key}"`)
     }
-    const allowed = Object.keys(node.properties)
+    const props = node.properties
+    const additional = node.additionalProperties
     for (const key of Object.keys(value)) {
-      const sub = node.properties[key]
-      if (!sub) {
-        if (node.additionalProperties === false) errors.push(`${label(path)}: 未知字段 "${key}"（允许：${allowed.join(', ')}）`)
+      const sub = props?.[key]
+      if (sub !== undefined) {
+        walkSchema(value[key], sub, joinPath(path, key), errors)
         continue
       }
-      walkSchema(value[key], sub, joinPath(path, key), errors)
+      if (additional === false) {
+        if (props !== undefined) errors.push(`${label(path)}: 未知字段 "${key}"（允许：${Object.keys(props).join(', ')}）`)
+        continue
+      }
+      if (isObject(additional)) walkSchema(value[key], additional, joinPath(path, key), errors)
     }
   }
   if (Array.isArray(value) && node.items) {
@@ -98,6 +107,45 @@ function label(path) {
   return path === null ? ROOT.label : path
 }
 
+/** Levenshtein 编辑距离（单字符插入/删除/替换，单位代价；两行 DP，O(len b) 空间）。 */
+function editDistance(a, b) {
+  if (a === b) return 0
+  if (a.length === 0) return b.length
+  if (b.length === 0) return a.length
+  let prev = Array.from({ length: b.length + 1 }, (_, j) => j)
+  for (let i = 1; i <= a.length; i += 1) {
+    const cur = [i]
+    for (let j = 1; j <= b.length; j += 1) {
+      cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1))
+    }
+    prev = cur
+  }
+  return prev[b.length]
+}
+
+/**
+ * 未知 stepId 的最近候选（Q1 Did-you-mean；纯函数不抛）。
+ * 算法写死（蓝图 .zcode/plans/next-round-plan-v4.md Q 节 Q1）：取编辑距离最小的候选，
+ * 并列取字典序首；最小距离 > `max(2, ⌈unknown 长度/2⌉)` 时返 null 不附（防无关建议噪声）。
+ * 消费场景两处：deps 未知引用（本文件 graphErrors）+ R.1 引用三查的未知 stepId
+ * （R.1 落地后接本函数——含点号 stepId 的词法编译错同获候选；lightflow compiler.py:71-81 先例）。
+ */
+export function nearestStepId(unknown, candidates) {
+  if (typeof unknown !== 'string' || unknown.length === 0) return null
+  const threshold = Math.max(2, Math.ceil(unknown.length / 2))
+  let best = null
+  let bestDist = Infinity
+  for (const candidate of candidates ?? []) {
+    if (typeof candidate !== 'string') continue
+    const d = editDistance(unknown, candidate)
+    if (d < bestDist || (d === bestDist && (best === null || candidate < best))) {
+      best = candidate
+      bestDist = d
+    }
+  }
+  return best !== null && bestDist <= threshold ? best : null
+}
+
 /** 图性质：stepId 唯一；deps 无未知引用、无自引用；其余边做环检测（自引用已单报，不进图）。 */
 function graphErrors(decl, errors) {
   const steps = decl.steps
@@ -119,7 +167,10 @@ function graphErrors(decl, errors) {
       if (typeof dep !== 'string') return
       if (dep === step.stepId) errors.push(`steps[${i}].deps[${j}]: 自引用 "${dep}"`)
       else {
-        if (!firstSeen.has(dep)) errors.push(`steps[${i}].deps[${j}]: 未知引用 "${dep}"（不在任何 stepId 里）`)
+        if (!firstSeen.has(dep)) {
+          const hint = nearestStepId(dep, firstSeen.keys())
+          errors.push(`steps[${i}].deps[${j}]: 未知引用 "${dep}"（不在任何 stepId 里${hint ? `——最近候选 "${hint}"？` : ''}）`)
+        }
         edges.push(dep)
       }
     })
@@ -149,6 +200,105 @@ function graphErrors(decl, errors) {
   }
 }
 
+// ── R.1 数据面编译检查（②stepId 字符约束 + 占位词法 + ③引用三查）──────────────
+
+/**
+ * stepId 字符约束（R.1②）：被引用 stepId 禁止包含 `.`、`}` 与空白——占位词法
+ * `{{outputs.<stepId>[.<key>]}}` 里 stepId 与 key 的边界靠这些字符判定，含点号 stepId
+ * 从源头消灭 `a.b` 歧义（含点号 stepId 的编译错同获 Q1 Did-you-mean 候选）。
+ */
+function stepIdLexiconErrors(steps, errors) {
+  const ids = steps.filter((s) => isObject(s) && typeof s.stepId === 'string').map((s) => s.stepId)
+  steps.forEach((step, i) => {
+    if (!isObject(step) || typeof step.stepId !== 'string') return // 形状错已由 schema 层报
+    const id = step.stepId
+    if (!/[.}\s]/.test(id)) return
+    const hint = nearestStepId(id, ids.filter((x) => x !== id))
+    errors.push(
+      `steps[${i}].stepId: 含 "."、"}" 或空白的 stepId 不允许（占位词法歧义源头，R.1）："${id}"${hint ? `——最近候选 "${hint}"？` : ''}`,
+    )
+  })
+}
+
+/**
+ * 占位词法 + 引用三查（R.1②③；lightflow compiler.py:536-578 对应物）。
+ * 词法：prompt 里一切 `{{…}}` 必须匹配两条严格语法（判定与渲染共用 prompt-render.js 的
+ * scanTemplate——单一事实来源），不匹配一律编译错。三查逐占位符（引用闭包上游）：
+ *   ① 被引用 stepId 存在（未知引用附 Q1 Did-you-mean 候选）；
+ *   ② 在本步 deps 的传递闭包内（数据面引用必须沿依赖边——调度序保证注入时上游已 done）；
+ *   ③ 被引用步声明了 schema（无 schema 步无结构化产出，无物可引）。
+ */
+function placeholderCompileErrors(decl, errors) {
+  const steps = decl.steps
+  if (!Array.isArray(steps)) return
+
+  const byId = new Map() // stepId → { step, index }（重复 stepId 已由 graphErrors 单报，这里取首见）
+  steps.forEach((step, i) => {
+    if (isObject(step) && typeof step.stepId === 'string' && !byId.has(step.stepId)) byId.set(step.stepId, { step, index: i })
+  })
+
+  // deps 传递闭包（BFS，每步缓存；未知引用边已由 graphErrors 单报，这里只沿已知边走）
+  const closureCache = new Map()
+  const closureOf = (id) => {
+    if (closureCache.has(id)) return closureCache.get(id)
+    const seen = new Set()
+    const queue = (byId.get(id)?.step.deps ?? []).filter((d) => typeof d === 'string' && byId.has(d))
+    while (queue.length > 0) {
+      const d = queue.shift()
+      if (seen.has(d)) continue
+      seen.add(d)
+      queue.push(...(byId.get(d)?.step.deps ?? []).filter((x) => typeof x === 'string' && byId.has(x)))
+    }
+    closureCache.set(id, seen)
+    return seen
+  }
+
+  steps.forEach((step, i) => {
+    if (!isObject(step) || typeof step.prompt !== 'string') return // 形状错已由 schema 层报
+    const scan = scanTemplate(step.prompt)
+    for (const message of scan.errors) errors.push(`steps[${i}].prompt: ${message}`)
+    for (const ref of scan.refs) {
+      if (!byId.has(ref)) {
+        const hint = nearestStepId(ref, byId.keys())
+        errors.push(`steps[${i}].prompt: 占位符引用未知 stepId "${ref}"（不在任何 stepId 里${hint ? `——最近候选 "${hint}"？` : ''}）`)
+        continue
+      }
+      if (!closureOf(step.stepId).has(ref)) {
+        errors.push(`steps[${i}].prompt: 占位符引用 "${ref}" 不在本步 deps 传递闭包内（数据面引用必须沿依赖边——把 "${ref}" 加进本步 deps，或改走文件总线）`)
+        continue
+      }
+      if (byId.get(ref).step.schema === undefined) {
+        errors.push(`steps[${i}].prompt: 被引用步 "${ref}" 无 schema——该步无结构化产出可引用（给 "${ref}" 声明 schema，或改走文件总线）`)
+      }
+    }
+  })
+}
+
+/**
+ * outputs 路径形式判据（P1.2 第 6 条；平台无关，自写不依赖 path.isAbsolute——
+ * Windows 判据要认盘符，POSIX 判据要认 // 与 /，isAbsolute 在两平台语义相反）：
+ *   绝对路径 = Windows 盘符（^[A-Za-z]:[\/]）| UNC（^//）| POSIX 根（^/）；
+ *   home 相对 = ^~/（引擎以 os.homedir() 展开，其余字面处理）。
+ * 其余一切形式（相对路径、~user、file:// 等）都拒——判据单一事实来源在本文件，
+ * declaration.schema.json 只约束类型与项数（1-8），两处注释互指。
+ */
+export function isEngineOutputsPath(s) {
+  return typeof s === 'string' && /^([A-Za-z]:[\\/]|\/\/|\/|~\/)/.test(s)
+}
+
+/** outputs 数量与逐项形式检查（walkSchema 没有 minItems/maxItems/pattern，这里代码补；label 定报错前缀）。 */
+function outputsErrors(outputs, label, errors) {
+  if (!Array.isArray(outputs)) return // 类型错已由 schema 层报，这里不重复
+  if (outputs.length < 1 || outputs.length > 8) {
+    errors.push(`${label}: 项数必须 1-8（得到 ${outputs.length}）`)
+  }
+  outputs.forEach((p, j) => {
+    if (typeof p === 'string' && !isEngineOutputsPath(p)) {
+      errors.push(`${label}[${j}]: 必须是绝对路径或 ~/ 前缀（盘符/UNC/POSIX 根；相对路径与其余形式不收——得到 ${JSON.stringify(p)}）`)
+    }
+  })
+}
+
 /**
  * 校验引擎运行声明。
  * @param {*} decl 任意输入（含垃圾值）——不抛，一律返 { ok, errors }。
@@ -162,6 +312,13 @@ export function validateDeclaration(decl) {
   }
   walkSchema(decl, DECLARATION_SCHEMA, null, errors)
   graphErrors(decl, errors)
+  if (Array.isArray(decl.steps)) {
+    stepIdLexiconErrors(decl.steps, errors) // R.1②：stepId 禁 . } 空白（含点号 stepId 同获 Q1 候选）
+    placeholderCompileErrors(decl, errors) // R.1②③：占位词法 + 引用三查
+    decl.steps.forEach((step, i) => {
+      if (isObject(step) && step.outputs !== undefined) outputsErrors(step.outputs, `steps[${i}].outputs`, errors)
+    })
+  }
   return { ok: errors.length === 0, errors }
 }
 
@@ -178,6 +335,15 @@ export function validateStep(step) {
     return { ok: false, errors }
   }
   walkSchema(step, DECLARATION_SCHEMA.properties.steps.items, 'step', errors)
+  // R.1②：占位词法单步也查（ask 路径无渲染器，词法坏形/引用形状的 prompt 会原样漏给子会话）；
+  // 引用三查是**声明级**性质（要全声明步表与 deps 图），单步无可查，这里不查。
+  if (isObject(step) && typeof step.prompt === 'string') {
+    for (const message of scanTemplate(step.prompt).errors) errors.push(`step.prompt: ${message}`)
+  }
+  if (isObject(step) && typeof step.stepId === 'string' && /[.}\s]/.test(step.stepId)) {
+    errors.push(`step.stepId: 含 "."、"}" 或空白的 stepId 不允许（占位词法歧义源头，R.1）："${step.stepId}"`)
+  }
+  if (isObject(step) && step.outputs !== undefined) outputsErrors(step.outputs, 'step.outputs', errors)
   return { ok: errors.length === 0, errors }
 }
 

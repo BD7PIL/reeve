@@ -36,7 +36,14 @@
           },
           "schema": {
             "type": "object",
-            "description": "结果 JSON Schema（可选）；ask.js 用它校验子会话产出。"
+            "description": "结果 JSON Schema（可选）；ask.js 用它校验子会话产出；声明路径上调度器在 done 迁移前用 declaration.js validateValue 校验回复文本（P1.2）。"
+          },
+          "outputs": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 8,
+            "items": { "type": "string", "minLength": 1 },
+            "description": "产出文件路径列表（可选，1-8 项）：仅接受绝对路径或 ~/ 前缀——绝对路径判据平台无关自写（Windows 盘符 ^[A-Za-z]:[\\/]、UNC ^//、POSIX 根 ^/），~/ 前缀由引擎以 os.homedir() 展开、其余字面处理；相对路径与其余形式在 declaration.js 代码校验拒绝（单一事实来源；schema 层只约束类型与 1-8 项数）。步 done 迁移前调度器逐项检查盘上存在且为文件（existsSync && statSync().isFile()），任一缺 → 可重试失败（reason=outputs-missing，P1.2 窄域重试）。"
           },
           "agent": {
             "type": "string",
@@ -63,9 +70,31 @@
             "minimum": 1000,
             "default": 900000,
             "description": "步超时毫秒（可选）：整数 ≥ 1000，默认 900000；超时 → 步 failed 进 journal，不静默老化。"
+          },
+          "description": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "步的人话标签（可选，Q5）：这一步在干什么——面板 runs 列表优先显示它、无则回退 stepId（Q5b）；引擎语义不读它。"
+          },
+          "metadata": {
+            "type": "object",
+            "additionalProperties": { "type": "string" },
+            "description": "步的自由标注（可选，Q5）：string→string 键值对，作者自定、编排方/面板透传读，引擎不解释。secret_keys 明确不做——prompt 不该携凭据，做了反而暗示可以携。"
           }
         }
       }
+    },
+    "description": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200,
+      "description": "声明的人话标签（可选，Q5）：这份计划是干什么的——给人读（台账/SKILL 示例/面板），引擎语义不读它。"
+    },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": { "type": "string" },
+      "description": "声明的自由标注（可选，Q5）：string→string 键值对，作者自定、编排方/面板透传读，引擎不解释。secret_keys 明确不做——prompt 不该携凭据，做了反而暗示可以携。"
     }
   }
 }

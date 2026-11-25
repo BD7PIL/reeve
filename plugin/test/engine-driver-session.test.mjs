@@ -5,10 +5,13 @@
 // create 扁平 .id / context 消息数组 {info,parts} / 事件 {type, location:{directory}}）+ 注入时钟/睡眠
 // （§6 纪律：now/sleep/fault.driverChaos 全走构造参数，零真实定时器依赖、零真机访问、零回环 HTTP）。
 //
-// 钉死的关键行为（实测为准的 decisions，见 driver-session.js 文件头）：
+// 钉死的关键行为（实测为准的 decisions，见 driver-session.js 文件头；判据考古裁决
+// evidence/m4/p10-decision.md A-idle-confirm）：
 //   wait 优先只试裸形、即时抛 "Expected object" → 降级继续 context 解析、不映射 failed、有界防挂死；
 //   result = 单轮探针（done/failed/running 三值），重试节奏归调用方（driver 内零忙等）；
-//   末条 assistant 判定（error 优先于 text）；空数组/末条非 assistant/形状认不出 = running；
+//   P1.1 终态判定 = 末条 v2 idle 前置门槛：未见末条 idle 一律 running（m4 中段叙事 text /
+//   fresh 冻结流式条都不作终态证据）；idle succeeded → 回看末条 assistant 下结论（error 优先于
+//   text）；outcome 词表外 → running fail-open；空数组/形状认不出 = running；
 //   回环 HTTP 兜底不存在（零 fetch）；events 规范化 + session.execution.* 出现即记形状 + 去抖 +
 //   终末旁路 + trailing recheck + 心跳活性；chaos 三态与 mock/replay 同语义。
 //
@@ -183,6 +186,28 @@ const asstText = (text) => ({
 })
 const asstError = (message) => ({ info: { id: 'msg_e', role: 'assistant' }, parts: [{ id: 'prt_e', type: 'error', message }] })
 
+// ---- v2 扁平实测形状夹具（M1.3b/c probe-raw-entry + m13 recording.json + p10-decision 口径）----
+const v2User = (text) => ({ id: 'msg_u', time: { created: 1 }, type: 'user', text })
+const v2Idle = (outcome = 'succeeded') => ({ id: 'msg_i', time: { created: 9 }, type: 'idle', outcome }) // 实测四键：无 info 信封无 role
+// m4 翻车形态合成（p10-decision 失败模式 3/4；P1.1 验收点名必须合成防回归）：
+//   asstNarrating —— 中段叙事条：finish:'tool-calls' 且 content 带 text part（m4 4/4 误报 done 的形状，
+//                    retro 实测中段大量此形）；
+//   asstFrozen   —— 冻结流式条：created/firstToken 在、finish 恒缺、无 completed（fresh 实测：承载
+//                    写盘的中段条 settle 60s+3 polls 后仍不更新，而写盘事实已发生）；
+//   asstFinal    —— 收敛末条：finish:'stop' + content text + tokens（真收敛点采样 tokens 稳定在位）。
+const asstNarrating = {
+  id: 'msg_m',
+  time: { created: 2, completed: 3 },
+  type: 'assistant',
+  finish: 'tool-calls',
+  content: [
+    { type: 'text', text: '中段叙事：3 个文件已读完，继续下一步' },
+    { type: 'reasoning', text: '推理轨' },
+  ],
+}
+const asstFrozen = { id: 'msg_f', time: { created: 2, firstToken: 3 }, type: 'assistant', content: [{ type: 'reasoning', text: '写盘前的推理' }] }
+const asstFinal = { id: 'msg_z', time: { created: 4, completed: 5 }, type: 'assistant', finish: 'stop', content: [{ type: 'text', text: 'FINAL-VERDICT' }], tokens: { input: 1, output: 2 } }
+
 // ================= 1. 常量与构造面 =================
 {
   assert.deepEqual(Object.keys(SESSION_DRIVER_DEFAULTS), ['waitAttemptMs', 'contextReadMs', 'eventMinIntervalMs', 'trailingRecheckMs', 'heartbeatMs', 'executionEventCap'], '缺省间隔面钉死')
@@ -287,29 +312,32 @@ const asstError = (message) => ({ info: { id: 'msg_e', role: 'assistant' }, part
   }
 }
 
-// ================= 4. judgeContext（末条 assistant 判定；纯函数表驱动）=================
+// ================= 4. judgeContext（P1.1 A-idle-confirm：末条 idle 前置门槛；纯函数表驱动）=================
+// 判据与失败模式表按 evidence/m4/p10-decision.md（P1.0 裁决）写死；旧「末条 assistant text → done」
+// 用例全部按新判据重写为 running，m4 翻车形态（失败模式 3/4）在此合成防回归。
 {
   const CASES = [
-    { name: '数组直用：user+assistant(text) → done', input: [userMsg('问'), asstText('S7A-OK')], want: { status: 'done', text: 'S7A-OK', shape: 'assistant-text' } },
-    { name: '空数组（实测空会话形状）→ running', input: [], want: { status: 'running', shape: 'empty' } },
-    { name: '只有 user（末条非 assistant）→ running', input: [userMsg('问')], want: { status: 'running', shape: 'last-not-assistant' } },
-    { name: 'assistant 无 text/error（流式中）→ running', input: [userMsg('问'), { info: { role: 'assistant' }, parts: [{ type: 'step-start' }] }], want: { status: 'running', shape: 'assistant-no-verdict' } },
-    { name: 'assistant text 空串 → running', input: [userMsg('问'), asstText('')], want: { status: 'running', shape: 'assistant-no-verdict' } },
-    { name: 'error part（对象）→ failed 且 stringify', input: [userMsg('问'), asstError('LLM 超时')], want: { status: 'failed', errorPart: JSON.stringify({ id: 'prt_e', type: 'error', message: 'LLM 超时' }), shape: 'assistant-error' } },
-    { name: 'error part（text 字段形状）→ failed 且 stringify 整件', input: [{ info: { role: 'assistant' }, parts: [{ type: 'error', text: 'boom' }] }], want: { status: 'failed', shape: 'assistant-error' } },
-    { name: 'error 优先于 text（deep-memory 同款）', input: [{ info: { role: 'assistant' }, parts: [{ type: 'text', text: '半截' }, { type: 'error', message: '中断' }] }], want: { status: 'failed', shape: 'assistant-error' } },
-    { name: 'info.error 形状容错（terminal-gate 同款）', input: [{ info: { role: 'assistant', error: { code: 'x' } }, parts: [] }], want: { status: 'failed', errorPart: '{"code":"x"}', shape: 'assistant-error' } },
-    { name: '多轮工具流：末条 assistant 带 text → done', input: [userMsg('问'), { info: { role: 'assistant' }, parts: [{ type: 'tool' }] }, asstText('最终')], want: { status: 'done', text: '最终', shape: 'assistant-text' } },
-    { name: '顶层 role 形状容错（无 info）', input: [{ role: 'assistant', parts: [{ type: 'text', text: '裸形状' }] }], want: { status: 'done', text: '裸形状', shape: 'assistant-text' } },
-    { name: '{data:[...]} 信封取数组', input: { data: [userMsg('问'), asstText('信封')] }, want: { status: 'done', text: '信封', shape: 'assistant-text' } },
-    { name: '{messages:[...]} 形状容错', input: { messages: [asstText('经 messages')] }, want: { status: 'done', text: '经 messages', shape: 'assistant-text' } },
-    { name: '{history:[...]} 形状容错', input: { history: [asstText('经 history')] }, want: { status: 'done', text: '经 history', shape: 'assistant-text' } },
-    { name: '形状认不出（对象无数组键）→ running', input: { foo: 1 }, want: { status: 'running', shape: 'unknown' } },
-    { name: '非对象非数组 → running', input: 42, want: { status: 'running', shape: 'unknown' } },
-    { name: 'null → running', input: null, want: { status: 'running', shape: 'unknown' } },
-    // ---- v2 扁平 face 形状（2026-11-23 M1.3b/c 挂载探针 probe-raw-entry 逐字节实测）----
+    // ---- 前置门槛本体（失败模式 4：中段叙事 text ≠ 终态；旧 done 用例按 A 判据重写）----
+    { name: 'v1 末条 assistant 带 text、无 idle → running（旧「user+assistant(text)→done」用例重写——m4 痛点#1 关死）', input: [userMsg('问'), asstText('S7A-OK')], want: { status: 'running', shape: 'assistant-no-idle' } },
+    { name: 'v2 末条 assistant content text、无 idle → running（m4 假 done：与真收敛差 5-29 分钟）', input: [v2User('问'), { id: 'msg_a', type: 'assistant', content: [{ type: 'text', text: 'v2 直达' }] }], want: { status: 'running', shape: 'assistant-no-idle' } },
+    { name: 'v2 末条 assistant 扁平 text、无 idle → running', input: [v2User('问'), { id: 'msg_a', type: 'assistant', text: '扁平回答' }], want: { status: 'running', shape: 'assistant-no-idle' } },
+    { name: 'v2 末条 assistant finish=stop、无 idle → running（收尾形状也不豁免门槛）', input: [v2User('问'), { id: 'msg_a', type: 'assistant', finish: 'stop', content: [{ type: 'text', text: '收尾' }] }], want: { status: 'running', shape: 'assistant-no-idle' } },
+    { name: 'm4 翻车形态：中段叙事 text + 后续仍在干活（末条 tool-calls assistant 带叙事 text part）→ running', input: [v2User('问'), asstNarrating], want: { status: 'running', shape: 'assistant-no-idle' } },
+    { name: '同流真收敛后（同叙事条 + 末条 stop assistant + idle succeeded）→ done 取末条终局 text 而非中段叙事', input: [v2User('问'), asstNarrating, asstFinal, v2Idle()], want: { status: 'done', text: 'FINAL-VERDICT', shape: 'assistant-text-v2-idle' } },
+    { name: '只有 user → running', input: [userMsg('问')], want: { status: 'running', shape: 'last-not-idle' } },
+    { name: 'v2 只有 user（assistant 未出）→ running', input: [v2User('问')], want: { status: 'running', shape: 'last-not-idle' } },
+    { name: 'v1 assistant 流式中（step-start 无 text）、无 idle → running（门槛分支）', input: [userMsg('问'), { info: { role: 'assistant' }, parts: [{ type: 'step-start' }] }], want: { status: 'running', shape: 'assistant-no-idle' } },
+    { name: 'v1 末条 assistant text 空串、无 idle → running（门槛先行，不另判 verdict）', input: [userMsg('问'), asstText('')], want: { status: 'running', shape: 'assistant-no-idle' } },
+    { name: '多轮工具流未收敛（末条 assistant text、无 idle）→ running（旧「多轮工具流→done」用例重写）', input: [userMsg('问'), { info: { role: 'assistant' }, parts: [{ type: 'tool' }] }, asstText('最终')], want: { status: 'running', shape: 'assistant-no-idle' } },
+    { name: '多轮工具流真收敛：user→tool→assistant(text)→idle succeeded → done', input: [userMsg('问'), { info: { role: 'assistant' }, parts: [{ type: 'tool' }] }, asstText('最终'), v2Idle()], want: { status: 'done', text: '最终', shape: 'assistant-text-v2-idle' } },
+    { name: 'v2 assistant 流式中（content 无 text）、无 idle → running（门槛分支非 verdict 分支）', input: [v2User('问'), { id: 'msg_a', type: 'assistant', content: [{ type: 'reasoning', text: '想' }] }], want: { status: 'running', shape: 'assistant-no-idle' } },
+    // ---- 失败模式 3：中段冻结流式条（fresh 实测新增形状）——不作 running/终态证据，防回归用例 ----
+    { name: '末条=冻结流式条（finish/completed 恒缺）→ running（无 idle 门槛未开，非「冻结→running」全局规则）', input: [v2User('问'), asstFrozen], want: { status: 'running', shape: 'assistant-no-idle' } },
+    { name: '冻结条在中段、末条 stop assistant + idle → done（冻结条不阻塞终态——否则永远 running）', input: [v2User('问'), asstFrozen, asstFinal, v2Idle()], want: { status: 'done', text: 'FINAL-VERDICT', shape: 'assistant-text-v2-idle' } },
+    { name: 'idle succeeded 但回看到的末条 assistant 是冻结条（无 text 无 finish）→ running（无结论）', input: [v2User('问'), asstFrozen, v2Idle()], want: { status: 'running', shape: 'assistant-no-verdict' } },
+    // ---- idle 分支（判据本体 + 失败模式 2 outcome 词表 ["succeeded"] 单值）----
     {
-      name: 'v2 扁平全 transcript（user→assistant(content)→idle succeeded）→ done',
+      name: 'v2 扁平全 transcript（user→assistant(content)→idle succeeded）→ done（m13 recording.json 同形）',
       input: [
         { id: 'msg_u', time: { created: 1 }, text: 'Reply with exactly: M13-PROBE', type: 'user' },
         {
@@ -329,14 +357,29 @@ const asstError = (message) => ({ info: { id: 'msg_e', role: 'assistant' }, part
       ],
       want: { status: 'done', text: 'M13-PROBE', shape: 'assistant-text-v2-idle' },
     },
-    { name: 'v2 末条 assistant（无 idle 尾条）→ done', input: [{ id: 'msg_u', type: 'user', text: '问' }, { id: 'msg_a', type: 'assistant', content: [{ type: 'text', text: 'v2 直达' }] }], want: { status: 'done', text: 'v2 直达', shape: 'assistant-text' } },
-    { name: 'v2 assistant 扁平 text（无 content）→ done（-flat 形）', input: [{ id: 'msg_u', type: 'user', text: '问' }, { id: 'msg_a', type: 'assistant', text: '扁平回答' }], want: { status: 'done', text: '扁平回答', shape: 'assistant-text-flat' } },
-    { name: 'v2 只有 user（assistant 未出）→ running', input: [{ id: 'msg_u', type: 'user', text: '问' }], want: { status: 'running', shape: 'last-not-assistant' } },
-    { name: 'v2 末条 idle 但 outcome 非 succeeded → running（fail-open）', input: [{ id: 'msg_u', type: 'user', text: '问' }, { id: 'msg_a', type: 'assistant', content: [{ type: 'text', text: '答' }] }, { id: 'msg_i', type: 'idle', outcome: 'failed' }], want: { status: 'running', shape: 'idle-failed' } },
-    { name: 'v2 末条 idle succeeded 但无 assistant → running（fail-open）', input: [{ id: 'msg_i', type: 'idle', outcome: 'succeeded' }], want: { status: 'running', shape: 'idle-no-assistant' } },
-    { name: 'v2 末条 idle outcome 缺失 → running（fail-open）', input: [{ id: 'msg_u', type: 'user', text: '问' }, { id: 'msg_i', type: 'idle' }], want: { status: 'running', shape: 'idle-unknown' } },
-    { name: 'v2 assistant 流式中（content 无 text）→ running', input: [{ id: 'msg_u', type: 'user', text: '问' }, { id: 'msg_a', type: 'assistant', content: [{ type: 'reasoning', text: '想' }] }], want: { status: 'running', shape: 'assistant-no-verdict' } },
-    { name: 'v1 信封条目带 type 键不被误判为扁平（info.role 优先）', input: [{ info: { role: 'assistant' }, parts: [{ type: 'text', text: '信封' }], type: 'user' }], want: { status: 'done', text: '信封', shape: 'assistant-text' } },
+    { name: 'v2 idle + assistant 扁平 text（无 content）→ done（-flat 形）', input: [v2User('问'), { id: 'msg_a', type: 'assistant', text: '扁平回答' }, v2Idle()], want: { status: 'done', text: '扁平回答', shape: 'assistant-text-v2-idle-flat' } },
+    { name: 'v2 idle succeeded + 末条 assistant error 优先于 text → failed（过门槛后才下结论）', input: [v2User('问'), { id: 'msg_e', type: 'assistant', finish: 'error', content: [{ type: 'text', text: '半截' }, { type: 'error', message: 'provider 中断' }] }, v2Idle()], want: { status: 'failed', shape: 'assistant-error' } },
+    { name: 'v2 idle succeeded + error（text 字段形状）→ failed 且 stringify 整件', input: [{ id: 'msg_e', type: 'assistant', content: [{ type: 'error', text: 'boom' }] }, v2Idle()], want: { status: 'failed', shape: 'assistant-error' } },
+    { name: 'v1 error part（对象）过 idle 门槛 → failed 且 stringify', input: [userMsg('问'), asstError('LLM 超时'), v2Idle()], want: { status: 'failed', errorPart: JSON.stringify({ id: 'prt_e', type: 'error', message: 'LLM 超时' }), shape: 'assistant-error' } },
+    { name: 'info.error 形状容错（terminal-gate 同款，过 idle 门槛后仍认）', input: [{ info: { role: 'assistant', error: { code: 'x' } }, parts: [] }, v2Idle()], want: { status: 'failed', errorPart: '{"code":"x"}', shape: 'assistant-error' } },
+    { name: '顶层 role 形状容错（无 info，过 idle 门槛）→ done', input: [{ role: 'assistant', parts: [{ type: 'text', text: '裸形状' }] }, v2Idle()], want: { status: 'done', text: '裸形状', shape: 'assistant-text-v2-idle' } },
+    { name: 'v2 idle succeeded + 末条 assistant text 空串 → running（无结论）', input: [v2User('问'), { id: 'msg_a', type: 'assistant', text: '' }, v2Idle()], want: { status: 'running', shape: 'assistant-no-verdict' } },
+    { name: 'v2 末条 idle outcome=failed → running（失败模式 2 fail-open，不发明失败语义）', input: [v2User('问'), { id: 'msg_a', type: 'assistant', content: [{ type: 'text', text: '答' }] }, v2Idle('failed')], want: { status: 'running', shape: 'idle-failed' } },
+    { name: 'v2 末条 idle outcome 词表外新值（aborted）→ running + shape 观测（timeoutMs 兜底，禁常态烧超时扩大化）', input: [v2User('问'), { id: 'msg_a', type: 'assistant', content: [{ type: 'text', text: '答' }] }, v2Idle('aborted')], want: { status: 'running', shape: 'idle-aborted' } },
+    { name: 'v2 末条 idle outcome 缺失 → running（fail-open）', input: [v2User('问'), { id: 'msg_i', type: 'idle' }], want: { status: 'running', shape: 'idle-unknown' } },
+    { name: 'v2 末条 idle outcome 非字符串 → running（形状观测 idle-unknown）', input: [v2User('问'), v2Idle(7)], want: { status: 'running', shape: 'idle-unknown' } },
+    { name: 'v2 末条 idle succeeded 但无 assistant → running（fail-open）', input: [v2Idle()], want: { status: 'running', shape: 'idle-no-assistant' } },
+    // ---- v1 信封形状写死口径（裁决规则②-2：不被 A 判据豁免，v1 面现役不可达）----
+    { name: 'v1-only transcript（无 v2 idle 尾条）恒 running——交调度器 timeoutMs 兜底', input: [userMsg('问'), asstText('信封')], want: { status: 'running', shape: 'assistant-no-idle' } },
+    { name: 'v1 信封条目带 type:idle 键不构成门槛（info 信封在场→非 v2 扁平 idle；info.role 优先不被误判）', input: [{ info: { role: 'assistant' }, parts: [{ type: 'text', text: '信封' }], type: 'idle' }], want: { status: 'running', shape: 'assistant-no-idle' } },
+    // ---- 容器形状容错（数组直用与信封；done 例必须同样过 idle 门槛）----
+    { name: '{data:[...]} 信封取数组（末条 idle）→ done', input: { data: [v2User('问'), asstFinal, v2Idle()] }, want: { status: 'done', text: 'FINAL-VERDICT', shape: 'assistant-text-v2-idle' } },
+    { name: '{messages:[...]} 形状容错', input: { messages: [asstFinal, v2Idle()] }, want: { status: 'done', text: 'FINAL-VERDICT', shape: 'assistant-text-v2-idle' } },
+    { name: '{history:[...]} 形状容错', input: { history: [asstFinal, v2Idle()] }, want: { status: 'done', text: 'FINAL-VERDICT', shape: 'assistant-text-v2-idle' } },
+    { name: '形状认不出（对象无数组键）→ running', input: { foo: 1 }, want: { status: 'running', shape: 'unknown' } },
+    { name: '非对象非数组 → running', input: 42, want: { status: 'running', shape: 'unknown' } },
+    { name: 'null → running', input: null, want: { status: 'running', shape: 'unknown' } },
+    { name: '空数组（实测空会话形状）→ running', input: [], want: { status: 'running', shape: 'empty' } },
   ]
   for (const c of CASES) {
     const got = judgeContext(c.input)
@@ -345,43 +388,47 @@ const asstError = (message) => ({ info: { id: 'msg_e', role: 'assistant' }, part
     if (c.want.text !== undefined) assert.equal(got.text, c.want.text, `${c.name}：text`)
     if (c.name.includes('text 字段形状')) assert.match(got.errorPart, /boom/, `${c.name}：errorPart 是整件 JSON（deep-memory 同款 stringify）`)
     if (c.name.includes('error 优先')) assert.match(got.errorPart, /中断/, `${c.name}：errorPart 取 error 件`)
+    if (c.name.includes('stringify') && c.want.errorPart !== undefined) assert.equal(got.errorPart, c.want.errorPart, `${c.name}：errorPart 逐字节`)
   }
-  ok(`judgeContext ${CASES.length} 行表驱动全过（done/failed/running + 形状容错 + error 优先）`)
+  ok(`judgeContext ${CASES.length} 行表驱动全过（idle 前置门槛 + m4 翻车形态合成 + outcome 词表 + 形状容错 + error 优先）`)
 }
 
 // ================= 5. result（wait 优先 + 容错读 + 三值探针；实测为准的 decisions 全落点）=================
 {
-  // 5a. 实测主形态：wait 即抛 "Expected object" → 降级 → context 末条 assistant → done
+  // 5a. 实测主形态：wait 即抛 "Expected object" → 降级 → context 末条 idle 门槛 → 回看末条 assistant → done
   {
     const time = mkTime()
     const { ctx, host } = mkHost()
-    host.contextValue = [userMsg('Reply with exactly: S7A-OK'), asstText('S7A-OK')]
+    host.contextValue = [userMsg('Reply with exactly: S7A-OK'), asstText('S7A-OK'), v2Idle()]
     const d = createSessionDriver(ctx, { now: time.now, sleep: time.sleep })
     const { sessionId } = await d.create({ title: 'T', prompt: 'P' })
     const res = await d.result(sessionId)
-    assert.deepEqual(res, { status: 'done', text: 'S7A-OK' }, '实测降级路径仍判 done 取 text')
+    assert.deepEqual(res, { status: 'done', text: 'S7A-OK' }, '实测降级路径：末条 idle succeeded 过门槛后回看末条 assistant 判 done 取 text')
     assert.deepEqual(host.waitArgs, [sessionId], 'wait 优先：裸形 wait(sessionId) 被调用')
     assert.deepEqual(host.contextArgs, [{ sessionID: sessionId }], 'context 收 {sessionID}')
     const rec = d.calls.find((c) => c.op === 'result')
     assert.deepEqual(rec.wait, { status: 'threw', ms: 0, error: 'Expected object' }, 'wait 抛错降级：calls.wait 记 threw（注入钟下 ms=0，与实测 ms=0/1 同形）')
-    assert.equal(rec.parse, 'assistant-text', 'calls.parse 记判定依据')
+    assert.equal(rec.parse, 'assistant-text-v2-idle', 'calls.parse 记判定依据（A-idle-confirm 门槛通过的形状）')
     assert.deepEqual(rec.response, { status: 'done', text: 'S7A-OK' }, 'calls.response 记送达值')
     assert.equal(rec.error, undefined, '成功无 error 键')
-    ok('result：wait 即抛（实测）→ 降级 context → done；calls.wait/parse/response 齐')
+    ok('result：wait 即抛（实测）→ 降级 context → idle 门槛 → done；calls.wait/parse/response 齐')
   }
-  // 5b. 三值：running（实测空会话 []）与 failed（error part）
+  // 5b. 三值：running（实测空会话 [] 与「末条 assistant 无 idle」的 m4 假 done 形态）与 failed（error part 过门槛）
   {
     const time = mkTime()
     const { ctx, host } = mkHost()
     const d = createSessionDriver(ctx, { now: time.now, sleep: time.sleep })
     const { sessionId } = await d.create({ title: 'T', prompt: 'P' })
     assert.deepEqual(await d.result(sessionId), { status: 'running' }, '空会话（实测 []）→ running 恰一值')
-    host.contextValue = [userMsg('问'), asstError('provider 限流')]
+    host.contextValue = [userMsg('问'), asstText('看着像终局的 text')]
+    assert.deepEqual(await d.result(sessionId), { status: 'running' }, '末条 assistant 带 text 但无 idle → running（A-idle-confirm：m4 假 done 形态不再误报）')
+    assert.equal(d.calls.at(-1).parse, 'assistant-no-idle', 'calls.parse 记 m4 翻车分支观测名')
+    host.contextValue = [userMsg('问'), asstError('provider 限流'), v2Idle()]
     const res = await d.result(sessionId)
-    assert.equal(res.status, 'failed', 'error part → failed')
+    assert.equal(res.status, 'failed', 'error part → failed（末条 idle succeeded 过门槛后回看末条 assistant）')
     assert.match(res.errorPart, /provider 限流/, 'errorPart 携带宿主错误')
     assert.equal('text' in res, false, 'failed 无 text 键')
-    ok('result：running（空数组）/ failed（errorPart）两值')
+    ok('result：running（空数组 / 无 idle 假 done 形态）/ failed（errorPart 过门槛）')
   }
   // 5c. wait 四形态的 calls.wait 记录（resolved / hang→有界 timeout / unsupported / 缺 face）
   {
@@ -391,7 +438,7 @@ const asstError = (message) => ({ info: { id: 'msg_e', role: 'assistant' }, part
       h.host.waitMode = waitMode
       const d = createSessionDriver(h.ctx, { now: time.now, sleep: time.sleep })
       const { sessionId } = await d.create({ title: 'T', prompt: 'P' })
-      h.host.contextValue = [asstText('好')]
+      h.host.contextValue = [asstText('好'), v2Idle()] // 末条 idle 在场：wait 四形态后 context 判定都过门槛判 done
       if (mutate) mutate(h.host, h.ctx)
       const pending = d.result(sessionId)
       if (waitMode === 'hang') time.fire() // 挂死形态才需要解开有界赛跑的 sleep
@@ -458,7 +505,7 @@ const asstError = (message) => ({ info: { id: 'msg_e', role: 'assistant' }, part
   {
     const time = mkTime()
     const { ctx, host } = mkHost()
-    host.contextValue = [asstText('A')]
+    host.contextValue = [asstText('A'), v2Idle()]
     const d = createSessionDriver(ctx, { now: time.now, sleep: time.sleep, fault: { driverChaos: { halfResponse: true } } })
     const { sessionId } = await d.create({ title: 'T', prompt: 'P' })
     const res = await d.result(sessionId)
@@ -468,8 +515,8 @@ const asstError = (message) => ({ info: { id: 'msg_e', role: 'assistant' }, part
     // duplicateCallback：状态派生应答变化 → 下一次调用先重投旧应答（A,A,B,B,B…）
     const time2 = mkTime()
     const h2 = mkHost()
-    h2.host.contextQueue = [[asstText('A')], [asstText('B')]]
-    h2.host.contextValue = [asstText('B')] // 队列耗尽后的粘滞末态（mock 末项粘滞同款）
+    h2.host.contextQueue = [[asstText('A'), v2Idle()], [asstText('B'), v2Idle()]]
+    h2.host.contextValue = [asstText('B'), v2Idle()] // 队列耗尽后的粘滞末态（mock 末项粘滞同款）
     const d2 = createSessionDriver(h2.ctx, { now: time2.now, sleep: time2.sleep, fault: { driverChaos: { duplicateCallback: true } } })
     const { sessionId: sid2 } = await d2.create({ title: 'T', prompt: 'P' })
     const seq = []
@@ -744,7 +791,7 @@ const asstError = (message) => ({ info: { id: 'msg_e', role: 'assistant' }, part
   const mem = { value: null }
   const journal = createJournal({ storage: { read: () => mem.value, write: (t) => (mem.value = t) }, runId: 'it-1', now: time.now })
   const declaration = { runId: 'it-1', steps: [{ stepId: 's1', prompt: '读后判', deps: [] }] }
-  h.host.contextValue = [userMsg('读后判'), asstText('{"verdict":"ok"}')] // 宿主侧「已完成」
+  h.host.contextValue = [userMsg('读后判'), asstText('{"verdict":"ok"}'), v2Idle()] // 宿主侧「真收敛」（末条 idle 在场，m13 recording.json 同形）
   const eventsIterable = driver.events()
   const runPromise = run(declaration, { journal, driver, now: time.now, events: eventsIterable })
   await drain() // 让 dispatchStep 落地（create+prompt）

@@ -22,9 +22,13 @@
 //   ① 语法门：编译不过（含空文件）→ ok:false，register 拒绝且零记录（engine-run 不合法同轨）；
 //   ② 命令字面量静态扫描：scanRunCommands（M2.1）→ ok:true 时带 script.commands 供评审
 //     （M2.1「命令字面量进评审」；模板字符串/变量命令不可静态捕获——v1 偏差已在 M2.3 清单）。
+// P4 增量：.ts 脚本文件走 classifyWorkflowScriptAsync（TS 语法 only——esbuild transform 后同一
+// vm.Script 构造，语法判定零分叉；坐标系唯一 = .ts 源文本，命令扫描恒扫源文本）。JS 路径
+// （classifyWorkflowScript）零改动零回归。
 // 哈希绑定与声明同轨（D1 文件全字节，plan-gate 侧照旧）；check 侧零分叉，照走同一矩阵。
 import { validateDeclaration } from './declaration.js'
 import { compileScriptBody, scanRunCommands } from './script-runner.js'
+import { compileScriptBodyAsync, isTsScriptName } from './ts-front.js'
 
 /** 声明文件的 kind 标记（精确字符串匹配）。 */
 export const ENGINE_RUN_KIND = 'engine-run'
@@ -89,6 +93,37 @@ export function classifyWorkflowScript(bytes) {
   } catch (error) {
     const brief = String(error?.message ?? error).slice(0, 200)
     return { kind: WORKFLOW_SCRIPT_KIND, ok: false, errors: [`workflow-script: 语法不过（${brief}）`] }
+  }
+  return { kind: WORKFLOW_SCRIPT_KIND, ok: true, script: { commands: scanRunCommands(text) } }
+}
+
+/**
+ * 文件字节 → workflow-script 分类（P4 TS 前端版，**async**；plan-gate registerSession 按
+ * scriptName 扩展名分流——.ts 走这里，其余走 classifyWorkflowScript 原样，JS 路径零分叉）。
+ * 语法门零分叉不变式保持：.ts 也以同一 vm.Script 构造收口（compileScriptBodyAsync 内部对
+ * transform 产物 new vm.Script——transform 喂 vm，蓝图 P4「TS 语法 only」写死）；命令字面量
+ * 扫描恒扫**源文本**（TS 类型注解不藏 F.run 字面量；模板字符串/变量命令不可静态捕获的 v1
+ * 偏差同 JS）。平台包缺失 → compileScriptBodyAsync 抛显式 Error（原则 4 禁静默回退 JS），
+ * 本函数不捕获——register 调用方如实收敛。
+ * @param {Buffer|Uint8Array|string} bytes 文件字节
+ * @param {string} scriptName 登记文件名（basename；.ts 结尾才走 TS 前端）
+ * @returns {Promise<{kind:'workflow-script', ok:true, script:{commands}} |
+ *                    {kind:'workflow-script', ok:false, errors:string[]}>} 形状同
+ *   classifyWorkflowScript（commands 恒源文本扫描）
+ * @throws {TypeError} scriptName 非 .ts 结尾（分流责任在调用方）
+ * @throws {Error} esbuild 平台包缺失（TS_FRONT_UNAVAILABLE_PREFIX 显式文案）
+ */
+export async function classifyWorkflowScriptAsync(bytes, scriptName) {
+  if (!isTsScriptName(scriptName)) {
+    throw new TypeError(`classifyWorkflowScriptAsync: scriptName 必须以 .ts 结尾（得到 ${String(scriptName)}）——JS 脚本走 classifyWorkflowScript`)
+  }
+  const text = decodeText(bytes)
+  if (text.trim().length === 0) {
+    return { kind: WORKFLOW_SCRIPT_KIND, ok: false, errors: ['workflow-script: 函数体为空（脚本文件不能是空文件）'] }
+  }
+  const lowered = await compileScriptBodyAsync(text, 'workflow-script.register.ts')
+  if (!lowered.ok) {
+    return { kind: WORKFLOW_SCRIPT_KIND, ok: false, errors: lowered.errors.map((e) => `workflow-script: ${e}`) }
   }
   return { kind: WORKFLOW_SCRIPT_KIND, ok: true, script: { commands: scanRunCommands(text) } }
 }

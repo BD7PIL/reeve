@@ -7,7 +7,8 @@
 //   T4.1 主线  DAG q→d + 无依赖兄弟 s：问句产出 → 台账记 blocked（payload 带 question）+
 //             journal 记 escalated + onEscalate 恰一次；挂起中兄弟 s 照常完成、依赖步 d
 //             停在 declared（零 create）；答复（answerFor 非阻塞拉取）→ journal 记
-//             escalation-answered → blocked→dispatching（恢复重入边）→ escalationPrompt
+//             escalation-answered（Q3 payload 带 answer/operator/source——纯字符串旧形状
+//             source='unknown'）→ blocked→dispatching（恢复重入边）→ escalationPrompt
 //             组装重派 → q done → d 才派发 → run completed；ledger history 链与 run 事件
 //             序列逐项断言（先落盘再广播的全时间线）。
 //   分支独立  双问句 q1→d1 / q2→d2 + s：只答复 q1 时 d1 照常跑完而 q2/d2 仍挂（只暂停
@@ -22,8 +23,11 @@
 //             恢复重派刷新 lastDispatchAt（窗口重开）。
 //   恢复即败  答复后重派 create 抛错 → dispatching→failed、下游 declared→superseded、
 //             run failed（熔断计数 +1 但未达上限）。
-//   答复源    answerFor 抛错/空串/非字符串 → 本轮跳过不恢复、之后恢复恰一次；同一问句
+//   答复源    answerFor 抛错/空串/未答形状 → 本轮跳过不恢复、之后恢复恰一次；同一问句
 //             不重复答复（挂起档答复即删）。
+//   Q3 来源  normalizeAnswer 归一矩阵（纯字符串 → source:'unknown' 兼容；对象形状
+//             operator/source 可选，source 越界归 unknown，answer 非非空字符串 → 未答）+
+//             端到端对象形状答复落 payload {answer, operator, source}。
 //   参数面    escalation 非对象 / onEscalate、answerFor 非函数 → TypeError fail-fast。
 //   纯函数面  parseQuestion 八形态判定矩阵 + escalationPrompt 确定性模板。
 //
@@ -37,7 +41,7 @@ import assert from 'node:assert/strict'
 
 import { createJournal } from '../src/engine/journal.js'
 import { createDriver } from '../src/engine/driver.js'
-import { escalationPrompt, parseQuestion } from '../src/engine/escalation.js'
+import { escalationPrompt, normalizeAnswer, parseQuestion } from '../src/engine/escalation.js'
 import { run } from '../src/engine/scheduler.js'
 
 let passed = 0
@@ -223,7 +227,11 @@ console.log('1. T4.1 主线：兄弟照常完成 / 依赖步挂起 / 答复后�
   const blockedEntry = disk.steps.q.history.find((h) => h.to === 'blocked')
   assert.deepEqual(blockedEntry.payload, { question: QUESTION, sessionId: qSession }, 'blocked 迁移 payload 带 question + sessionId')
   assert.deepEqual(disk.events.find((e) => e.type === 'escalated').payload, { stepId: 'q', question: QUESTION, sessionId: qSession }, 'escalated 审计事件带问句')
-  assert.deepEqual(disk.events.find((e) => e.type === 'escalation-answered').payload, { stepId: 'q', answer: ANSWER, question: QUESTION }, 'escalation-answered 审计事件带答复')
+  assert.deepEqual(
+    disk.events.find((e) => e.type === 'escalation-answered').payload,
+    { stepId: 'q', answer: ANSWER, operator: null, source: 'unknown', question: QUESTION },
+    'escalation-answered 审计事件带答复（Q3：纯字符串旧形状 → operator:null + source:unknown 兼容归一）',
+  )
   assert.deepEqual(
     disk.steps.q.history.map((h) => h.to),
     ['declared', 'dispatching', 'running', 'blocked', 'dispatching', 'running', 'done'],
@@ -588,6 +596,55 @@ console.log('9. escalation 参数校验')
   await assert.rejects(run(good, { journal: J(), driver: D(), escalation: { onEscalate: 'x' } }), TypeError, 'onEscalate 非函数应拒')
   await assert.rejects(run(good, { journal: J(), driver: D(), escalation: { answerFor: 7 } }), TypeError, 'answerFor 非函数应拒')
   ok('escalation 面形状不合法（4 形态）→ TypeError fail-fast')
+}
+
+// ---- 10. Q3 答复来源归档：normalizeAnswer 契约（旧形状兼容 + 对象形状 source/operator 落台账）----
+console.log('10. Q3 答复来源归档（normalizeAnswer）')
+{
+  // 纯函数面：归一矩阵（不抛，逐形态）。
+  assert.deepEqual(normalizeAnswer('装 2.x'), { answer: '装 2.x', operator: null, source: 'unknown' }, '纯字符串旧形状 → operator:null + source:unknown（兼容不破）')
+  assert.equal(normalizeAnswer(''), null, '空串 = 未答')
+  for (const v of [null, undefined, 42, true, { noAnswer: 'x' }, { answer: '' }, { answer: 42 }]) {
+    assert.equal(normalizeAnswer(v), null, `非答复形状 → null：${JSON.stringify(v)}`)
+  }
+  assert.deepEqual(normalizeAnswer({ answer: 'a', operator: 'bd7pil', source: 'panel' }), { answer: 'a', operator: 'bd7pil', source: 'panel' }, '对象形状全键保留')
+  assert.deepEqual(normalizeAnswer({ answer: 'a' }), { answer: 'a', operator: null, source: 'unknown' }, '对象缺省 operator/source → null/unknown')
+  assert.deepEqual(normalizeAnswer({ answer: 'a', source: 'telegram' }), { answer: 'a', operator: null, source: 'unknown' }, '越界 source → unknown（枚举闭域 harness/api/panel）')
+  assert.deepEqual(normalizeAnswer({ answer: 'a', operator: 42, source: 'api' }), { answer: 'a', operator: null, source: 'api' }, 'operator 非字符串 → null（source 照收）')
+  // 端到端：对象形状答复 → escalation-answered payload 带 operator + source；恢复 prompt 用 answer。
+  // （armed 旗标同第 1 节：未 armed 前恒「未答」，挂起可观察——答复即答的话 blocked 同轮穿过，等不到。）
+  const QUESTION = '用哪个 source？'
+  const ANSWER = 'api 答复'
+  const RESUME = escalationPrompt(P('q'), QUESTION, ANSWER)
+  const bus = makeEvents()
+  let armed = false
+  const { p, journal, driver, storage } = rig({
+    runId: 'run-p4e-q3-source',
+    steps: [step('q')],
+    scenarios: [
+      { name: 'q', match: { prompt: P('q') }, result: [{ status: 'running' }, questionDone(QUESTION)] },
+      { name: 'q-resume', match: { prompt: RESUME }, result: [{ status: 'done', text: 'q 完' }] },
+    ],
+    events: bus.events,
+    escalation: { answerFor: () => (armed ? { answer: ANSWER, operator: 'bd7pil', source: 'api' } : null) },
+  })
+  await until(() => createIds(driver).length >= 1, 'q 初派')
+  bus.feed(idleEv())
+  bus.feed(idleEv())
+  await until(() => journal.getStepState('q').state === 'blocked', 'q 挂起')
+  armed = true
+  bus.feed(idleEv())
+  await until(() => createIds(driver).includes(RESUME), '对象形状答复同样恢复重派（escalationPrompt 用 answer）')
+  bus.feed(idleEv())
+  const out = await settle(p)
+  assert.equal(out.status, 'completed', '对象形状答复后 completed')
+  const disk = JSON.parse(storage.read())
+  assert.deepEqual(
+    disk.events.find((e) => e.type === 'escalation-answered').payload,
+    { stepId: 'q', answer: ANSWER, operator: 'bd7pil', source: 'api', question: QUESTION },
+    'escalation-answered payload 带 answer/operator/source（Q3 来源归档）',
+  )
+  ok('Q3：纯字符串旧形状 source=unknown（第 1 节台账）+ 对象形状 operator/source 落 payload + 越界 source 归 unknown + 未答形状逐形态 null')
 }
 
 console.log(`\n引擎 P4-E escalation 测试（T4.1 门：挂起/兄弟/恢复 + 分支独立/超时/答复源/参数面）：${passed} 项全过`)
