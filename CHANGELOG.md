@@ -3,6 +3,70 @@
 Newest first. Versions follow the plugin package (`plugin/package.json`); the
 panel extension has its own tags (`reeve-<version>`).
 
+## 0.4.1 — 2026-11-26
+
+**The pilot pain fixes land, and steps can hand data to each other.** The
+v4.3 round (plan `next-round-plan-v4.md`) ships five workstreams on top of
+the 0.4.0 engine:
+
+- **Real done criteria (P1.1)**: a v2 step only counts as done when the host
+  context shows an idle convergence entry after the last assistant text
+  (P1.0 measurement, `evidence/m4/`) — mid-run narration no longer
+  masquerades as a terminal state, and running steps are never re-dispatched
+  (waiting is the cost of judging "running", never repeated side effects).
+- **Declared-step output validation (P1.2)**: `step.schema` is now wired —
+  replies are validated through `validateValue` in the `pollAll` done branch
+  before the running→done move — and `step.outputs` must exist on disk as
+  files (`~/` is expanded by the engine through an injected fs face,
+  `fs-face.js`). Only schema/outputs failures are retryable (fixed cooldown,
+  default 30s; no exponential backoff — subagent costs are minutes, not
+  milliseconds); steps in `pendingRetry` are non-terminal so a run cannot
+  close while a leaf step cools down, and a circuit-breaker close during
+  cooldown reports `consecutive-failures` with the pending step marked
+  `retry-pending`. Journal records gain a `version: 1` field (old records
+  without it still load, with a warn).
+- **Step data plane, phase 1 (R)**: steps with a schema persist structured
+  output in the journal (`payload.output`, 32 KiB write cap →
+  `output-over-limit`, non-retryable). Downstream prompts reference it with
+  `{{outputs.<stepId>}}` or `{{outputs.<stepId>.<key>}}` — strict two-form
+  lexer (no whitespace tolerance, dotted stepIds rejected at the source,
+  literal `{{` is a compile error), three compile-time reference checks
+  (exists / within the deps transitive closure / has a schema) with
+  Did-you-mean candidates, render-time 32 KiB injection cap
+  (`injection-over-limit`, non-retryable; rendered prompts are exempt from
+  the 8000-char schema cap by design), and `renderPrompt` exported as a pure
+  function (the future `dry_run` consumer). Amend fingerprints gain a third
+  dimension — an imported downstream requires all referenced upstreams
+  imported with their old outputs recoverable, and an upstream change
+  cascades along reference closures (non-referencing steps keep the old
+  per-step semantics). Hole handoffs that would strand referenced upstreams
+  under done downstreams are rejected (fail-closed).
+- **lightflow absorption (Q)**: unknown stepId references suggest the
+  nearest candidate by edit distance (threshold `max(2, ⌈len/2⌉)`; Q1);
+  escalation answers carry a `source` (`harness`/`api`/`panel`, `unknown`
+  for legacy shapes) and `answerFor` accepts the legacy bare string again
+  (Q3); salvage gains a machine-readable `runStatusCode` six-code mapping
+  (0 completed / 1 failed / 2 blocked-escalation / 3 interrupted /
+  4 journal-torn / 5 unknown) with a `--status <journalPath>` CLI entry that
+  exits with the code (Q4); declarations accept `description` and
+  `metadata` labels (Q5; `secret_keys` deliberately not provided).
+- **Patch context (P3)**: `buildPatchContext({ storage, runId, scriptPath })`
+  is a library-level export returning the failure point (reason/site/
+  bodyOffset), completed asks, and the base script fingerprint, so a host
+  caller can compose a patch; `registerSession` carries `baseExecution`
+  into review context. The host-side caller is still missing and declared as
+  such.
+- **TypeScript script front-end (P4)**: `.ts` workflow scripts are stripped
+  type-only via esbuild 0.28.2 (new plugin dependency) and fed to the same
+  vm sandbox through a byte-identical wrapper (`script-wrap.js`, single
+  source of truth shared with the JS path); the sole coordinate system is
+  the .ts source text, captured before transform; a missing esbuild platform
+  package fails with an explicit error. The JS path is untouched.
+
+SKILL.md write-backs cover all of the above (§6 report contract, §9 done
+semantics, §11 outputs/retry/data-plane grammar, §12.3 patch context).
+Tag/publish deferred until the P2 verdict (plan gate).
+
 ## 0.4.0 — 2026-11-23
 
 **The orchestration engine ships: declarative runs, sandboxed workflow
