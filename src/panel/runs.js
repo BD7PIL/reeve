@@ -173,8 +173,9 @@ function renderDag(run) {
         class: 'oc-dag-node',
         'data-bucket': bucketOf(s.state),
         'data-dag-node': s.stepId,
+        // Q5b：声明步有 description 显示人话标签，无则回退 stepId；stepId 留在 title 里保身份可查
         title: `${s.stepId} · ${stateBadge(s.state).label}`,
-        text: s.stepId,
+        text: s.description || s.stepId,
       })
       if (s.attempts > 1) {
         chip.append(el('span', { class: 'oc-dag-retry', text: `×${s.attempts}`, title: t('runs.attempts', { n: s.attempts }) }))

@@ -1,166 +1,12 @@
 {
-  "generatedAt": "2026-11-23T06:31:04.562Z",
+  "generatedAt": "2026-11-26T01:04:53.549Z",
   "locale": "en",
   "fixture": true,
   "strictContrast": false,
-  "total": 16,
+  "total": 1,
   "failed": 0,
-  "warned": 16,
+  "warned": 1,
   "items": [
-    {
-      "id": "01-chain-default",
-      "note": "路由链首屏：链卡（含免费兜底行）+ 档位/模型/更多",
-      "file": "01-chain-default-en.png",
-      "scenario": null,
-      "failures": [],
-      "warnings": [
-        "对比度 3–4.5：@free(3.49)；auto(3.49)；default(3.12)；@free(3.49)",
-        "宿主 kit 对比度（token 配对 · shim 近似色）：Chains(2.39)"
-      ],
-      "consoleErrors": []
-    },
-    {
-      "id": "09-tier-mapping",
-      "note": "chain_for_model（真正生效的档位映射编辑面）",
-      "file": "09-tier-mapping-en.png",
-      "scenario": null,
-      "failures": [],
-      "warnings": [
-        "对比度 3–4.5：@free(3.49)；auto(3.49)；default(3.12)；@free(3.49)",
-        "宿主 kit 对比度（token 配对 · shim 近似色）：Chains(2.39)"
-      ],
-      "consoleErrors": []
-    },
-    {
-      "id": "19-free-default",
-      "note": "免费模型池：开关/模型数/发现源 + 展开摘要",
-      "file": "19-free-default-en.png",
-      "scenario": null,
-      "failures": [],
-      "warnings": [
-        "对比度 3–4.5：@free(3.49)；auto(3.49)；default(3.12)；@free(3.49)",
-        "宿主 kit 对比度（token 配对 · shim 近似色）：Chains(2.39)"
-      ],
-      "consoleErrors": []
-    },
-    {
-      "id": "22-free-error",
-      "note": "免费模型池运行态读取失败",
-      "file": "22-free-error-en.png",
-      "scenario": "free-error",
-      "failures": [],
-      "warnings": [
-        "对比度 3–4.5：@free(3.49)；auto(3.49)；default(3.12)；@free(3.49)",
-        "宿主 kit 对比度（token 配对 · shim 近似色）：Chains(2.39)"
-      ],
-      "consoleErrors": []
-    },
-    {
-      "id": "24-free-prefer-add",
-      "note": "固定一个免费模型进偏好（高级折叠内）",
-      "file": "24-free-prefer-add-en.png",
-      "scenario": null,
-      "failures": [],
-      "warnings": [
-        "对比度 3–4.5：Unsaved(3.75)；@free(3.49)；auto(3.49)；default(3.12)",
-        "宿主 kit 对比度（token 配对 · shim 近似色）：Chains(2.39)；Save & apply(2.98)"
-      ],
-      "consoleErrors": []
-    },
-    {
-      "id": "25-gate-down",
-      "note": "路由引擎没起：徽标 + 横幅 + 页签仍可用",
-      "file": "25-gate-down-en.png",
-      "scenario": "gate-down",
-      "failures": [],
-      "warnings": [
-        "对比度 3–4.5：Router not ready · 0 running(3.83)；@free(3.49)；auto(3.49)；default(3.12)",
-        "宿主 kit 对比度（token 配对 · shim 近似色）：Chains(2.39)"
-      ],
-      "consoleErrors": []
-    },
-    {
-      "id": "28-config-missing",
-      "note": "配置读不到：横幅 + 诊断里有 tried 列表",
-      "file": "28-config-missing-en.png",
-      "scenario": "config-missing",
-      "failures": [],
-      "warnings": [
-        "宿主 kit 对比度（token 配对 · shim 近似色）：Chains(2.39)"
-      ],
-      "consoleErrors": []
-    },
-    {
-      "id": "40-chain-narrow-306",
-      "note": "宿主侧栏 306px：不溢出、徽标与更多可见、免费行仍可读",
-      "file": "40-chain-narrow-306-en.png",
-      "scenario": null,
-      "failures": [],
-      "warnings": [
-        "对比度 3–4.5：@free(3.49)；auto(3.49)；default(3.12)；@free(3.49)",
-        "宿主 kit 对比度（token 配对 · shim 近似色）：Chains(2.39)"
-      ],
-      "consoleErrors": []
-    },
-    {
-      "id": "41-chain-selected-306",
-      "note": "306px：选中行 + 动作条（Selected 前缀收起，按钮仍在）",
-      "file": "41-chain-selected-306-en.png",
-      "scenario": null,
-      "failures": [],
-      "warnings": [
-        "对比度 3–4.5：@free(3.49)；auto(3.49)；default(3.12)；@free(3.49)",
-        "宿主 kit 对比度（token 配对 · shim 近似色）：Chains(2.39)；Remove(3.48)"
-      ],
-      "consoleErrors": []
-    },
-    {
-      "id": "42-stats-306",
-      "note": "306px：统计行拆两行，不溢出",
-      "file": "42-stats-306-en.png",
-      "scenario": null,
-      "failures": [],
-      "warnings": [
-        "宿主 kit 对比度（token 配对 · shim 近似色）：Stats(2.39)"
-      ],
-      "consoleErrors": []
-    },
-    {
-      "id": "43-free-advanced-306",
-      "note": "306px：免费模型池高级折叠（偏好/禁用/白名单）",
-      "file": "43-free-advanced-306-en.png",
-      "scenario": null,
-      "failures": [],
-      "warnings": [
-        "对比度 3–4.5：@free(3.49)；auto(3.49)；default(3.12)；@free(3.49)",
-        "宿主 kit 对比度（token 配对 · shim 近似色）：Chains(2.39)"
-      ],
-      "consoleErrors": []
-    },
-    {
-      "id": "45-free-only-chain",
-      "note": "免费池专用链 free-only（[@free]）：整卡只有免费模型池行，没有付费模型",
-      "file": "45-free-only-chain-en.png",
-      "scenario": null,
-      "failures": [],
-      "warnings": [
-        "对比度 3–4.5：@free(3.49)；auto(3.49)；default(3.12)；@free(3.49)",
-        "宿主 kit 对比度（token 配对 · shim 近似色）：Chains(2.39)"
-      ],
-      "consoleErrors": []
-    },
-    {
-      "id": "48-runs-fourstate",
-      "note": "D1 四态一眼可辨：run 左条/状态徽标两两可辨 + 失败步突出 + 耗时/重试可见（程序化断言：宿主 token getComputedStyle 对比度）",
-      "file": "48-runs-fourstate-en.png",
-      "scenario": "runs-fourstate",
-      "failures": [],
-      "warnings": [
-        "对比度 3–4.5：Completed(3.77)；Completed(3.77)；Error(3.83)",
-        "宿主 kit 对比度（token 配对 · shim 近似色）：Tasks(2.39)"
-      ],
-      "consoleErrors": []
-    },
     {
       "id": "49-runs-dag",
       "note": "D2 DAG 视图：声明 steps+deps → 图（mermaid 源可展开）+ 脚本 phase 时间线，随状态着色",
@@ -168,31 +14,8 @@
       "scenario": "runs-dag",
       "failures": [],
       "warnings": [
-        "对比度 3–4.5：fetch-source(3.77)；clean-normalize(3.77)；analyze-patterns(3.41)；cross-check×2(3.41)",
+        "对比度 3–4.5：fetch-source(3.77)；Normalize raw logs(3.77)；analyze-patterns(3.41)；Spot-check duplicates×2(3.41)",
         "宿主 kit 对比度（token 配对 · shim 近似色）：Tasks(2.39)"
-      ],
-      "consoleErrors": []
-    },
-    {
-      "id": "50-runs-approval",
-      "note": "D3 workflow-script 审批卡：脚本摘要 + 静态扫描命令集 + phase 列表 + 分叉说明",
-      "file": "50-runs-approval-en.png",
-      "scenario": "runs-approval",
-      "failures": [],
-      "warnings": [
-        "对比度 3–4.5：collect(3.77)；aggregate(3.77)；report(3.75)；Completed(3.77)",
-        "宿主 kit 对比度（token 配对 · shim 近似色）：Tasks(2.39)"
-      ],
-      "consoleErrors": []
-    },
-    {
-      "id": "51-runs-fourstate-dark",
-      "note": "D1 四态 · 深色：同一套程序化断言在宿主深色 token 下复跑",
-      "file": "51-runs-fourstate-dark-en.png",
-      "scenario": "runs-fourstate",
-      "failures": [],
-      "warnings": [
-        "对比度 3–4.5：Error(3.63)"
       ],
       "consoleErrors": []
     }

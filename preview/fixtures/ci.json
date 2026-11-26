@@ -448,8 +448,8 @@
           "status": "running",
           "updatedAt": 1792646300000,
           "steps": [
-            { "stepId": "fetch-source", "state": "done", "attempts": 1 },
-            { "stepId": "clean-normalize", "state": "done", "attempts": 2 },
+            { "stepId": "fetch-source", "state": "done", "attempts": 1, "description": "Fetch CI logs" },
+            { "stepId": "clean-normalize", "state": "done", "attempts": 2, "description": "Normalize & dedupe" },
             { "stepId": "analyze-patterns", "state": "running", "attempts": 1 },
             { "stepId": "cross-check", "state": "declared", "attempts": 0 },
             { "stepId": "report-writeup", "state": "failed", "attempts": 3 }
