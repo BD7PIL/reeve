@@ -187,9 +187,9 @@ function runsDag(now) {
       startedAt: now - 6 * 60_000, updatedAt: now - 40_000,
       steps: [
         { stepId: 'fetch-source', state: 'done', attempts: 1, deps: [] },
-        { stepId: 'clean-normalize', state: 'done', attempts: 1, deps: ['fetch-source'] },
+        { stepId: 'clean-normalize', state: 'done', attempts: 1, deps: ['fetch-source'], description: 'Normalize raw logs' },
         { stepId: 'analyze-patterns', state: 'running', attempts: 1, deps: ['clean-normalize'] },
-        { stepId: 'cross-check', state: 'running', attempts: 2, deps: ['clean-normalize'] },
+        { stepId: 'cross-check', state: 'running', attempts: 2, deps: ['clean-normalize'], description: 'Spot-check duplicates' },
         { stepId: 'report-writeup', state: 'declared', attempts: 0, deps: ['analyze-patterns', 'cross-check'] },
       ],
     },

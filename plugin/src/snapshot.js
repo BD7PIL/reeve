@@ -143,7 +143,7 @@ export function buildSnapshot(
  *   （producer 侧接线；v1 还没有常驻 registry——接线点留给引擎 run 入口，形状现在定死：
  *   runId: string · kind: 'declaration'|'script' · status: 'running'|'completed'|'failed'|'blocked'
  *   · startedAt: number（可选，run 起点——面板算耗时；缺了不画，绝不拿 updatedAt 冒充）
- *   · updatedAt: number · steps: [{stepId, state(journal 七态), attempts, deps?}]
+ *   · updatedAt: number · steps: [{stepId, state(journal 七态), attempts, deps?, description?}]
  *   （deps = 声明路径的依赖名表，D 线 DAG 视图用；声明路径才有）· phases: string[]
  *   （脚本路径的 phase 名序表；声明路径没有）· summary: string（workflow-script 审批卡的脚本摘要，可选）
  *   · commands: string[]（静态扫描命令集 scanRunCommands 产物，可选）· forks: string[]（分叉说明，可选）。
@@ -168,6 +168,8 @@ export function projectEngineRuns(runs) {
               state: typeof s.state === 'string' ? s.state : null,
               attempts: Number.isInteger(s.attempts) && s.attempts > 0 ? s.attempts : 1,
               deps: Array.isArray(s.deps) ? s.deps.filter((d) => typeof d === 'string' && d.length > 0) : [],
+              // Q5b：声明步的人话标签透传（Q5 加进 schema）；没有/非字符串 → null，面板回退 stepId
+              description: typeof s.description === 'string' && s.description.length > 0 ? s.description : null,
             }))
         : [],
       phases: Array.isArray(r.phases) ? r.phases.filter((p) => typeof p === 'string' && p.length > 0) : [],

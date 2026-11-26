@@ -185,8 +185,8 @@ const dir = await mkdtemp(join(tmpdir(), 'reeve-snap-'))
       updatedAt: 50,
       steps: [
         { stepId: 'fetch', state: 'done', attempts: 1 },
-        { stepId: 'analyze', state: 'running', attempts: 1, deps: ['fetch', 42, ''] },
-        { stepId: 'report', state: 'failed', attempts: 3 },
+        { stepId: 'analyze', state: 'running', attempts: 1, deps: ['fetch', 42, ''], description: 'Analyze retry hotspots' },
+        { stepId: 'report', state: 'failed', attempts: 3, description: 42 }, // 非字符串 → null
       ],
     },
     {
@@ -223,6 +223,10 @@ const dir = await mkdtemp(join(tmpdir(), 'reeve-snap-'))
   assert.equal(decl.kind, 'declaration')
   assert.deepEqual(decl.steps.map((s) => [s.stepId, s.state, s.attempts]), [['fetch', 'done', 1], ['analyze', 'running', 1], ['report', 'failed', 3]])
   assert.deepEqual(decl.steps[1].deps, ['fetch']) // D 线 DAG 视图的依赖表
+  // Q5b：声明步 description 透传；没有/非字符串 → null（面板回退 stepId）
+  assert.equal(decl.steps[0].description, null)
+  assert.equal(decl.steps[1].description, 'Analyze retry hotspots')
+  assert.equal(decl.steps[2].description, null)
   assert.equal(script.kind, 'script')
   assert.deepEqual(script.phases, ['collect', 'analyze'])
   assert.equal(script.startedAt, 10)
@@ -233,7 +237,7 @@ const dir = await mkdtemp(join(tmpdir(), 'reeve-snap-'))
   assert.equal(loose.status, null)
   assert.equal(loose.updatedAt, null)
   assert.equal(loose.startedAt, null)
-  assert.deepEqual(loose.steps, [{ stepId: 'ok', state: 'done', attempts: 9, deps: [] }])
+  assert.deepEqual(loose.steps, [{ stepId: 'ok', state: 'done', attempts: 9, deps: [], description: null }])
   assert.deepEqual(loose.phases, ['a', 'b'])
   assert.equal(loose.summary, null)
   assert.deepEqual(loose.commands, ['run a', 'run b'])
@@ -244,7 +248,7 @@ const dir = await mkdtemp(join(tmpdir(), 'reeve-snap-'))
   assert.equal(buildSnapshot([], { engine }).engine.runs.length, 3)
   assert.equal(projectEngineRuns([]), null)
   assert.equal(projectEngineRuns('no'), null)
-  ok('engine 节：声明/脚本两类运行投影 + 逐项容错 + 缺席即 null + D 线扩展字段（startedAt/deps/summary/commands/forks）')
+  ok('engine 节：声明/脚本两类运行投影 + 逐项容错 + 缺席即 null + D 线扩展字段（startedAt/deps/description/summary/commands/forks）')
 }
 
 console.log(`\n快照测试：${passed} 项全过`)
